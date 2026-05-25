@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #080808;
+  --color-bg-secondary: #0f0f0f;
+  --color-bg-tertiary: #161616;
+  --color-bg-elevated: #1c1c1c;
+  --color-bg-card: rgba(255,255,255,0.03);
+
+  --color-accent-primary: #f97316;
+  --color-accent-hover: #fb923c;
+  --color-accent-dim: #ea580c;
+  --color-accent-muted: rgba(249,115,22,0.12);
+  --color-accent-border: rgba(249,115,22,0.3);
+  --color-accent-glow: rgba(249,115,22,0.2);
+
+  --color-text-hero: #fff5eb;
+  --color-text-primary: #f5ede0;
+  --color-text-secondary: #a8998a;
+  --color-text-disabled: #4a4038;
+  --color-text-accent: #fb923c;
+
+  --color-border-subtle: #1e1e1e;
+  --color-border-default: #2a2a2a;
+  --color-border-strong: #383838;
+  --color-border-accent: rgba(249,115,22,0.35);
+
+  --color-success: #4ade80;
+  --color-success-muted: rgba(74,222,128,0.12);
+  --color-danger: #f87171;
+  --color-danger-muted: rgba(248,113,113,0.12);
+  --color-warning: #fbbf24;
+  --color-warning-muted: rgba(251,191,36,0.12);
+  --color-info: #60a5fa;
+  --color-info-muted: rgba(96,165,250,0.12);
+
+  --font-display: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-ui: 'Geist', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: #080808;
+  color: #f5ede0;
+  font-family: 'DM Mono', monospace;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid #f97316;
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb { background: rgba(249,115,22,0.35); border-radius: 3px; }
+
+@keyframes scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes pulse-orange {
+  0%, 100% { box-shadow: 0 0 4px rgba(249,115,22,0.4); }
+  50%       { box-shadow: 0 0 12px rgba(249,115,22,0.8); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+:root {
+  color-scheme: dark;
+}

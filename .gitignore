@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+Env/
+.venv/
+venv/
+
+# Django
+Backend/.env
+Backend/db.sqlite3
+Backend/staticfiles/
+media/
+
+# Node / Vite
+Frondend/node_modules/
+Frondend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

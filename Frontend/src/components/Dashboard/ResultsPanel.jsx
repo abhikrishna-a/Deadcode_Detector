@@ -1,0 +1,249 @@
+import { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Editor } from '@monaco-editor/react';
+
+const typeColors = {
+  dead_import:      { bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)',   label: '#fb923c', badge: 'DEAD_IMPORT' },
+  unused_function:  { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_FN' },
+  bare_except:      { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'BARE_EXCEPT' },
+  marker:           { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'MARKER' },
+  empty_function:   { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.3)', label: '#a78bfa', badge: 'EMPTY_FN' },
+  py2_print:        { bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.3)',  label: '#4ade80', badge: 'PY2_PRINT' },
+};
+
+const severityMap = {
+  dead_import: 'error',
+  unused_function: 'error',
+  bare_except: 'error',
+  marker: 'warning',
+  empty_function: 'warning',
+  py2_print: 'info',
+};
+
+export default function ResultsPanel({ results, onClear }) {
+  const [filter, setFilter] = useState('all');
+  const [expandedIdx, setExpandedIdx] = useState(null);
+
+  const issues = useMemo(() => {
+    if (!results) return [];
+    return results.issues || [];
+  }, [results]);
+
+  const filteredIssues = useMemo(() => {
+    const allowed =
+      filter === 'all' ? ['dead_import', 'unused_function', 'bare_except', 'marker', 'empty_function', 'py2_print'] :
+      filter === 'error' ? ['dead_import', 'unused_function', 'bare_except'] :
+      filter === 'warning' ? ['marker', 'empty_function'] :
+      filter === 'info' ? ['py2_print'] : [];
+    return issues.filter(i => allowed.includes(i.type));
+  }, [issues, filter]);
+
+  const counts = useMemo(() => {
+    const c = { all: issues.length, error: 0, warning: 0, info: 0 };
+    issues.forEach(i => {
+      const s = severityMap[i.type] || 'info';
+      c[s] = (c[s] || 0) + 1;
+    });
+    return c;
+  }, [issues]);
+
+  if (!results) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#4a4038', userSelect: 'none' }}>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: 16 }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+        </svg>
+        <p style={{ fontSize: 13, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>No results yet — analyze a file to see the report.</p>
+      </div>
+    );
+  }
+
+  const score = Math.max(0, Math.min(100, 100 - issues.length * 4));
+  const scoreColor = score > 80 ? '#4ade80' : score > 50 ? '#fb923c' : '#f87171';
+
+  const ext = results.filename?.split('.').pop() || 'py';
+  const langMap = { py: 'python', js: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript', txt: 'plaintext' };
+  const language = langMap[ext] || 'plaintext';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{ width: '100%' }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: '#fff5eb' }}>Analysis Report</h3>
+          <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+            Results for <span style={{ color: '#fb923c' }}>{results.filename}</span>
+          </p>
+        </div>
+        <button
+          onClick={onClear}
+          style={{
+            background: 'none', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171',
+            borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer',
+            fontFamily: "'DM Mono', monospace", transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.1)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          Clear ×
+        </button>
+      </div>
+
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
+        {[
+          { icon: '📄', label: 'File', value: results.filename },
+          { icon: '📏', label: 'Lines', value: results.lines?.toLocaleString() || '0' },
+          { icon: '🔢', label: 'Issues', value: issues.length },
+          { icon: '⚡', label: 'Score', value: `${score}%`, color: scoreColor },
+        ].map(s => (
+          <div key={s.label} style={{
+            background: 'rgba(249,115,22,0.04)',
+            border: '1px solid rgba(249,115,22,0.1)',
+            borderRadius: 12, padding: 14,
+          }}>
+            <p style={{ fontSize: 11, color: '#6b7280', fontFamily: "'DM Mono', monospace", marginBottom: 4 }}>{s.label}</p>
+            <p style={{
+              fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14,
+              color: s.color || '#f5ede0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Issue type pills */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {Object.keys(typeColors).filter(t => results.summary?.[t] > 0).map(t => {
+          const c = typeColors[t];
+          return (
+            <span key={t} style={{
+              background: c.bg, border: `1px solid ${c.border}`,
+              borderRadius: 20, padding: '4px 10px',
+              fontSize: 10, color: c.label,
+              fontFamily: "'DM Mono', monospace",
+            }}>
+              ● {c.badge} ({results.summary[t]})
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Filter Tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {[
+          { key: 'all', label: `ALL (${counts.all})` },
+          { key: 'error', label: `ERROR (${counts.error})` },
+          { key: 'warning', label: `WARNING (${counts.warning})` },
+          { key: 'info', label: `INFO (${counts.info})` },
+        ].map(f => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{
+              padding: '6px 14px', borderRadius: 8, border: 'none',
+              background: filter === f.key ? 'rgba(249,115,22,0.2)' : 'rgba(255,255,255,0.03)',
+              color: filter === f.key ? '#fb923c' : '#6b7280',
+              fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600,
+              cursor: 'pointer', transition: 'all 0.2s',
+              border: filter === f.key ? '1px solid rgba(249,115,22,0.4)' : '1px solid transparent',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Issue List */}
+      <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+        <AnimatePresence>
+          {filteredIssues.length === 0 ? (
+            <div style={{
+              background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)',
+              borderRadius: 12, padding: '12px 16px',
+            }}>
+              <p style={{ fontSize: 12, color: '#4ade80' }}>✓ No {filter === 'all' ? '' : filter + ' '}issues found.</p>
+            </div>
+          ) : filteredIssues.map((issue, idx) => {
+            const c = typeColors[issue.type] || typeColors.dead_import;
+            const isExpanded = expandedIdx === idx;
+            return (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                style={{
+                  background: c.bg,
+                  border: `1px solid ${isExpanded ? c.border : 'rgba(255,255,255,0.05)'}`,
+                  borderRadius: 12, padding: '12px 16px',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.borderColor = c.border; }}
+                onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      background: c.border, borderRadius: 4, padding: '2px 6px',
+                      fontSize: 9, fontWeight: 700, color: '#000',
+                      fontFamily: "'DM Mono', monospace", letterSpacing: 0.5,
+                    }}>{c.badge}</span>
+                    <span style={{ fontSize: 13, color: '#f5ede0' }}>{issue.message}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#6b7280' }}>
+                    <span>L: {issue.line}</span>
+                    <span>{isExpanded ? '▲' : '▼'}</span>
+                  </div>
+                </div>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    style={{ marginTop: 10, fontSize: 12, color: '#a8998a', lineHeight: 1.6, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.05)' }}
+                  >
+                    {issue.message}
+                    {issue.line && <div style={{ marginTop: 4, color: '#6b7280' }}>Line {issue.line}</div>}
+                  </motion.div>
+                )}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Raw Output */}
+      {results.raw && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{
+            cursor: 'pointer', fontSize: 12, color: '#6b7280',
+            fontFamily: "'DM Mono', monospace",
+            userSelect: 'none', listStyle: 'none',
+            display: 'flex', alignItems: 'center', gap: 6,
+            marginBottom: 8,
+          }}>
+            <span>▶</span> Raw Output
+          </summary>
+          <Editor
+            height="200px"
+            language={language}
+            value={results.raw.slice(0, 3000)}
+            theme="vs-dark"
+            options={{
+              readOnly: true,
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              fontSize: 12,
+              fontFamily: "'DM Mono', monospace",
+            }}
+          />
+        </details>
+      )}
+    </motion.div>
+  );
+}
