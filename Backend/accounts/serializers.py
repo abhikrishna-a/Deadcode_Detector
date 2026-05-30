@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -16,21 +18,53 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
-    role = serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False, default="viewer")
 
     class Meta:
         model = User
-        fields = ["username", "email", "password", "role"]
+        fields = ["username", "email", "password"]
 
     def create(self, validated_data):
+        validated_data["role"] = "viewer"
         return User.objects.create_user(**validated_data)
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    is_mfa_enabled = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = ["id", "username", "email", "role", "is_mfa_enabled", "date_joined"]
+
+
+class AdminUserRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
+
+    def validate_role(self, value):
+        return value
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
+        # Allow login with email by finding username first
+        login_field = attrs.get('username', '')
+        if '@' in login_field:
+            try:
+                user_obj = User.objects.get(email__iexact=login_field)
+                attrs['username'] = user_obj.username
+            except User.DoesNotExist:
+                pass  # Let super().validate() raise the auth error
+
         data = super().validate(attrs)
-        
+
         refresh = self.get_token(self.user)
         refresh["mfa_verified_for_session"] = False
+
+        send_mail(
+            subject="GhostCode — New login detected",
+            message=f"Hi {self.user.username},\n\nA new login was detected on your GhostCode account.\n\nIf this was you, you can ignore this email.\nIf this wasn't you, please change your password immediately.\n\nStay safe,\nThe GhostCode Team",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[self.user.email],
+            fail_silently=True,
+        )
 
         return {
             "mfa_required": True,

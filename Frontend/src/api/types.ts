@@ -3,7 +3,6 @@ export interface RegisterRequest {
   username: string;
   email: string;
   password: string;
-  role?: 'admin' | 'viewer';
 }
 
 export interface RegisterResponse {
@@ -160,6 +159,10 @@ export interface DashboardStats {
     lines: number;
   };
 }
+
+export interface PasswordResetRequest { email: string; }
+export interface PasswordResetConfirmRequest { token: string; new_password: string; }
+export interface PasswordResetResponse { message: string; }
 
 // File tree types
 export interface FileNode {

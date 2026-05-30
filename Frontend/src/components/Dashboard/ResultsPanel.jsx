@@ -5,6 +5,13 @@ import { Editor } from '@monaco-editor/react';
 const typeColors = {
   dead_import:      { bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)',   label: '#fb923c', badge: 'DEAD_IMPORT' },
   unused_function:  { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_FN' },
+  unused_class:     { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_CLASS' },
+  unused_variable:  { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_VAR' },
+  unused_parameter: { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_PARAM' },
+  unreachable_code: { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_CODE' },
+  redundant_code:   { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'REDUNDANT' },
+  dead_branch:      { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_BRANCH' },
+  commented_code:   { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'COMMENTED' },
   bare_except:      { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'BARE_EXCEPT' },
   marker:           { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'MARKER' },
   empty_function:   { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.3)', label: '#a78bfa', badge: 'EMPTY_FN' },
@@ -14,11 +21,49 @@ const typeColors = {
 const severityMap = {
   dead_import: 'error',
   unused_function: 'error',
+  unused_class: 'error',
+  unused_variable: 'warning',
+  unused_parameter: 'warning',
+  unreachable_code: 'error',
+  redundant_code: 'warning',
+  dead_branch: 'error',
+  commented_code: 'info',
   bare_except: 'error',
   marker: 'warning',
   empty_function: 'warning',
   py2_print: 'info',
 };
+
+function normalizeIssues(issues = []) {
+  return issues.map(issue => ({
+    ...issue,
+    type: issue.type || issue.category || 'unknown',
+    message: issue.message || issue.description || '',
+    line: issue.line ?? issue.line_start ?? null,
+  }));
+}
+
+function normalizeSummary(summary = {}) {
+  if (summary.total_issues !== undefined) {
+    return summary;
+  }
+  return {
+    total_issues: Object.values(summary).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) || 0,
+    severity_counts: {},
+    categories: summary,
+    overall_health: 'unknown',
+  };
+}
+
+function healthToScore(health) {
+  switch (health) {
+    case 'clean': return 100;
+    case 'good': return 82;
+    case 'needs_attention': return 55;
+    case 'poor': return 25;
+    default: return 50;
+  }
+}
 
 export default function ResultsPanel({ results, onClear }) {
   const [filter, setFilter] = useState('all');
@@ -26,15 +71,22 @@ export default function ResultsPanel({ results, onClear }) {
 
   const issues = useMemo(() => {
     if (!results) return [];
-    return results.issues || [];
+    return normalizeIssues(results.issues || []);
   }, [results]);
+
+  const summary = useMemo(() => {
+    if (!results) return null;
+    return normalizeSummary(results.summary || {});
+  }, [results]);
+
+  const errorMessage = results?._error;
 
   const filteredIssues = useMemo(() => {
     const allowed =
-      filter === 'all' ? ['dead_import', 'unused_function', 'bare_except', 'marker', 'empty_function', 'py2_print'] :
-      filter === 'error' ? ['dead_import', 'unused_function', 'bare_except'] :
-      filter === 'warning' ? ['marker', 'empty_function'] :
-      filter === 'info' ? ['py2_print'] : [];
+      filter === 'all' ? Object.keys(severityMap) :
+      filter === 'error' ? Object.keys(severityMap).filter(k => severityMap[k] === 'error') :
+      filter === 'warning' ? Object.keys(severityMap).filter(k => severityMap[k] === 'warning') :
+      filter === 'info' ? Object.keys(severityMap).filter(k => severityMap[k] === 'info') : [];
     return issues.filter(i => allowed.includes(i.type));
   }, [issues, filter]);
 
@@ -58,10 +110,33 @@ export default function ResultsPanel({ results, onClear }) {
     );
   }
 
-  const score = Math.max(0, Math.min(100, 100 - issues.length * 4));
+  if (errorMessage) {
+    return (
+      <div style={{
+        background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.3)',
+        borderRadius: 16, padding: 24, textAlign: 'center',
+      }}>
+        <p style={{ fontSize: 14, color: '#f87171', fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>Analysis Failed</p>
+        <p style={{ fontSize: 12, color: '#a8998a' }}>{errorMessage}</p>
+      </div>
+    );
+  }
+
+  const score = summary?.overall_health
+    ? healthToScore(summary.overall_health)
+    : Math.max(0, Math.min(100, 100 - issues.length * 4));
   const scoreColor = score > 80 ? '#4ade80' : score > 50 ? '#fb923c' : '#f87171';
 
-  const ext = results.filename?.split('.').pop() || 'py';
+  const totalLines = results?.metrics?.total_lines || 0;
+  const deadLines = results?.metrics?.dead_lines_estimate || 0;
+  const deadPct = results?.metrics?.dead_code_percentage ?? (totalLines > 0 ? Math.round((deadLines / totalLines) * 100) : 0);
+  const filename = results?.filename || 'file';
+
+  const categoryPills = summary?.categories
+    ? Object.entries(summary.categories).filter(([_, count]) => count > 0)
+    : [];
+
+  const ext = filename?.split('.').pop() || 'py';
   const langMap = { py: 'python', js: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript', txt: 'plaintext' };
   const language = langMap[ext] || 'plaintext';
 
@@ -76,7 +151,7 @@ export default function ResultsPanel({ results, onClear }) {
         <div>
           <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: '#fff5eb' }}>Analysis Report</h3>
           <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-            Results for <span style={{ color: '#fb923c' }}>{results.filename}</span>
+            Results for <span style={{ color: '#fb923c' }}>{filename}</span>
           </p>
         </div>
         <button
@@ -96,10 +171,10 @@ export default function ResultsPanel({ results, onClear }) {
       {/* Stats Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
         {[
-          { icon: '📄', label: 'File', value: results.filename },
-          { icon: '📏', label: 'Lines', value: results.lines?.toLocaleString() || '0' },
+          { icon: '📄', label: 'File', value: filename },
+          { icon: '📏', label: 'Lines', value: totalLines.toLocaleString() || '0' },
           { icon: '🔢', label: 'Issues', value: issues.length },
-          { icon: '⚡', label: 'Score', value: `${score}%`, color: scoreColor },
+          { icon: '⚡', label: 'Health', value: `${score}%`, color: scoreColor },
         ].map(s => (
           <div key={s.label} style={{
             background: 'rgba(249,115,22,0.04)',
@@ -115,22 +190,41 @@ export default function ResultsPanel({ results, onClear }) {
         ))}
       </div>
 
-      {/* Issue type pills */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        {Object.keys(typeColors).filter(t => results.summary?.[t] > 0).map(t => {
-          const c = typeColors[t];
-          return (
-            <span key={t} style={{
-              background: c.bg, border: `1px solid ${c.border}`,
-              borderRadius: 20, padding: '4px 10px',
-              fontSize: 10, color: c.label,
-              fontFamily: "'DM Mono', monospace",
-            }}>
-              ● {c.badge} ({results.summary[t]})
-            </span>
-          );
-        })}
-      </div>
+      {/* Dead code percentage bar */}
+      {deadPct > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280', fontFamily: "'DM Mono', monospace", marginBottom: 4 }}>
+            <span>Dead code: {deadLines} lines</span>
+            <span>{deadPct}%</span>
+          </div>
+          <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(deadPct, 100)}%`, height: '100%',
+              background: deadPct > 30 ? '#f87171' : deadPct > 10 ? '#fb923c' : '#4ade80',
+              borderRadius: 3, transition: 'width 0.5s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Category pills */}
+      {categoryPills.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          {categoryPills.map(([cat, count]) => {
+            const c = typeColors[cat] || { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: '#aaa' };
+            return (
+              <span key={cat} style={{
+                background: c.bg, border: `1px solid ${c.border}`,
+                borderRadius: 20, padding: '4px 10px',
+                fontSize: 10, color: c.label,
+                fontFamily: "'DM Mono', monospace",
+              }}>
+                ● {c.badge || cat.toUpperCase()} ({count})
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
@@ -168,8 +262,15 @@ export default function ResultsPanel({ results, onClear }) {
               <p style={{ fontSize: 12, color: '#4ade80' }}>✓ No {filter === 'all' ? '' : filter + ' '}issues found.</p>
             </div>
           ) : filteredIssues.map((issue, idx) => {
-            const c = typeColors[issue.type] || typeColors.dead_import;
+            const c = typeColors[issue.type] || { bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.1)', label: '#aaa', badge: issue.type.toUpperCase() };
             const isExpanded = expandedIdx === idx;
+            const lineStr = issue.line
+              ? `L: ${issue.line}`
+              : issue.line_start
+                ? issue.line_end && issue.line_end !== issue.line_start
+                  ? `L${issue.line_start}-${issue.line_end}`
+                  : `L${issue.line_start}`
+                : '';
             return (
               <motion.div
                 key={idx}
@@ -196,7 +297,7 @@ export default function ResultsPanel({ results, onClear }) {
                     <span style={{ fontSize: 13, color: '#f5ede0' }}>{issue.message}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#6b7280' }}>
-                    <span>L: {issue.line}</span>
+                    <span>{lineStr}</span>
                     <span>{isExpanded ? '▲' : '▼'}</span>
                   </div>
                 </div>
@@ -206,8 +307,25 @@ export default function ResultsPanel({ results, onClear }) {
                     animate={{ opacity: 1, height: 'auto' }}
                     style={{ marginTop: 10, fontSize: 12, color: '#a8998a', lineHeight: 1.6, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.05)' }}
                   >
-                    {issue.message}
-                    {issue.line && <div style={{ marginTop: 4, color: '#6b7280' }}>Line {issue.line}</div>}
+                    <p style={{ color: '#f5ede0', marginBottom: 8 }}>{issue.message}</p>
+                    {issue.line && <div style={{ marginBottom: 4, color: '#6b7280' }}>Line {issue.line}</div>}
+                    {issue.code_snippet && (
+                      <pre style={{
+                        background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: 10,
+                        fontSize: 11, fontFamily: "'DM Mono', monospace",
+                        overflowX: 'auto', marginBottom: 8, color: '#e2d8cc',
+                      }}>{issue.code_snippet}</pre>
+                    )}
+                    {issue.suggestion && (
+                      <div style={{
+                        background: 'rgba(74,222,128,0.06)',
+                        border: '1px solid rgba(74,222,128,0.15)',
+                        borderRadius: 8, padding: '8px 12px', marginTop: 6,
+                      }}>
+                        <span style={{ color: '#4ade80', fontWeight: 600, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>SUGGESTION</span>
+                        <p style={{ color: '#a8998a', marginTop: 2, fontSize: 12 }}>{issue.suggestion}</p>
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </motion.div>

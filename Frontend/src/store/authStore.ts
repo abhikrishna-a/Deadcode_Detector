@@ -65,7 +65,8 @@ export const useAuthStore = create<AuthState>()(
               token: response.pre_auth_token,
               refreshToken: response.refresh,
               user: response.user,
-              isAuthenticated: true,
+              // A pre-auth token is only valid for completing MFA, not for app access.
+              isAuthenticated: false,
               isLoading: false
             });
           } else {

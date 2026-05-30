@@ -7,6 +7,7 @@ import GlowOrb from './ui/GlowOrb';
 import NoiseSVG from './ui/NoiseSVG';
 import Btn from './ui/Btn';
 import Toast from './ui/Toast';
+import { parseApiError } from '../lib/apiError';
 
 export default function MFAVerify({ mfaData, onSuccess, onBack }) {
   const [code, setCode] = useState('');
@@ -25,8 +26,8 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
       const data = await authAPI.verifyMFALogin({ token: code }, mfaData.pre_auth_token);
       login(data);
       onSuccess(data);
-    } catch {
-      showToast('Invalid verification code.', 'error');
+    } catch (err) {
+      showToast(parseApiError(err), 'error');
       setCode('');
     } finally { setLoading(false); }
   };

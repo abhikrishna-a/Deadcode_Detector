@@ -1,3 +1,7 @@
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -14,8 +18,13 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
     CustomTokenRefreshSerializer,
     RegisterSerializer,
-    UserSerializer
+    UserSerializer,
+    AdminUserSerializer,
+    AdminUserRoleSerializer,
 )
+from .permissions import IsAdminWithVerifiedMFA
+
+User = get_user_model()
 
 def has_verified_mfa_session(token_claims):
     """
@@ -58,6 +67,13 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        send_mail(
+            subject="GhostCode — Welcome aboard",
+            message=f"Hi {user.username},\n\nYour GhostCode account has been created successfully.\n\nYou can now log in and start scanning your code for dead code.\n\nHappy coding,\nThe GhostCode Team",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -221,4 +237,110 @@ class MFAInitialVerifyView(APIView):
         return Response(
             {"error": "Invalid verification code. Activation failed."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class AdminUserListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminWithVerifiedMFA]
+
+    def get(self, request):
+        users = User.objects.all().order_by("date_joined")
+        serializer = AdminUserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PasswordResetRequestView(APIView):
+    """
+    POST { "email": "user@example.com" }
+    Always returns 200 to prevent user enumeration.
+    Sends a reset link email if the account exists.
+    """
+    permission_classes = [AllowAny]
+    throttle_scope = "password_reset"
+
+    def post(self, request):
+        email = request.data.get("email", "").strip().lower()
+        if not email:
+            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email__iexact=email)
+            token = user.generate_password_reset_token()
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+            send_mail(
+                subject="GhostCode — Reset your password",
+                message=f"Click the link below to reset your password (expires in 15 minutes):\n\n{reset_url}\n\nIf you did not request this, ignore this email.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+        except User.DoesNotExist:
+            pass  # Silent — don't reveal if email exists
+
+        return Response(
+            {"message": "If that email is registered, a reset link has been sent."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    POST { "token": "...", "new_password": "..." }
+    Validates the token and sets the new password.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get("token", "").strip()
+        new_password = request.data.get("new_password", "")
+
+        if not token or not new_password:
+            return Response({"error": "Token and new password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 8:
+            return Response({"error": "Password must be at least 8 characters."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(password_reset_token=token)
+        except User.DoesNotExist:
+            return Response({"error": "Invalid or expired reset token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.is_password_reset_token_valid():
+            user.clear_password_reset_token()
+            return Response({"error": "Reset token has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.clear_password_reset_token()
+        return Response({"message": "Password reset successfully. You can now log in."}, status=status.HTTP_200_OK)
+
+
+class AdminUserRoleUpdateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminWithVerifiedMFA]
+
+    def patch(self, request, user_id):
+        if request.user.id == user_id:
+            return Response(
+                {"error": "You cannot change your own role."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = AdminUserRoleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_user.role = serializer.validated_data["role"]
+        target_user.save(update_fields=["role"])
+
+        return Response(
+            AdminUserSerializer(target_user).data,
+            status=status.HTTP_200_OK,
         )

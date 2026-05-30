@@ -11,7 +11,7 @@ import type {
   MFASetupResponse,
   MFAActivateRequest,
   MFAActivateResponse,
-  User
+  User,
 } from './types';
 
 // Auth endpoints
@@ -61,8 +61,25 @@ export const authAPI = {
   getCurrentUser: async (): Promise<User> => {
     const response = await apiClient.get('/api/auth/user/'); // Assuming this exists
     return response.data;
+  },
+
+  getAdminUsers: async (): Promise<User[]> => {
+    const response = await apiClient.get('/api/auth/admin/users/');
+    return response.data;
+  },
+
+  updateUserRole: async (userId: number, role: 'admin' | 'viewer'): Promise<User> => {
+    const response = await apiClient.patch(`/api/auth/admin/users/${userId}/role/`, { role });
+    return response.data;
+  },
+
+  requestPasswordReset: async (email: string): Promise<{ message: string }> => {
+    const response = await apiClient.post('/api/auth/password-reset/', { email });
+    return response.data;
+  },
+
+  confirmPasswordReset: async (token: string, new_password: string): Promise<{ message: string }> => {
+    const response = await apiClient.post('/api/auth/password-reset/confirm/', { token, new_password });
+    return response.data;
   }
 };
-
-// Note: The backend doesn't seem to have a /user/ endpoint, but we can extract user from login response
-// For now, we'll store user in auth store from login responses

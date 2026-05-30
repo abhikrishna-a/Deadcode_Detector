@@ -13,6 +13,11 @@ Env/
 .venv/
 venv/
 
+# Environment files
+.env
+.env.example
+*.env
+
 # Django
 Backend/.env
 Backend/db.sqlite3

@@ -4,12 +4,15 @@ import { useAuthStore } from '../../store/authStore';
 import OverviewTab from './tabs/OverviewTab';
 import AnalyzerTab from './tabs/AnalyzerTab';
 import SettingsTab from './tabs/SettingsTab';
+import AdminTab from './tabs/AdminTab';
 
 const tabs = [
   { key: 'overview', label: 'Dashboard' },
   { key: 'analyzer', label: 'Analyzer' },
-  { key: 'settings', label: 'Settings' },
+  { key: 'profile', label: 'Profile' },
 ];
+
+const adminTab = { key: 'admin', label: 'Admin' };
 
 export default function DashboardShell({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState('overview');
@@ -18,6 +21,7 @@ export default function DashboardShell({ session, onLogout }) {
   const [file, setFile] = useState(null);
 
   const user = session?.user || useAuthStore((s) => s.user);
+  const visibleTabs = user?.role === 'admin' ? [...tabs, adminTab] : tabs;
 
   const handleViewResult = (result) => {
     setResults(result);
@@ -44,22 +48,22 @@ export default function DashboardShell({ session, onLogout }) {
         padding: '0 32px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        {/* Left */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{
-            background: 'linear-gradient(135deg, #ea580c, #f97316)',
-            borderRadius: 7, padding: '4px 7px',
-            fontFamily: "'DM Mono', monospace", fontWeight: 700, fontSize: 13, color: '#fff',
-          }}>GC</span>
-          <span style={{ color: '#f5ede0', fontSize: 15, fontWeight: 600, fontFamily: "'Syne', sans-serif" }}
-            className="brand-text">GhostCode</span>
-          <span style={{ color: '#6b7280', fontSize: 10, fontFamily: "'DM Mono', monospace" }}
-            className="brand-subtitle">static analysis</span>
-        </div>
+         {/* Left */}
+         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+           <span style={{
+             background: 'linear-gradient(135deg, #ea580c, #f97316)',
+             borderRadius: 10, padding: '6px 12px',
+             fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff',
+           }}>GC</span>
+           <span style={{ color: '#f5ede0', fontSize: 18, fontWeight: 800, fontFamily: "'Syne', sans-serif" }}
+             className="brand-text">GhostCode</span>
+           <span style={{ color: '#9ca3af', fontSize: 12, fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
+             className="brand-subtitle">static analysis</span>
+         </div>
 
         {/* Center Tabs */}
         <nav style={{ display: 'flex', gap: 0, height: '100%', alignItems: 'stretch' }}>
-          {tabs.map(t => {
+          {visibleTabs.map(t => {
             const isActive = activeTab === t.key;
             return (
               <button
@@ -136,10 +140,15 @@ export default function DashboardShell({ session, onLogout }) {
               onFileChange={handleFileChange}
             />
           )}
-          {activeTab === 'settings' && (
+          {activeTab === 'profile' && (
             <SettingsTab
-              key="settings"
+              key="profile"
               session={session}
+            />
+          )}
+          {activeTab === 'admin' && (
+            <AdminTab
+              key="admin"
             />
           )}
         </AnimatePresence>

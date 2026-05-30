@@ -46,15 +46,15 @@ export default function Landing({ onNav }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <span style={{
-            display: 'inline-block',
-            background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)',
-            borderRadius: 20, padding: '4px 14px',
-            fontSize: 11, color: '#fb923c', fontFamily: "'DM Mono', monospace",
-            marginBottom: 24, letterSpacing: 1,
-          }}>
-            ⬡ PYTHON · STATIC ANALYSIS · OPEN SOURCE
-          </span>
+           <span style={{
+             display: 'inline-block',
+             background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)',
+             borderRadius: 20, padding: '4px 14px',
+             fontSize: 12, color: '#fb923c', fontFamily: "'Syne', sans-serif",
+             marginBottom: 24, letterSpacing: 1.2,
+           }}>
+             ⬡ PYTHON · STATIC ANALYSIS · OPEN SOURCE
+           </span>
 
           <h1 style={{
             fontFamily: "'Syne', sans-serif", fontWeight: 800,
@@ -102,10 +102,10 @@ export default function Landing({ onNav }) {
         }}
       >
         {[
-          { value: '5 types', label: 'of dead code' },
-          { value: 'TOTP', label: 'MFA support' },
-          { value: 'JWT', label: 'secure auth' },
-          { value: 'REST', label: 'Django backend' },
+          { value: 'zero', label: 'config needed' },
+          { value: 'drag & drop', label: 'file upload' },
+          { value: 'Python', label: 'JS · TS · more' },
+          { value: 'no vendor', label: 'lock-in' },
         ].map(s => (
           <div key={s.label} style={{ textAlign: 'center' }}>
             <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 22, color: '#fb923c' }}>{s.value}</p>
@@ -146,9 +146,28 @@ export default function Landing({ onNav }) {
         ))}
       </motion.div>
 
-      {/* Code preview strip */}
-      <section style={{position:"relative",zIndex:10,maxWidth:900,margin:"0 auto",padding:"0 48px 120px"}}>
-        <div style={{background:"rgba(0,0,0,0.5)",border:"1px solid rgba(249,115,22,0.2)",borderRadius:16,padding:28,fontFamily:"'DM Mono',monospace",fontSize:13,lineHeight:2}}>
+       {/* Code preview strip */}
+       <section style={{position:"relative",zIndex:10,maxWidth:900,margin:"0 auto",padding:"0 48px 120px"}}>
+         <div 
+           style={{
+             background:"rgba(0,0,0,0.5)", 
+             border:"1px solid rgba(249,115,22,0.2)", 
+             borderRadius:16, 
+             padding:28, 
+             fontFamily:"'DM Mono',monospace", 
+             fontSize:13, 
+             lineHeight:2,
+             transition: 'all 0.2s ease'
+           }}
+           onMouseEnter={(e) => {
+             e.currentTarget.style.borderColor = 'rgba(249,115,22,0.35)';
+             e.currentTarget.style.background = 'rgba(0,0,0,0.6)';
+           }}
+           onMouseLeave={(e) => {
+             e.currentTarget.style.borderColor = 'rgba(249,115,22,0.2)';
+             e.currentTarget.style.background = 'rgba(0,0,0,0.5)';
+           }}
+         >
           <div style={{display:"flex",gap:8,marginBottom:20}}>
             {["#f87171","#fbbf24","#4ade80"].map(c=><div key={c} style={{width:12,height:12,borderRadius:"50%",background:c}}/>)}
             <span style={{marginLeft:8,color:"#6b7280",fontSize:11}}>analysis_result.json</span>

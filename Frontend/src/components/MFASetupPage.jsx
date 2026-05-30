@@ -7,6 +7,7 @@ import GlowOrb from './ui/GlowOrb';
 import NoiseSVG from './ui/NoiseSVG';
 import Btn from './ui/Btn';
 import Toast from './ui/Toast';
+import { parseApiError } from '../lib/apiError';
 
 export default function MFASetupPage({ mfaData, onSuccess, onBack }) {
   const [qrCode, setQrCode] = useState(null);
@@ -28,8 +29,8 @@ export default function MFASetupPage({ mfaData, onSuccess, onBack }) {
     try {
       const data = await authAPI.setupMFA();
       setQrCode(data.qr_code_image);
-    } catch {
-      showToast('Failed to setup MFA.', 'error');
+    } catch (err) {
+      showToast(parseApiError(err), 'error');
     } finally { setLoading(false); }
   };
 
@@ -40,8 +41,8 @@ export default function MFASetupPage({ mfaData, onSuccess, onBack }) {
       const data = await authAPI.activateMFA({ token: code });
       login(data);
       onSuccess(data);
-    } catch {
-      showToast('Invalid code. Try again.', 'error');
+    } catch (err) {
+      showToast(parseApiError(err), 'error');
       setCode('');
     } finally { setLoading(false); }
   };

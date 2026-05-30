@@ -4,6 +4,8 @@ import { useAuthStore } from './store/authStore';
 import Landing from './components/Landing';
 import Auth from './components/Auth';
 import MFASetupPage from './components/MFASetupPage';
+import MFAVerify from './components/MFAVerify';
+import ResetPassword from './components/ResetPassword';
 import DashboardShell from './components/Dashboard/DashboardShell';
 import Toast from './components/ui/Toast';
 
@@ -11,11 +13,17 @@ export default function App() {
   const [screen, setScreen] = useState('landing');
   const [mfaPending, setMfaPending] = useState(null);
   const [toast, setToast] = useState(null);
+  const [resetToken, setResetToken] = useState(null);
 
   const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      setResetToken(token);
+      setScreen('reset_password');
+    } else if (isAuthenticated) {
       setScreen('dashboard');
     }
   }, []);
@@ -23,7 +31,11 @@ export default function App() {
   const handleAuthSuccess = useCallback((data) => {
     if (data && data.mfa_required) {
       setMfaPending(data);
-      setScreen('mfa');
+      if (data.is_mfa_enabled) {
+        setScreen('mfa_verify');
+      } else {
+        setScreen('mfa_setup');
+      }
     } else {
       setScreen('dashboard');
     }
@@ -74,15 +86,49 @@ export default function App() {
           </motion.div>
         )}
 
-        {screen === 'mfa' && mfaPending && (
+        {screen === 'reset_password' && resetToken && (
           <motion.div
-            key="mfa"
+            key="reset_password"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <ResetPassword
+              token={resetToken}
+              onBack={() => {
+                window.history.replaceState({}, '', '/');
+                setScreen('auth');
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'mfa_setup' && mfaPending && (
+          <motion.div
+            key="mfa_setup"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
             <MFASetupPage
+              mfaData={mfaPending}
+              onSuccess={handleAuthSuccess}
+              onBack={() => setScreen('auth')}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'mfa_verify' && mfaPending && (
+          <motion.div
+            key="mfa_verify"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <MFAVerify
               mfaData={mfaPending}
               onSuccess={handleAuthSuccess}
               onBack={() => setScreen('auth')}

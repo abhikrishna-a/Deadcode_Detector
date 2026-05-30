@@ -70,6 +70,7 @@ REST_FRAMEWORK = {
     ],
   'DEFAULT_THROTTLE_RATES': {
     'mfa_login': '5/min',
+    'password_reset': '3/hour',
   },
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -110,4 +111,13 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@ghostcode.dev')
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

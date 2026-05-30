@@ -21,27 +21,47 @@ export default function SettingsTab({ session }) {
     >
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
 
-      {/* Profile Card */}
-      <div style={{
-        background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(249,115,22,0.1)',
-        borderRadius: 16, padding: 24, marginBottom: 24,
-      }}>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: '#fb923c', marginBottom: 16, letterSpacing: 0.5 }}>
-          PROFILE
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {[
-            { label: 'Username', value: user.username || '-' },
-            { label: 'Email', value: user.email || '-' },
-            { label: 'Role', value: user.role || '-' },
-            { label: 'MFA', value: isMfaEnabled ? 'Enabled' : 'Not enabled' },
-          ].map(f => (
-            <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-              <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>{f.label}</span>
-              <span style={{ fontSize: 13, color: '#f5ede0', fontFamily: "'DM Mono', monospace" }}>{f.value}</span>
-            </div>
-          ))}
-        </div>
+       {/* Profile Card */}
+       <div style={{
+         background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(249,115,22,0.1)',
+         borderRadius: 16, padding: 24, marginBottom: 24,
+       }}>
+       <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 20, color: '#fff5eb', marginBottom: 24, letterSpacing: -0.5 }}>
+         PROFILE
+       </h2>
+         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+           {[
+             { label: 'Username', value: user.username || '-' },
+             { label: 'Email', value: user.email || '-' },
+             { label: 'Role', value: user.role || '-' },
+             { label: 'MFA Status', value: isMfaEnabled ? 'Enabled' : 'Not enabled' },
+           ].map((f, index) => (
+             <div key={f.label} style={{ 
+               display: 'flex', 
+               justifyContent: 'space-between', 
+               alignItems: 'center', 
+               padding: '12px 16px',
+               background: index === 0 ? 'rgba(249,115,22,0.08)' : 'rgba(255,255,255,0.02)',
+               borderRadius: 12,
+               border: index === 0 ? '1px solid rgba(249,115,22,0.3)' : '1px solid rgba(255,255,255,0.03)',
+               marginBottom: index === 3 ? 0 : 4
+             }}>
+               <div style={{ display: 'flex', flexDirection: 'column' }}>
+                 <span style={{ fontSize: 13, fontWeight: 600, color: '#f5ede0', fontFamily: "'Syne', sans-serif", letterSpacing: 0.5 }}>
+                   {f.label}
+                 </span>
+                 {f.label === 'MFA Status' && (
+                   <span style={{ fontSize: 11, color: isMfaEnabled ? '#4ade80' : '#f87171', fontFamily: "'DM Mono', monospace", fontWeight: 500, marginTop: 2 }}>
+                     {isMfaEnabled ? '● Active' : '○ Inactive'}
+                     </span>
+                    )}
+               </div>
+               <span style={{ fontSize: 14, fontWeight: 500, color: '#fff5eb', fontFamily: "'DM Mono', monospace", letterSpacing: 0.25 }}>
+                 {f.value}
+               </span>
+             </div>
+           ))}
+         </div>
       </div>
     </motion.div>
   );
