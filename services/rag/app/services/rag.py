@@ -2,21 +2,20 @@ import json
 import os
 from typing import List, AsyncGenerator
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.embedder import embed_texts
-from app.services.key_manager import xai_key_manager
 from app.services.grok_client import groq_key_manager
 from app.services.storage import find_similar
 
-GPT_MODEL = "grok-2-latest"
+
+def _get_groq_model() -> str:
+    return os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
 TOP_K = 6
-
-
-def _get_chat_client() -> AsyncOpenAI:
-    return xai_key_manager.get_client()
 
 
 def _get_groq_client() -> AsyncOpenAI:
@@ -100,18 +99,15 @@ def build_chat_context_prompt(question: str, sources: list[dict]) -> List[dict]:
 async def stream_answer(
     messages: List[dict], context_chunks: List[dict]
 ) -> AsyncGenerator[str, None]:
-    client = _get_chat_client()
-    if client is None:
-        raise RuntimeError("No xAI API keys configured. Set XAI_API_KEYS env var.")
-
+    groq_model = _get_groq_model()
     last_error = None
-    max_attempts = len(xai_key_manager._keys) if xai_key_manager.has_keys else 1
+    max_attempts = len(groq_key_manager._keys) if groq_key_manager.has_keys else 1
     stream = None
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
         try:
-            client = _get_chat_client()
+            client = _get_groq_client()
             stream = await client.chat.completions.create(
-                model=GPT_MODEL,
+                model=groq_model,
                 messages=messages,
                 stream=True,
                 temperature=0.3,
@@ -119,13 +115,15 @@ async def stream_answer(
             )
             last_error = None
             break
-        except APIError as e:
+        except (APIError, Exception) as e:
             last_error = e
-            xai_key_manager.mark_failed()
+            groq_key_manager.rotate()
+            if attempt < max_attempts - 1:
+                continue
     if last_error:
-        raise last_error
+        raise RuntimeError(f"Groq streaming failed after {max_attempts} key(s): {last_error}")
     if stream is None:
-        raise RuntimeError("xAI chat stream could not be created.")
+        raise RuntimeError("Groq chat stream could not be created.")
 
     async for chunk in stream:
         delta = chunk.choices[0].delta.content if chunk.choices else ""
@@ -146,9 +144,7 @@ async def stream_answer(
 
 
 async def answer_question(messages: List[dict]) -> str:
-    from openai import APIError
-
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    groq_model = _get_groq_model()
     last_error = None
     max_attempts = len(groq_key_manager._keys) if groq_key_manager.has_keys else 1
 
