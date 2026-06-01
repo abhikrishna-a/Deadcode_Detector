@@ -7,12 +7,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.embedder import embed_texts
-from app.services.grok_client import groq_key_manager
+from app.services.grok_client import groq_key_manager, gemini_key_manager, get_gemini_client
 from app.services.storage import find_similar
 
 
 def _get_groq_model() -> str:
     return os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
+def _get_gemini_model() -> str:
+    return os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 TOP_K = 6
@@ -100,6 +104,7 @@ async def stream_answer(
     messages: List[dict], context_chunks: List[dict]
 ) -> AsyncGenerator[str, None]:
     groq_model = _get_groq_model()
+    gemini_model = _get_gemini_model()
     last_error = None
     max_attempts = len(groq_key_manager._keys) if groq_key_manager.has_keys else 1
     stream = None
@@ -120,10 +125,26 @@ async def stream_answer(
             groq_key_manager.rotate()
             if attempt < max_attempts - 1:
                 continue
+
+    # Fall back to Gemini
+    if last_error and gemini_key_manager.has_keys:
+        try:
+            client = get_gemini_client()
+            stream = await client.chat.completions.create(
+                model=gemini_model,
+                messages=messages,
+                stream=True,
+                temperature=0.3,
+                max_tokens=2048,
+            )
+            last_error = None
+        except Exception as e:
+            raise RuntimeError(f"Groq + Gemini both failed. Groq: {last_error}, Gemini: {e}")
+
     if last_error:
         raise RuntimeError(f"Groq streaming failed after {max_attempts} key(s): {last_error}")
     if stream is None:
-        raise RuntimeError("Groq chat stream could not be created.")
+        raise RuntimeError("Chat stream could not be created.")
 
     async for chunk in stream:
         delta = chunk.choices[0].delta.content if chunk.choices else ""
@@ -145,6 +166,7 @@ async def stream_answer(
 
 async def answer_question(messages: List[dict]) -> str:
     groq_model = _get_groq_model()
+    gemini_model = _get_gemini_model()
     last_error = None
     max_attempts = len(groq_key_manager._keys) if groq_key_manager.has_keys else 1
 
@@ -164,6 +186,20 @@ async def answer_question(messages: List[dict]) -> str:
             groq_key_manager.rotate()
             if attempt < max_attempts - 1:
                 continue
+
+    # Fall back to Gemini
+    if last_error and gemini_key_manager.has_keys:
+        try:
+            client = get_gemini_client()
+            response = await client.chat.completions.create(
+                model=gemini_model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=2048,
+            )
+            last_error = None
+        except Exception as e:
+            raise RuntimeError(f"Groq + Gemini both failed. Groq: {last_error}, Gemini: {e}")
 
     if last_error:
         raise RuntimeError(f"Groq API call failed after {max_attempts} key(s): {last_error}")
