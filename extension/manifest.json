@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Detect dead code in your browser-dev JavaScript/TypeScript files via the GhostCode analyzer.",
   "permissions": ["storage", "activeTab"],
-  "host_permissions": ["http://localhost:5173/*", "http://localhost:8002/*", "http://localhost:8003/*"],
+  "host_permissions": ["http://localhost:5173/*", "http://localhost:8003/*"],
   "background": {
     "service_worker": "background.js"
   },

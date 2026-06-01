@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/rag': {
-        target: 'http://localhost:8003',
+        target: 'http://localhost:8004',
         changeOrigin: true,
       },
     },
