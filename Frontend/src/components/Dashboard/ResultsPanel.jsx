@@ -3,23 +3,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Editor } from '@monaco-editor/react';
 
 const typeColors = {
-  dead_import:      { bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)',   label: '#fb923c', badge: 'DEAD_IMPORT' },
-  unused_function:  { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_FN' },
-  unused_class:     { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_CLASS' },
-  unused_variable:  { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_VAR' },
-  unused_parameter: { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_PARAM' },
-  unreachable_code: { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_CODE' },
-  redundant_code:   { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'REDUNDANT' },
-  dead_branch:      { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_BRANCH' },
-  commented_code:   { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'COMMENTED' },
-  bare_except:      { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'BARE_EXCEPT' },
-  marker:           { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'MARKER' },
-  empty_function:   { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.3)', label: '#a78bfa', badge: 'EMPTY_FN' },
-  py2_print:        { bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.3)',  label: '#4ade80', badge: 'PY2_PRINT' },
+  unused_import:     { bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)',   label: '#fb923c', badge: 'DEAD_IMPORT' },
+  unused_function:   { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_FN' },
+  unused_class:      { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'UNUSED_CLASS' },
+  unused_variable:   { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_VAR' },
+  unused_parameter:  { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'UNUSED_PARAM' },
+  unreachable_code:  { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_CODE' },
+  redundant_code:    { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'REDUNDANT' },
+  dead_branch:       { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DEAD_BRANCH' },
+  commented_code:    { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'COMMENTED' },
+  obsolete_todo:     { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.3)', label: '#a78bfa', badge: 'OBSOLETE_TODO' },
+  shadowed_variable: { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'SHADOWED' },
+  duplicate_logic:   { bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.3)', label: '#f87171', badge: 'DUPLICATE' },
+  bare_except:       { bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.3)',  label: '#fbbf24', badge: 'BARE_EXCEPT' },
+  marker:            { bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.3)',  label: '#60a5fa', badge: 'MARKER' },
+  empty_function:    { bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.3)', label: '#a78bfa', badge: 'EMPTY_FN' },
+  py2_print:         { bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.3)',  label: '#4ade80', badge: 'PY2_PRINT' },
 };
 
 const severityMap = {
-  dead_import: 'error',
+  unused_import: 'error',
   unused_function: 'error',
   unused_class: 'error',
   unused_variable: 'warning',
@@ -28,6 +31,9 @@ const severityMap = {
   redundant_code: 'warning',
   dead_branch: 'error',
   commented_code: 'info',
+  obsolete_todo: 'info',
+  shadowed_variable: 'warning',
+  duplicate_logic: 'error',
   bare_except: 'error',
   marker: 'warning',
   empty_function: 'warning',
@@ -52,17 +58,8 @@ function normalizeSummary(summary = {}) {
     severity_counts: {},
     categories: summary,
     overall_health: 'unknown',
+    health_score: undefined,
   };
-}
-
-function healthToScore(health) {
-  switch (health) {
-    case 'clean': return 100;
-    case 'good': return 82;
-    case 'needs_attention': return 55;
-    case 'poor': return 25;
-    default: return 50;
-  }
 }
 
 export default function ResultsPanel({ results, onClear }) {
@@ -122,14 +119,19 @@ export default function ResultsPanel({ results, onClear }) {
     );
   }
 
-  const score = summary?.overall_health
-    ? healthToScore(summary.overall_health)
-    : Math.max(0, Math.min(100, 100 - issues.length * 4));
-  const scoreColor = score > 80 ? '#4ade80' : score > 50 ? '#fb923c' : '#f87171';
+  const healthScore = summary?.health_score ??
+    (summary?.overall_health
+      ? ({ clean: 100, good: 82, needs_attention: 55, poor: 25 })[summary.overall_health] ?? 50
+      : Math.max(0, Math.min(100, 100 - issues.length * 4)));
+  const scoreColor = healthScore > 80 ? '#4ade80' : healthScore > 50 ? '#fb923c' : '#f87171';
 
-  const totalLines = results?.metrics?.total_lines || 0;
-  const deadLines = results?.metrics?.dead_lines_estimate || 0;
-  const deadPct = results?.metrics?.dead_code_percentage ?? (totalLines > 0 ? Math.round((deadLines / totalLines) * 100) : 0);
+  const metrics = results?.metrics || {};
+  const totalLines = metrics.total_lines || 0;
+  const deadLines = metrics.dead_lines_estimate || 0;
+  const deadPct = metrics.dead_code_percentage ?? (totalLines > 0 ? Math.round((deadLines / totalLines) * 100) : 0);
+  const complexityHint = metrics.complexity_hint || null;
+  const refactorHints = results?.refactor_hints || [];
+  const cached = results?.cached === true;
   const filename = results?.filename || 'file';
 
   const categoryPills = summary?.categories
@@ -152,6 +154,7 @@ export default function ResultsPanel({ results, onClear }) {
           <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 18, color: '#fff5eb' }}>Analysis Report</h3>
           <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
             Results for <span style={{ color: '#fb923c' }}>{filename}</span>
+            {cached && <span style={{ color: '#4ade80', marginLeft: 8, fontSize: 10 }}>(cached)</span>}
           </p>
         </div>
         <button
@@ -174,7 +177,7 @@ export default function ResultsPanel({ results, onClear }) {
           { icon: '📄', label: 'File', value: filename },
           { icon: '📏', label: 'Lines', value: totalLines.toLocaleString() || '0' },
           { icon: '🔢', label: 'Issues', value: issues.length },
-          { icon: '⚡', label: 'Health', value: `${score}%`, color: scoreColor },
+          { icon: '⚡', label: 'Health', value: `${healthScore}%`, color: scoreColor },
         ].map(s => (
           <div key={s.label} style={{
             background: 'rgba(249,115,22,0.04)',
@@ -189,6 +192,36 @@ export default function ResultsPanel({ results, onClear }) {
           </div>
         ))}
       </div>
+
+      {/* Secondary metrics row */}
+      {(metrics.code_lines != null || metrics.comment_lines != null || metrics.blank_lines != null || complexityHint) && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          {metrics.code_lines != null && (
+            <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace", background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '4px 10px' }}>
+              code: {metrics.code_lines}
+            </span>
+          )}
+          {metrics.comment_lines != null && (
+            <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace", background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '4px 10px' }}>
+              comments: {metrics.comment_lines}
+            </span>
+          )}
+          {metrics.blank_lines != null && (
+            <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace", background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '4px 10px' }}>
+              blanks: {metrics.blank_lines}
+            </span>
+          )}
+          {complexityHint && (
+            <span style={{
+              fontSize: 10, fontFamily: "'DM Mono', monospace", borderRadius: 6, padding: '4px 10px',
+              color: complexityHint === 'high' ? '#f87171' : complexityHint === 'medium' ? '#fb923c' : '#4ade80',
+              background: 'rgba(255,255,255,0.03)',
+            }}>
+              complexity: {complexityHint}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Dead code percentage bar */}
       {deadPct > 0 && (
@@ -207,11 +240,30 @@ export default function ResultsPanel({ results, onClear }) {
         </div>
       )}
 
+      {/* Refactor hints */}
+      {refactorHints.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 11, color: '#a78bfa', fontFamily: "'DM Mono', monospace", fontWeight: 600, marginBottom: 8 }}>
+            REFACTOR HINTS
+          </p>
+          {refactorHints.map((hint, i) => (
+            <div key={i} style={{
+              background: 'rgba(167,139,250,0.06)',
+              border: '1px solid rgba(167,139,250,0.15)',
+              borderRadius: 8, padding: '8px 12px', marginBottom: 6,
+              fontSize: 12, color: '#e2d8cc', fontFamily: "'DM Mono', monospace",
+            }}>
+              → {hint}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Category pills */}
       {categoryPills.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {categoryPills.map(([cat, count]) => {
-            const c = typeColors[cat] || { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: '#aaa' };
+            const c = typeColors[cat] || { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: '#aaa', badge: cat.toUpperCase() };
             return (
               <span key={cat} style={{
                 background: c.bg, border: `1px solid ${c.border}`,
@@ -297,6 +349,11 @@ export default function ResultsPanel({ results, onClear }) {
                     <span style={{ fontSize: 13, color: '#f5ede0' }}>{issue.message}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#6b7280' }}>
+                    {issue.confidence != null && (
+                      <span style={{ color: issue.confidence > 0.9 ? '#4ade80' : '#fb923c' }}>
+                        {(issue.confidence * 100).toFixed(0)}%
+                      </span>
+                    )}
                     <span>{lineStr}</span>
                     <span>{isExpanded ? '▲' : '▼'}</span>
                   </div>

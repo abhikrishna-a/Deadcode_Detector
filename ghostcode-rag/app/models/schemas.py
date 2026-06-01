@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -49,3 +49,42 @@ class DocumentListItem(BaseModel):
     language: str
     created_at: datetime
     chunk_count: int
+
+
+class RAGAnalyzeResponse(BaseModel):
+    analysis_id: str
+    filename: str
+    language: str
+    analysis: dict[str, Any]
+    cached: bool = False
+
+
+class AnalysisHistoryItem(BaseModel):
+    analysis_id: str
+    filename: str
+    language: str
+    health_score: int
+    total_issues: int
+    created_at: str
+
+
+class HistoryResponse(BaseModel):
+    items: list[AnalysisHistoryItem]
+    total: int
+
+
+class ChatQuery(BaseModel):
+    message: str
+    analysis_id: str | None = None
+
+
+class ChatSource(BaseModel):
+    chunk_text: str
+    filename: str
+    analysis_id: str
+    score: float
+
+
+class ChatReply(BaseModel):
+    answer: str
+    sources: list[ChatSource]

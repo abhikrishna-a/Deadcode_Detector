@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import OverviewTab from './tabs/OverviewTab';
 import AnalyzerTab from './tabs/AnalyzerTab';
+import ChatTab from './tabs/ChatTab';
 import SettingsTab from './tabs/SettingsTab';
 import AdminTab from './tabs/AdminTab';
 
@@ -19,6 +20,8 @@ export default function DashboardShell({ session, onLogout }) {
   const [results, setResults] = useState(null);
   const [history, setHistory] = useState([]);
   const [file, setFile] = useState(null);
+  const [chatDocumentId, setChatDocumentId] = useState(null);
+  const [chatFilename, setChatFilename] = useState(null);
 
   const user = session?.user || useAuthStore((s) => s.user);
   const visibleTabs = user?.role === 'admin' ? [...tabs, adminTab] : tabs;
@@ -36,6 +39,12 @@ export default function DashboardShell({ session, onLogout }) {
   };
 
   const handleFileChange = (f) => setFile(f);
+
+  const handleChatAboutFile = (documentId, filename) => {
+    setChatDocumentId(documentId);
+    setChatFilename(filename);
+    setActiveTab('chat');
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#080808' }}>
@@ -138,6 +147,14 @@ export default function DashboardShell({ session, onLogout }) {
               onResultsChange={handleResultsChange}
               file={file}
               onFileChange={handleFileChange}
+              onChatAboutFile={handleChatAboutFile}
+            />
+          )}
+          {activeTab === 'chat' && (
+            <ChatTab
+              key="chat"
+              initialDocumentId={chatDocumentId}
+              initialFilename={chatFilename}
             />
           )}
           {activeTab === 'profile' && (

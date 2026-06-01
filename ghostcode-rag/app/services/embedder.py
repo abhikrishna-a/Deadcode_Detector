@@ -1,24 +1,33 @@
+import os
 from typing import List
-from fastembed import TextEmbedding
+from openai import AsyncOpenAI
 
-_model = None
+_backend = os.getenv("EMBEDDING_BACKEND", "local").lower()
+_st_model = None
 BATCH_SIZE = 20
 
 
-def _get_model():
-    global _model
-    if _model is None:
-        _model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
-    return _model
+def _get_st_model():
+    global _st_model
+    if _st_model is None:
+        from fastembed import TextEmbedding
+        _st_model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+    return _st_model
 
 
 async def embed_texts(texts: List[str]) -> List[List[float]]:
-    model = _get_model()
-    all_embeddings = []
-
-    for i in range(0, len(texts), BATCH_SIZE):
-        batch = texts[i : i + BATCH_SIZE]
-        embeddings = list(model.embed(batch))
-        all_embeddings.extend([e.tolist() for e in embeddings])
-
-    return all_embeddings
+    if _backend == "openai":
+        oai_key = os.getenv("OPENAI_API_KEY", "")
+        if not oai_key:
+            raise RuntimeError("OPENAI_API_KEY not set but EMBEDDING_BACKEND=openai.")
+        client = AsyncOpenAI(api_key=oai_key)
+        resp = await client.embeddings.create(model="text-embedding-3-small", input=texts)
+        return [item.embedding for item in resp.data]
+    else:
+        model = _get_st_model()
+        all_embeddings = []
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i : i + BATCH_SIZE]
+            embeddings = list(model.embed(batch))
+            all_embeddings.extend([e.tolist() for e in embeddings])
+        return all_embeddings

@@ -35,10 +35,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(o
             detail="MFA verification required. Complete MFA login before accessing this resource.",
         )
 
-    user_id = payload.get("user_id")
+    raw_user_id = payload.get("user_id")
     role = payload.get("role", "viewer")
 
-    if user_id is None:
+    if raw_user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    try:
+        user_id = int(raw_user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user_id in token")
 
     return {"user_id": user_id, "role": role}

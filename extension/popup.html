@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px; min-height: 200px;
+      background: #080808; color: #f5ede0;
+      font-family: 'DM Mono', monospace; font-size: 13px;
+      padding: 16px;
+    }
+    h1 { font-size: 16px; color: #fb923c; margin-bottom: 12px; }
+    .status { color: #6b7280; font-size: 11px; margin-bottom: 16px; }
+    button {
+      background: linear-gradient(135deg, #ea580c, #f97316);
+      border: none; border-radius: 8px; padding: 8px 16px;
+      color: #fff; font-family: 'DM Mono', monospace; font-size: 12px;
+      cursor: pointer; width: 100%; margin-bottom: 8px;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #result { margin-top: 12px; font-size: 11px; color: #a8998a; white-space: pre-wrap; }
+    .error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>GhostCode</h1>
+  <div class="status">Dead code analyzer</div>
+  <button id="analyzeBtn">Analyze Current Page</button>
+  <div id="result"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

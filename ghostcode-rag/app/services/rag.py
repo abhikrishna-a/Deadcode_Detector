@@ -1,10 +1,15 @@
 import json
+import os
 from typing import List, AsyncGenerator
-from openai import AsyncOpenAI, APIError
+
+from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.embedder import embed_texts
 from app.services.key_manager import xai_key_manager
+from app.services.grok_client import groq_key_manager
+from app.services.storage import find_similar
 
 GPT_MODEL = "grok-2-latest"
 TOP_K = 6
@@ -14,10 +19,13 @@ def _get_chat_client() -> AsyncOpenAI:
     return xai_key_manager.get_client()
 
 
+def _get_groq_client() -> AsyncOpenAI:
+    return groq_key_manager.get_client()
+
+
 async def retrieve(document_id: str, question: str, db: AsyncSession) -> List[dict]:
     question_embeddings = await embed_texts([question])
     query_vector = question_embeddings[0]
-
     result = await db.execute(
         text("""
             SELECT content, metadata, 1 - (embedding <=> CAST(:query AS vector)) AS score
@@ -30,13 +38,20 @@ async def retrieve(document_id: str, question: str, db: AsyncSession) -> List[di
     )
     rows = result.fetchall()
     return [
-        {
-            "content": row[0],
-            "metadata": row[1],
-            "score": float(row[2]),
-        }
+        {"content": row[0], "metadata": row[1], "score": float(row[2])}
         for row in rows
     ]
+
+
+async def retrieve_similar(
+    db: AsyncSession,
+    user_id: int,
+    query: str,
+    top_k: int = 5,
+    analysis_id: str | None = None,
+) -> list[dict]:
+    query_vec = (await embed_texts([query]))[0]
+    return await find_similar(db, user_id, query_vec, top_k=top_k, document_id=analysis_id)
 
 
 def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) -> List[dict]:
@@ -46,22 +61,38 @@ def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) 
         "Answer questions about WHY specific code is dead, cite exact line numbers, and suggest fixes.\n"
         "Base your answers only on the provided code context."
     )
-
     context_parts = []
     for i, chunk in enumerate(context_chunks):
-        meta = chunk["metadata"]
+        meta = chunk.get("metadata", {})
         header = f"[Chunk {i + 1}] {meta.get('chunk_type', 'block')}"
         if meta.get("name"):
             header += f" - {meta['name']}"
         header += f" (lines {meta.get('line_start', '?')}-{meta.get('line_end', '?')})"
-        context_parts.append(f"{header}\n```\n{chunk['content']}\n```")
-
+        context_parts.append(f"{header}\n```\n{chunk.get('content', chunk.get('chunk_text', ''))}\n```")
     context = "\n\n".join(context_parts)
-
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": f"Here is the code context:\n\n{context}"},
         {"role": "assistant", "content": "Understood. I have reviewed the code context and analysis. Ask me anything about it."},
+        {"role": "user", "content": question},
+    ]
+
+
+def build_chat_context_prompt(question: str, sources: list[dict]) -> List[dict]:
+    context = "\n\n---\n\n".join(
+        f"[{s['filename']}]\n{s['chunk_text']}" for s in sources
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are GhostCode Assistant — a code quality expert. "
+                "Answer the user's question using ONLY the provided code context. "
+                "If the answer is not in the context, say so honestly. "
+                "Be concise, technical, and actionable.\n\n"
+                f"## Code Context\n{context}"
+            ),
+        },
         {"role": "user", "content": question},
     ]
 
@@ -112,3 +143,33 @@ async def stream_answer(
         for chunk in context_chunks
     ]
     yield json.dumps({"delta": "", "done": True, "sources": sources})
+
+
+async def answer_question(messages: List[dict]) -> str:
+    from openai import APIError
+
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    last_error = None
+    max_attempts = len(groq_key_manager._keys) if groq_key_manager.has_keys else 1
+
+    for attempt in range(max_attempts):
+        try:
+            client = _get_groq_client()
+            response = await client.chat.completions.create(
+                model=groq_model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=2048,
+            )
+            last_error = None
+            break
+        except (APIError, Exception) as e:
+            last_error = e
+            groq_key_manager.rotate()
+            if attempt < max_attempts - 1:
+                continue
+
+    if last_error:
+        raise RuntimeError(f"Groq API call failed after {max_attempts} key(s): {last_error}")
+
+    return response.choices[0].message.content or ""
