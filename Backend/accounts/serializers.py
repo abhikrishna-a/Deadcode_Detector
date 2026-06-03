@@ -58,13 +58,17 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         refresh = self.get_token(self.user)
         refresh["mfa_verified_for_session"] = False
 
-        send_mail(
-            subject="GhostCode — New login detected",
-            message=f"Hi {self.user.username},\n\nA new login was detected on your GhostCode account.\n\nIf this was you, you can ignore this email.\nIf this wasn't you, please change your password immediately.\n\nStay safe,\nThe GhostCode Team",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[self.user.email],
-            fail_silently=True,
-        )
+        try:
+            send_mail(
+                subject="GhostCode — New login detected",
+                message=f"Hi {self.user.username},\n\nA new login was detected on your GhostCode account.\n\nIf this was you, you can ignore this email.\nIf this wasn't you, please change your password immediately.\n\nStay safe,\nThe GhostCode Team",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[self.user.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Login email failed for {self.user.email}: {e}")
 
         return {
             "mfa_required": True,

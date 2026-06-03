@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import OverviewTab from './tabs/OverviewTab';
@@ -6,6 +6,16 @@ import AnalyzerTab from './tabs/AnalyzerTab';
 import ChatTab from './tabs/ChatTab';
 import SettingsTab from './tabs/SettingsTab';
 import AdminTab from './tabs/AdminTab';
+
+const STORAGE_KEY = 'dashboard-shell';
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
 
 const tabs = [
   { key: 'overview', label: 'Dashboard' },
@@ -16,12 +26,17 @@ const tabs = [
 const adminTab = { key: 'admin', label: 'Admin' };
 
 export default function DashboardShell({ session, onLogout }) {
-  const [activeTab, setActiveTab] = useState('overview');
-  const [results, setResults] = useState(null);
-  const [history, setHistory] = useState([]);
+  const saved = loadSaved();
+  const [activeTab, setActiveTab] = useState(saved.activeTab || 'overview');
+  const [results, setResults] = useState(saved.results || null);
+  const [history, setHistory] = useState(saved.history || []);
   const [file, setFile] = useState(null);
   const [chatDocumentId, setChatDocumentId] = useState(null);
   const [chatFilename, setChatFilename] = useState(null);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab, results, history }));
+  }, [activeTab, results, history]);
 
   const user = session?.user || useAuthStore((s) => s.user);
   const visibleTabs = user?.role === 'admin' ? [...tabs, adminTab] : tabs;
@@ -33,7 +48,10 @@ export default function DashboardShell({ session, onLogout }) {
 
   const handleResultsChange = (newResults) => {
     if (newResults) {
-      setHistory(prev => [...prev, newResults]);
+      setHistory(prev => {
+        const filtered = prev.filter(h => h.filename !== newResults.filename);
+        return [...filtered, newResults];
+      });
     }
     setResults(newResults);
   };

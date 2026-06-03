@@ -67,13 +67,17 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        send_mail(
-            subject="GhostCode — Welcome aboard",
-            message=f"Hi {user.username},\n\nYour GhostCode account has been created successfully.\n\nYou can now log in and start scanning your code for dead code.\n\nHappy coding,\nThe GhostCode Team",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        try:
+            send_mail(
+                subject="GhostCode — Welcome aboard",
+                message=f"Hi {user.username},\n\nYour GhostCode account has been created successfully.\n\nYou can now log in and start scanning your code for dead code.\n\nHappy coding,\nThe GhostCode Team",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Welcome email failed for {user.email}: {e}")
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 

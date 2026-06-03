@@ -11,6 +11,10 @@ DEAD_CODE_CATEGORIES = [
     "obsolete_todo",
     "shadowed_variable",
     "duplicate_logic",
+    "bare_except",
+    "marker",
+    "empty_function",
+    "py2_print",
 ]
 
 SYSTEM_PROMPT = """You are GhostCode Analyzer — a senior static-analysis engine \
@@ -123,6 +127,20 @@ moving to the next. Cross-reference every definition against every usage site.
                         the same name without ever reading the outer value.
 12. duplicate_logic   — Two or more distinct code blocks performing identical
                         computations or sequences of operations.
+13. bare_except       — Bare `except:` clause that catches all exceptions.
+                        Flag only bare `except:` — not `except Exception:` or
+                        other specific exception types.
+14. marker            — Deprecated or stale code markers like `# noqa`,
+                        `# pylint: disable`, `# type: ignore` that reference
+                        rules which no longer apply or are redundant after
+                        code cleanup.
+15. empty_function    — Function or method whose body is only `pass`, `...`,
+                        or a docstring. Skip abstract methods, protocol
+                        methods, and dunder methods defined solely for
+                        interface compliance.
+16. py2_print         — Python 2 style `print "..."` statement without
+                        parentheses. Only applies to Python files targeting
+                        Python 3+.
 
 ## Concrete Example (abbreviated)
 Input snippet (lines 12–15):
@@ -156,7 +174,9 @@ Expected issue entry:
       "unused_variable": <int>, "unused_parameter": <int>,
       "unreachable_code": <int>, "dead_branch": <int>, "redundant_code": <int>,
       "commented_code": <int>, "obsolete_todo": <int>,
-      "shadowed_variable": <int>, "duplicate_logic": <int>
+      "shadowed_variable": <int>, "duplicate_logic": <int>,
+      "bare_except": <int>, "marker": <int>,
+      "empty_function": <int>, "py2_print": <int>
     }},
     "overall_health": "clean|good|needs_attention|poor",
     "health_score": <int 0-100>
@@ -164,7 +184,7 @@ Expected issue entry:
   "issues": [
     {{
       "id": "DC001",
-      "category": "<one of the 12 categories>",
+      "category": "<one of the 16 categories>",
       "severity": "high|medium|low",
       "line_start": <int>,
       "line_end": <int>,

@@ -8,7 +8,7 @@ export default function OverviewTab({ history, results, onViewResult }) {
     const allIssues = history.flatMap(r => r.issues || []);
     const totalIssues = allIssues.length;
     const cleanFiles = history.filter(r => (r.issues || []).length === 0).length;
-    const totalLines = history.reduce((sum, r) => sum + (r.lines || 0), 0);
+    const totalLines = history.reduce((sum, r) => sum + (r.metrics?.total_lines || 0), 0);
     return { totalScans, totalIssues, cleanFiles, totalLines };
   }, [history]);
 
@@ -16,15 +16,16 @@ export default function OverviewTab({ history, results, onViewResult }) {
     const counts = {};
     history.forEach(r => {
       (r.issues || []).forEach(i => {
-        counts[i.type] = (counts[i.type] || 0) + 1;
+        const key = i.category || i.type;
+        counts[key] = (counts[key] || 0) + 1;
       });
     });
     return [
-      { name: 'Dead Imports', value: counts.dead_import || 0, fill: '#f97316' },
+      { name: 'Dead Imports', value: counts.unused_import || 0, fill: '#f97316' },
       { name: 'Unused Functions', value: counts.unused_function || 0, fill: '#fb923c' },
-      { name: 'Bare Excepts', value: counts.bare_except || 0, fill: '#fbbf24' },
-      { name: 'Code Markers', value: counts.marker || 0, fill: '#60a5fa' },
-      { name: 'Empty Functions', value: counts.empty_function || 0, fill: '#4ade80' },
+      { name: 'Unused Classes', value: counts.unused_class || 0, fill: '#fbbf24' },
+      { name: 'Unreachable Code', value: counts.unreachable_code || 0, fill: '#60a5fa' },
+      { name: 'Duplicate Logic', value: counts.duplicate_logic || 0, fill: '#4ade80' },
     ];
   }, [history]);
 
@@ -116,11 +117,11 @@ export default function OverviewTab({ history, results, onViewResult }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {recentScans.map((r, idx) => {
               const issueCount = (r.issues || []).length;
-              const errorCount = (r.issues || []).filter(i => severityMap[i.type] === 'error').length;
-              const warnCount = (r.issues || []).filter(i => severityMap[i.type] === 'warning').length;
+              const errorCount = (r.issues || []).filter(i => severityMap[i.category || i.type] === 'error').length;
+              const warnCount = (r.issues || []).filter(i => severityMap[i.category || i.type] === 'warning').length;
               return (
                 <motion.div
-                  key={idx}
+                  key={r.document_id || r.filename || idx}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05 }}
@@ -141,7 +142,7 @@ export default function OverviewTab({ history, results, onViewResult }) {
                       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                         <span style={{ fontSize: 11, color: issueCount > 0 ? '#f87171' : '#4ade80' }}>{issueCount} issues</span>
                         <span style={{ fontSize: 11, color: '#6b7280' }}>·</span>
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>{r.lines} lines</span>
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>{r.metrics?.total_lines || 0} lines</span>
                         {errorCount > 0 && <span style={{ fontSize: 11, color: '#f87171' }}>· {errorCount} errors</span>}
                         {warnCount > 0 && <span style={{ fontSize: 11, color: '#fbbf24' }}>· {warnCount} warnings</span>}
                       </div>
@@ -170,8 +171,18 @@ export default function OverviewTab({ history, results, onViewResult }) {
 }
 
 const severityMap = {
-  dead_import: 'error',
+  unused_import: 'error',
   unused_function: 'error',
+  unused_class: 'error',
+  unused_variable: 'warning',
+  unused_parameter: 'warning',
+  unreachable_code: 'error',
+  redundant_code: 'warning',
+  dead_branch: 'error',
+  commented_code: 'info',
+  obsolete_todo: 'info',
+  shadowed_variable: 'warning',
+  duplicate_logic: 'error',
   bare_except: 'error',
   marker: 'warning',
   empty_function: 'warning',

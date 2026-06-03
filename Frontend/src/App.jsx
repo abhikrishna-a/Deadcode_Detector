@@ -43,6 +43,7 @@ export default function App() {
 
   const handleLogout = useCallback(() => {
     useAuthStore.getState().logout();
+    localStorage.removeItem('dashboard-shell');
     setScreen('landing');
     setMfaPending(null);
   }, []);
