@@ -74,8 +74,10 @@ async def analyze_file(source: str, filename: str) -> dict:
     language = detect_language(filename)
     prompt = build_analysis_prompt(source, filename, language)
     try:
-        result = await call_groq_json(prompt=prompt, system=SYSTEM_PROMPT)
+        result, usage = await call_groq_json(prompt=prompt, system=SYSTEM_PROMPT)
     except Exception as exc:
         return _fallback(source, str(exc))
+    if usage:
+        result["_token_usage"] = usage
     _apply_defaults(result, source)
     return result

@@ -66,7 +66,7 @@ def get_gemini_client() -> AsyncOpenAI:
     return gemini_key_manager.get_client()
 
 
-async def call_groq_json(prompt: str, system: str | None = None) -> dict:
+async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, dict | None]:
     groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
@@ -102,11 +102,18 @@ async def call_groq_json(prompt: str, system: str | None = None) -> dict:
             if attempt < max_attempts - 1:
                 continue
 
+    usage = None
     if not last_error:
+        if hasattr(response, 'usage') and response.usage:
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
         raw = response.choices[0].message.content or "{}"
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
-            return json.loads(cleaned)
+            return json.loads(cleaned), usage
         except json.JSONDecodeError as exc:
             raise ValueError(f"Groq returned invalid JSON: {exc}\nRaw: {raw[:500]}")
 
@@ -120,10 +127,17 @@ async def call_groq_json(prompt: str, system: str | None = None) -> dict:
                 temperature=0.1,
                 max_tokens=8192,
             )
+            usage = None
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
             raw = response.choices[0].message.content or "{}"
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             try:
-                return json.loads(cleaned)
+                return json.loads(cleaned), usage
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Gemini returned invalid JSON: {exc}\nRaw: {raw[:500]}")
         except Exception as e:

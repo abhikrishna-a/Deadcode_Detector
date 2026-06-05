@@ -16,9 +16,11 @@ async def analyze_file(
     prompt = get_analysis_prompt(source, filename, language)
     system = get_analysis_system_prompt()
     try:
-        result = await call_groq_json(prompt=prompt, system=system)
+        result, usage = await call_groq_json(prompt=prompt, system=system)
     except Exception as exc:
         return _fallback_result(source, str(exc))
+    if usage:
+        result["_token_usage"] = usage
     _ensure_defaults(result, source)
     return result
 

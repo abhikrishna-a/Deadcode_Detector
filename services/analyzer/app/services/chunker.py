@@ -22,7 +22,7 @@ def needs_chunking(source: str, max_tokens: int = 6000) -> bool:
     return approx_tokens(source) > max_tokens
 
 
-def chunk_file(source: str, max_tokens: int = 6000, overlap_lines: int = 20):
+def chunk_file(source: str, max_tokens: int = 6000, overlap_lines: int = 10):
     """
     Split source text into overlapping line-based windows.
     

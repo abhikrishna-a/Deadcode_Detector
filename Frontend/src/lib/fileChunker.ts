@@ -1,5 +1,5 @@
 export const CHUNK_MAX_TOKENS = 6_000;
-export const CHUNK_OVERLAP_LINES = 20;
+export const CHUNK_OVERLAP_LINES = 10;
 
 export function approxTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
