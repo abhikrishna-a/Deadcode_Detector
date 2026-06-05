@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db, IS_SQLITE
 from app.auth import get_current_user
-from app.services.chunker import chunk_code, chunk_issues, detect_language as _detect_language_direct
+from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
 from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.storage import store_analysis, get_history, get_document, delete_document, check_hash
@@ -361,7 +361,7 @@ async def analyzer_analyze(
     """
     _validate_analyzer_file(file)
     source = await _read_analyzer_file(file)
-    language = _detect_language_direct(file.filename)
+    language = detect_language(file.filename)
     analysis = await _analyze_file_direct(source, file.filename)
     return {"filename": file.filename, "language": language, "analysis": analysis}
 

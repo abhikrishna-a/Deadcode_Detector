@@ -8,6 +8,7 @@ import SettingsTab from './tabs/SettingsTab';
 import AdminTab from './tabs/AdminTab';
 
 const STORAGE_KEY = 'dashboard-shell';
+const FILE_STORAGE_KEY = 'dashboard-file';
 
 function loadSaved() {
   try {
@@ -15,6 +16,14 @@ function loadSaved() {
     if (raw) return JSON.parse(raw);
   } catch {}
   return {};
+}
+
+function loadFileInfo() {
+  try {
+    const raw = localStorage.getItem(FILE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
 }
 
 const tabs = [
@@ -27,10 +36,16 @@ const adminTab = { key: 'admin', label: 'Admin' };
 
 export default function DashboardShell({ session, onLogout }) {
   const saved = loadSaved();
+  const savedFileInfo = loadFileInfo();
   const [activeTab, setActiveTab] = useState(saved.activeTab || 'overview');
   const [results, setResults] = useState(saved.results || null);
   const [history, setHistory] = useState(saved.history || []);
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(() => {
+    if (savedFileInfo) {
+      return new File([savedFileInfo.content], savedFileInfo.name, { type: 'text/plain' });
+    }
+    return null;
+  });
   const [chatDocumentId, setChatDocumentId] = useState(null);
   const [chatFilename, setChatFilename] = useState(null);
 
@@ -71,7 +86,19 @@ export default function DashboardShell({ session, onLogout }) {
     setResults(newResults);
   };
 
-  const handleFileChange = (f) => setFile(f);
+  const handleFileChange = (f) => {
+    setFile(f);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result || '';
+        localStorage.setItem(FILE_STORAGE_KEY, JSON.stringify({ name: f.name, content }));
+      };
+      reader.readAsText(f);
+    } else {
+      localStorage.removeItem(FILE_STORAGE_KEY);
+    }
+  };
 
   const handleChatAboutFile = (documentId, filename) => {
     setChatDocumentId(documentId);
