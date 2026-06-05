@@ -6,6 +6,7 @@ import { analyzeFiles, splitIntoBatches } from '../../../lib/batchAnalyzer';
 import ResultsPanel from '../ResultsPanel';
 import Btn from '../../ui/Btn';
 import Input from '../../ui/Input';
+import Modal from '../../ui/Modal';
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -54,12 +55,14 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
   // Batch state
   const [batchProgress, setBatchProgress] = useState(null);
   const [batchMode, setBatchMode] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerRef = useRef(null);
 
   // Git state
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('main');
-  const [gitToken, setGitToken] = useState('');
+
   const [gitLoading, setGitLoading] = useState(false);
   const [gitManifest, setGitManifest] = useState(null);
   const [gitSelectedPaths, setGitSelectedPaths] = useState([]);
@@ -135,6 +138,28 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
     }, 1000);
     return () => clearInterval(interval);
   }, [gitSessionId]);
+
+  // Live elapsed timer for batch analysis
+  useEffect(() => {
+    const isActive = batchMode && batchProgress && (batchProgress.completed + batchProgress.failed < batchProgress.total);
+    if (isActive) {
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [batchMode, batchProgress?.completed, batchProgress?.failed, batchProgress?.total]);
 
   const handleEditorDidMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -306,7 +331,6 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
     const progress = await analyzeFiles(
       files,
       {
-        analyzerBase: import.meta.env.VITE_ANALYZER_URL || 'http://localhost:8002',
         ragBase: import.meta.env.VITE_RAG_URL || import.meta.env.VITE_RAG_API_URL || '/rag',
         token,
         signal: abortRef.current?.signal,
@@ -429,7 +453,7 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
     setGitSessionId(null);
     setGitExpired(false);
     try {
-      const manifest = await analysisAPI.gitClone(gitUrl, gitBranch, gitToken || undefined);
+      const manifest = await analysisAPI.gitClone(gitUrl, gitBranch);
       setGitManifest(manifest);
       setGitSessionId(manifest.session_id);
       setGitSelectedPaths(manifest.files.map(f => f.path));
@@ -481,7 +505,6 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
       const progress = await analyzeFiles(
         allFiles,
         {
-          analyzerBase: import.meta.env.VITE_ANALYZER_URL || 'http://localhost:8002',
           ragBase: import.meta.env.VITE_RAG_URL || import.meta.env.VITE_RAG_API_URL || '/rag',
           token,
           signal: abortRef.current?.signal,
@@ -512,6 +535,7 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
       }
     } finally {
       setLoading(false);
+      setGitPanelOpen(false);
     }
   };
 
@@ -634,150 +658,128 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
               <Btn variant="ghost" onClick={handleFolderPicker} style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}>
                 📁 Upload folder
               </Btn>
-              <Btn variant="ghost" onClick={() => setGitPanelOpen(v => !v)} style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}>
-                Git import
+              <Btn variant="ghost" onClick={() => setGitPanelOpen(true)} style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}>
+                Import from GitHub
               </Btn>
             </div>
           )}
 
-          {/* Git import panel */}
-          <AnimatePresence>
-            {gitPanelOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                style={{ ...sectionStyle, overflow: 'hidden' }}
-              >
-                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <p style={{ fontSize: 11, color: '#fb923c', fontFamily: "'DM Mono', monospace", fontWeight: 600, letterSpacing: 0.5 }}>
-                    IMPORT FROM GIT
-                  </p>
-
-                  {!gitManifest ? (
-                    <>
-                      <Input
-                        label="Repo URL"
-                        value={gitUrl}
-                        onChange={e => setGitUrl(e.target.value)}
-                        placeholder="https://github.com/user/repo"
-                      />
-                      <Input
-                        label="Branch"
-                        value={gitBranch}
-                        onChange={e => setGitBranch(e.target.value)}
-                        placeholder="main"
-                      />
-                      <Input
-                        label="Private repo token (optional)"
-                        value={gitToken}
-                        onChange={e => setGitToken(e.target.value)}
-                        type="password"
-                        placeholder="ghp_xxx"
-                      />
-                      <Btn variant="solid" onClick={handleGitClone} disabled={gitLoading || !gitUrl} style={{ width: '100%' }}>
-                        {gitLoading ? 'Cloning…' : 'Clone & inspect'}
-                      </Btn>
-                    </>
+          {/* Git import modal */}
+          <Modal open={gitPanelOpen} onClose={() => setGitPanelOpen(false)} title="IMPORT FROM GITHUB" width={560}>
+            {!gitManifest ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <Input
+                  label="Repo URL"
+                  value={gitUrl}
+                  onChange={e => setGitUrl(e.target.value)}
+                  placeholder="https://github.com/user/repo"
+                />
+                <Input
+                  label="Branch"
+                  value={gitBranch}
+                  onChange={e => setGitBranch(e.target.value)}
+                  placeholder="main"
+                />
+                <Btn variant="solid" onClick={handleGitClone} disabled={gitLoading || !gitUrl} style={{ width: '100%' }}>
+                  {gitLoading ? 'Cloning…' : 'Clone & inspect'}
+                </Btn>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 11, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+                  <p>{gitManifest.repo_name} · {gitManifest.branch}</p>
+                  <p>{gitManifest.total_files} files · {(gitManifest.total_bytes / 1024).toFixed(1)} KB</p>
+                  {gitExpired ? (
+                    <p style={{ color: '#f87171', marginTop: 4 }}>Session expired — close and re-import.</p>
                   ) : (
-                    <>
-                      <div style={{ fontSize: 11, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
-                        <p>{gitManifest.repo_name} · {gitManifest.branch}</p>
-                        <p>{gitManifest.total_files} files · {(gitManifest.total_bytes / 1024).toFixed(1)} KB</p>
-                        {gitExpired ? (
-                          <p style={{ color: '#f87171', marginTop: 4 }}>Session expired — re-import the repository.</p>
-                        ) : (
-                          <p style={{ color: '#fb923c', marginTop: 4 }}>Session expires in {Math.floor(gitCountdown / 60)}:{String(gitCountdown % 60).padStart(2, '0')}</p>
-                        )}
-                      </div>
-
-                      {/* Language breakdown */}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {Object.entries(
-                          gitManifest.files.reduce((acc, f) => {
-                            acc[f.language] = (acc[f.language] || 0) + 1;
-                            return acc;
-                          }, {})
-                        ).map(([lang, count]) => (
-                          <span key={lang} style={{
-                            fontSize: 10, color: extColor(lang),
-                            background: `${extColor(lang)}11`,
-                            borderRadius: 6, padding: '2px 8px',
-                            fontFamily: "'DM Mono', monospace",
-                          }}>
-                            {lang} ×{count}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* File list grouped by directory */}
-                      <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <button onClick={handleDeselectLarge} style={{
-                            background: 'none', border: 'none', color: '#6b7280', fontSize: 10,
-                            cursor: 'pointer', fontFamily: "'DM Mono', monospace",
-                          }}>
-                            Deselect &gt; 100 KB
-                          </button>
-                          <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
-                            {gitSelectedPaths.length} selected
-                          </span>
-                        </div>
-                        {Object.entries(groupedFiles).map(([dir, files]) => (
-                          <div key={dir}>
-                            <p style={{ fontSize: 10, color: '#fb923c', fontFamily: "'DM Mono', monospace", fontWeight: 600, margin: '4px 0 2px' }}>
-                              {dir}/
-                            </p>
-                            {files.map(f => (
-                              <label key={f.path} style={{
-                                display: 'flex', alignItems: 'center', gap: 6,
-                                padding: '2px 4px', cursor: 'pointer', fontSize: 10,
-                                color: '#6b7280', fontFamily: "'DM Mono', monospace",
-                              }}>
-                                <input
-                                  type="checkbox"
-                                  checked={gitSelectedPaths.includes(f.path)}
-                                  onChange={() => handleToggleGitPath(f.path)}
-                                  style={{ accentColor: '#f97316' }}
-                                />
-                                <span style={{
-                                  width: 6, height: 6, borderRadius: '50%',
-                                  background: extColor(f.language), flexShrink: 0,
-                                }} />
-                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {f.path.split('/').slice(1).join('/') || f.path.split('/')[0]}
-                                </span>
-                                <span style={{ color: '#4a4038', flexShrink: 0 }}>
-                                  {(f.size_bytes / 1024).toFixed(1)} KB
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-
-                      {!gitExpired && (
-                        <Btn
-                          variant="solid"
-                          onClick={handleGitAnalyzeSelected}
-                          disabled={gitSelectedPaths.length === 0 || loading}
-                          style={{ width: '100%' }}
-                        >
-                          Analyze selected ({gitSelectedPaths.length})
-                        </Btn>
-                      )}
-
-                      {gitExpired && (
-                        <Btn variant="ghost" onClick={() => { setGitManifest(null); setGitSessionId(null); }} style={{ width: '100%' }}>
-                          Re-import repository
-                        </Btn>
-                      )}
-                    </>
+                    <p style={{ color: '#fb923c', marginTop: 4 }}>Session expires in {Math.floor(gitCountdown / 60)}:{String(gitCountdown % 60).padStart(2, '0')}</p>
                   )}
                 </div>
-              </motion.div>
+
+                {/* Language breakdown */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {Object.entries(
+                    gitManifest.files.reduce((acc, f) => {
+                      acc[f.language] = (acc[f.language] || 0) + 1;
+                      return acc;
+                    }, {})
+                  ).map(([lang, count]) => (
+                    <span key={lang} style={{
+                      fontSize: 10, color: extColor(lang),
+                      background: `${extColor(lang)}11`,
+                      borderRadius: 6, padding: '2px 8px',
+                      fontFamily: "'DM Mono', monospace",
+                    }}>
+                      {lang} ×{count}
+                    </span>
+                  ))}
+                </div>
+
+                {/* File list grouped by directory */}
+                <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <button onClick={handleDeselectLarge} style={{
+                      background: 'none', border: 'none', color: '#6b7280', fontSize: 10,
+                      cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                    }}>
+                      Deselect &gt; 100 KB
+                    </button>
+                    <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+                      {gitSelectedPaths.length} selected
+                    </span>
+                  </div>
+                  {Object.entries(groupedFiles).map(([dir, files]) => (
+                    <div key={dir}>
+                      <p style={{ fontSize: 10, color: '#fb923c', fontFamily: "'DM Mono', monospace", fontWeight: 600, margin: '4px 0 2px' }}>
+                        {dir}/
+                      </p>
+                      {files.map(f => (
+                        <label key={f.path} style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '2px 4px', cursor: 'pointer', fontSize: 10,
+                          color: '#6b7280', fontFamily: "'DM Mono', monospace",
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={gitSelectedPaths.includes(f.path)}
+                            onChange={() => handleToggleGitPath(f.path)}
+                            style={{ accentColor: '#f97316' }}
+                          />
+                          <span style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: extColor(f.language), flexShrink: 0,
+                          }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {f.path.split('/').slice(1).join('/') || f.path.split('/')[0]}
+                          </span>
+                          <span style={{ color: '#4a4038', flexShrink: 0 }}>
+                            {(f.size_bytes / 1024).toFixed(1)} KB
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {!gitExpired && (
+                  <Btn
+                    variant="solid"
+                    onClick={handleGitAnalyzeSelected}
+                    disabled={gitSelectedPaths.length === 0 || loading}
+                    style={{ width: '100%' }}
+                  >
+                    Analyze selected ({gitSelectedPaths.length})
+                  </Btn>
+                )}
+
+                {gitExpired && (
+                  <Btn variant="ghost" onClick={() => { setGitManifest(null); setGitSessionId(null); }} style={{ width: '100%' }}>
+                    Re-import repository
+                  </Btn>
+                )}
+              </div>
             )}
-          </AnimatePresence>
+          </Modal>
 
           <div style={{ ...sectionStyle, padding: 20 }}>
             <p style={{ fontSize: 11, color: '#fb923c', fontFamily: "'DM Mono', monospace", fontWeight: 600, marginBottom: 14, letterSpacing: 0.5 }}>
@@ -800,11 +802,12 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
             {/* Batch progress view */}
             {batchProgress && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: '#f5ede0', fontFamily: "'DM Mono', monospace" }}>
-                    {batchProgress.completed + batchProgress.failed} / {batchProgress.total} files
-                  </span>
-                  {batchInProgress && (
+                {/* Live timer */}
+                {batchInProgress && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: '#fb923c', fontFamily: "'DM Mono', monospace" }}>
+                      Analyzing... {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:{String(elapsedSeconds % 60).padStart(2, '0')}
+                    </span>
                     <button onClick={handleCancelBatch} style={{
                       background: 'none', border: '1px solid rgba(248,113,113,0.3)',
                       color: '#f87171', borderRadius: 6, padding: '2px 8px', fontSize: 10,
@@ -812,24 +815,46 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
                     }}>
                       Cancel
                     </button>
-                  )}
+                  </div>
+                )}
+
+                {/* Completed status */}
+                {!batchInProgress && batchProgress.total > 0 && (
+                  <div style={{ fontSize: 11, color: '#4ade80', fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
+                    Completed in {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
+                  </div>
+                )}
+
+                {/* Scanning file X of Y */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: batchInProgress ? '#fb923c' : '#f5ede0', fontFamily: "'DM Mono', monospace" }}>
+                    {batchInProgress
+                      ? `Scanning file ${batchProgress.completed + batchProgress.failed + 1} of ${batchProgress.total}`
+                      : `${batchProgress.completed + batchProgress.failed} / ${batchProgress.total} files`
+                    }
+                  </span>
+                  <span style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+                    {batchProgress.completed} done · {batchProgress.failed} failed
+                  </span>
                 </div>
 
                 {/* Overall progress bar */}
-                <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
                   <div style={{
                     width: `${batchProgress.total > 0 ? ((batchProgress.completed + batchProgress.failed) / batchProgress.total * 100) : 0}%`,
                     height: '100%',
                     background: 'linear-gradient(90deg, #ea580c, #f97316)',
-                    borderRadius: 3,
+                    borderRadius: 4,
                     transition: 'width 0.3s',
                   }} />
                 </div>
 
-                {/* Batch indicator */}
-                <p style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
-                  Batch {batchProgress.currentBatch} / {batchProgress.totalBatches}
-                </p>
+                {/* Batch indicator (hidden in SSE mode) */}
+                {batchProgress.currentBatch > 0 && (
+                  <p style={{ fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
+                    Batch {batchProgress.currentBatch} / {batchProgress.totalBatches}
+                  </p>
+                )}
 
                 {/* File rows */}
                 <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>

@@ -9,6 +9,11 @@ export default defineConfig({
         target: 'http://localhost:8004',
         changeOrigin: true,
       },
+      '/api/analyzer': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/analyzer/, '/analyzer'),
+      },
     },
   },
 })

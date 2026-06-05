@@ -1,31 +1,151 @@
+import asyncio
 from app.services.grok_client import call_groq_json
 from app.services.prompts import get_analysis_prompt, get_analysis_system_prompt
+from app.services.chunker import detect_language
 
-_DEAD_CODE_CATEGORIES = [
+DEAD_CODE_CATEGORIES = [
     "unused_import", "unused_function", "unused_class", "unused_variable",
     "unused_parameter", "unreachable_code", "dead_branch", "redundant_code",
     "commented_code", "obsolete_todo", "shadowed_variable", "duplicate_logic",
+    "bare_except", "marker", "empty_function", "py2_print",
 ]
 
+MAX_TOKENS = 6000
+OVERLAP_LINES = 10
 
-async def analyze_file(
-    source: str,
-    filename: str,
-    language: str,
-) -> dict:
-    prompt = get_analysis_prompt(source, filename, language)
-    system = get_analysis_system_prompt()
-    try:
-        result, usage = await call_groq_json(prompt=prompt, system=system)
-    except Exception as exc:
-        return _fallback_result(source, str(exc))
-    if usage:
-        result["_token_usage"] = usage
-    _ensure_defaults(result, source)
+
+def _approx_tokens(text: str) -> int:
+    return len(text) // 3
+
+
+def _needs_chunking(source: str) -> bool:
+    return _approx_tokens(source) > MAX_TOKENS
+
+
+def _chunk_file(source: str):
+    lines = source.split("\n")
+    chunks = []
+    start = 0
+    while start < len(lines):
+        end = start
+        token_count = 0
+        while end < len(lines):
+            line_tokens = _approx_tokens(lines[end])
+            if token_count + line_tokens > MAX_TOKENS and end > start:
+                break
+            token_count += line_tokens
+            end += 1
+        if end == start:
+            end = start + 1
+        chunks.append({
+            "content": "\n".join(lines[start:end]),
+            "index": len(chunks),
+            "line_start": start + 1,
+            "line_end": end,
+        })
+        start = max(start + 1, end - OVERLAP_LINES)
+    total = len(chunks)
+    for c in chunks:
+        c["total"] = total
+    return chunks
+
+
+def _merge_chunk_results(chunk_results: list, source: str) -> dict:
+    if not chunk_results:
+        return {}
+    if len(chunk_results) == 1:
+        return chunk_results[0][0]
+
+    all_issues = []
+    seen_keys: set = set()
+    for analysis, chunk in chunk_results:
+        for issue in analysis.get("issues", []):
+            key = f"{issue.get('category','')}:{issue.get('line_start',0)}:{issue.get('name','')}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                issue_copy = issue.copy()
+                issue_copy["line_start"] += chunk["line_start"] - 1
+                issue_copy["line_end"] += chunk["line_start"] - 1
+                all_issues.append(issue_copy)
+
+    all_issues.sort(key=lambda x: x.get("line_start", 0))
+    for i, issue in enumerate(all_issues):
+        issue["id"] = f"DC{i+1:03d}"
+
+    severity_counts = {"high": 0, "medium": 0, "low": 0}
+    categories: dict = {}
+    for issue in all_issues:
+        sev = issue.get("severity", "low")
+        if sev in severity_counts:
+            severity_counts[sev] += 1
+        cat = issue.get("category", "unknown")
+        categories[cat] = categories.get(cat, 0) + 1
+
+    total_lines = len(source.split("\n"))
+    last_analysis = chunk_results[-1][0]
+    metrics = last_analysis.get("metrics", {}).copy()
+    metrics["total_lines"] = total_lines
+
+    dead_lines_raw = sum(
+        c[0].get("metrics", {}).get("dead_lines_estimate", 0) for c in chunk_results
+    )
+    dead_lines = min(dead_lines_raw, int(total_lines * 0.8))
+    metrics["dead_lines_estimate"] = dead_lines
+    metrics["dead_code_percentage"] = (
+        round((dead_lines / total_lines) * 100, 1) if total_lines > 0 else 0
+    )
+
+    health_scores = [
+        c[0].get("summary", {}).get("health_score", 0)
+        for c in chunk_results
+        if c[0].get("summary", {}).get("health_score") is not None
+    ]
+    avg_health = round(sum(health_scores) / len(health_scores)) if health_scores else 0
+    if avg_health >= 90:
+        overall = "clean"
+    elif avg_health >= 70:
+        overall = "good"
+    elif avg_health >= 40:
+        overall = "needs_attention"
+    else:
+        overall = "poor"
+
+    hints_seen: set = set()
+    refactor_hints = []
+    for analysis, _ in chunk_results:
+        for hint in analysis.get("refactor_hints", []):
+            key = hint[:40]
+            if key not in hints_seen:
+                hints_seen.add(key)
+                refactor_hints.append(hint)
+
+    result = {
+        "summary": {
+            "total_issues": len(all_issues),
+            "severity_counts": severity_counts,
+            "categories": categories,
+            "overall_health": overall,
+            "health_score": avg_health,
+        },
+        "issues": all_issues,
+        "metrics": metrics,
+        "refactor_hints": refactor_hints,
+    }
+
+    total_tok = sum(
+        c[0].get("_token_usage", {}).get("total_tokens", 0) for c in chunk_results
+    )
+    if total_tok:
+        result["_token_usage"] = {
+            "prompt_tokens": sum(
+                c[0].get("_token_usage", {}).get("prompt_tokens", 0) for c in chunk_results
+            ),
+            "completion_tokens": sum(
+                c[0].get("_token_usage", {}).get("completion_tokens", 0) for c in chunk_results
+            ),
+            "total_tokens": total_tok,
+        }
     return result
-
-
-analyze_code_with_grok = analyze_file
 
 
 def _fallback_result(source: str, error: str) -> dict:
@@ -34,15 +154,15 @@ def _fallback_result(source: str, error: str) -> dict:
         "summary": {
             "total_issues": 0,
             "severity_counts": {"high": 0, "medium": 0, "low": 0},
-            "categories": {c: 0 for c in _DEAD_CODE_CATEGORIES},
+            "categories": {c: 0 for c in DEAD_CODE_CATEGORIES},
             "overall_health": "error",
             "health_score": 0,
         },
         "issues": [],
         "metrics": {
             "total_lines": lines, "code_lines": 0, "comment_lines": 0,
-            "blank_lines": 0, "dead_lines_estimate": 0, "dead_code_percentage": 0.0,
-            "complexity_hint": "unknown",
+            "blank_lines": 0, "dead_lines_estimate": 0,
+            "dead_code_percentage": 0.0, "complexity_hint": "unknown",
         },
         "refactor_hints": [],
         "_error": error,
@@ -52,14 +172,58 @@ def _fallback_result(source: str, error: str) -> dict:
 def _ensure_defaults(result: dict, source: str):
     lines = source.count("\n") + 1
     result.setdefault("summary", {
-        "total_issues": 0, "severity_counts": {"high": 0, "medium": 0, "low": 0},
-        "categories": {c: 0 for c in _DEAD_CODE_CATEGORIES},
-        "overall_health": "unknown", "health_score": 0,
+        "total_issues": 0,
+        "severity_counts": {"high": 0, "medium": 0, "low": 0},
+        "categories": {c: 0 for c in DEAD_CODE_CATEGORIES},
+        "overall_health": "clean",
+        "health_score": 100,
     })
     result.setdefault("issues", [])
     result.setdefault("metrics", {
         "total_lines": lines, "code_lines": 0, "comment_lines": 0,
-        "blank_lines": 0, "dead_lines_estimate": 0, "dead_code_percentage": 0.0,
-        "complexity_hint": "unknown",
+        "blank_lines": 0, "dead_lines_estimate": 0,
+        "dead_code_percentage": 0.0, "complexity_hint": "low",
     })
     result.setdefault("refactor_hints", [])
+
+
+async def _analyze_single_chunk(content: str, filename: str) -> dict:
+    language = detect_language(filename)
+    prompt = get_analysis_prompt(content, filename, language)
+    system = get_analysis_system_prompt()
+    try:
+        result, usage = await call_groq_json(prompt=prompt, system=system)
+    except Exception as exc:
+        return _fallback_result(content, str(exc))
+    if usage:
+        result["_token_usage"] = usage
+    _ensure_defaults(result, content)
+    return result
+
+
+async def analyze_file(source: str, filename: str) -> dict:
+    """
+    Analyze a source file. If it exceeds the token limit, splits into
+    overlapping chunks and analyzes ALL chunks in parallel via asyncio.gather.
+    """
+    if not _needs_chunking(source):
+        return await _analyze_single_chunk(source, filename)
+
+    chunks = _chunk_file(source)
+
+    # ── PARALLEL: all chunks sent to LLM at the same time ──
+    tasks = [
+        _analyze_single_chunk(
+            f"[GhostCode chunk {c['index']+1}/{c['total']} "
+            f"lines {c['line_start']}-{c['line_end']}]\n{c['content']}",
+            filename,
+        )
+        for c in chunks
+    ]
+    chunk_analyses = await asyncio.gather(*tasks)
+    chunk_results = list(zip(chunk_analyses, chunks))
+    return _merge_chunk_results(chunk_results, source)
+
+
+# Backwards-compatible alias (used by rag/routers/analysis.py)
+analyze_code_with_grok = analyze_file

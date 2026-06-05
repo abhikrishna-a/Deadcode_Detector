@@ -1,7 +1,4 @@
 import { splitIntoBatches } from './batchUtils';
-import { needsChunking, chunkFile } from './fileChunker';
-import type { ChunkMeta } from './fileChunker';
-import { mergeChunkResults } from './chunkMerger';
 
 export { splitIntoBatches };
 
@@ -33,13 +30,11 @@ export interface BatchProgress {
   results: FileResult[];
   errors: FileError[];
   currentFile?: string;
-  chunkProgress?: { current: number; total: number };
 }
 
 export type ProgressCallback = (p: BatchProgress) => void;
 
 export interface AnalyzeOptions {
-  analyzerBase: string;
   ragBase: string;
   token: string;
   signal?: AbortSignal;
@@ -69,7 +64,7 @@ export async function analyzeOneFile(
   onProgress: ProgressCallback,
   accumulated: BatchProgress,
 ): Promise<FileResult> {
-  const { analyzerBase, ragBase, token, signal } = options;
+  const { ragBase, token, signal } = options;
   const filename = entry.path.split('/').pop() ?? entry.path;
 
   if (signal?.aborted) throw new AbortError();
@@ -77,106 +72,6 @@ export async function analyzeOneFile(
   accumulated.currentFile = entry.path;
   onProgress({ ...accumulated });
 
-  const totalLines = entry.content.split('\n').length;
-
-  if (needsChunking(entry.content)) {
-    const chunks = chunkFile(entry.content);
-    const chunkResults: Array<{ analysis: any; chunk: ChunkMeta }> = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      if (signal?.aborted) throw new AbortError();
-
-      const chunk = chunks[i];
-      accumulated.chunkProgress = { current: i + 1, total: chunks.length };
-      onProgress({ ...accumulated });
-
-      const header = `# [GhostCode chunk ${chunk.chunkIndex + 1}/${chunk.totalChunks} lines ${chunk.lineStart}-${chunk.lineEnd} of ${filename}]\n`;
-      const chunkContent = header + chunk.content;
-      const chunkBlob = new Blob([chunkContent], { type: 'text/plain' });
-      const chunkFileObj = new File([chunkBlob], `chunk_${filename}`, { type: 'text/plain' });
-
-      const fd = new FormData();
-      fd.append('file', chunkFileObj);
-
-      let data: any = null;
-      let lastErr: Error | null = null;
-
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (signal?.aborted) throw new AbortError();
-        try {
-          const res = await fetch(`${analyzerBase}/analyzer/analyze`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-            body: fd,
-          });
-
-          if (res.status === 429) {
-            const wait = Math.min(2 ** attempt * 1000, 30000);
-            await new Promise(r => setTimeout(r, wait));
-            continue;
-          }
-
-          if (res.status === 503) {
-            throw new Error('Analyzer unavailable — file skipped.');
-          }
-
-          if (!res.ok) {
-            const detail = await readErrorDetail(res, `Chunk analysis failed (HTTP ${res.status})`);
-            throw new Error(detail);
-          }
-
-          data = await res.json();
-          break;
-        } catch (err: any) {
-          lastErr = err;
-          if (err.message?.includes('Analyzer unavailable')) break;
-          if (attempt < 2) {
-            const wait = Math.min(2 ** attempt * 1000, 30000);
-            await new Promise(r => setTimeout(r, wait));
-          }
-        }
-      }
-
-      if (!data) {
-        accumulated.chunkProgress = undefined;
-        accumulated.currentFile = undefined;
-        const msg = lastErr?.message || `Analysis failed after 3 retries`;
-        accumulated.errors.push({ path: entry.path, error: msg });
-        accumulated.failed++;
-        onProgress({ ...accumulated });
-        return { path: entry.path, filename, document_id: null, analysis: null };
-      }
-
-      chunkResults.push({ analysis: data.analysis ?? data, chunk });
-    }
-
-    accumulated.chunkProgress = undefined;
-    const merged = mergeChunkResults(chunkResults, totalLines);
-
-    let document_id: string | null = null;
-    try {
-      const ragFd = new FormData();
-      ragFd.append('file', new File([entry.content], filename, { type: 'text/plain' }));
-      ragFd.append('analysis_json', JSON.stringify(merged));
-      const ragRes = await fetch(`${ragBase}/analyze`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: ragFd,
-      });
-      if (ragRes.ok) {
-        document_id = (await ragRes.json()).document_id ?? null;
-      }
-    } catch { /* best-effort */ }
-
-    const fileResult: FileResult = { path: entry.path, filename, document_id, analysis: merged };
-    accumulated.results.push(fileResult);
-    accumulated.completed++;
-    accumulated.currentFile = undefined;
-    onProgress({ ...accumulated });
-    return fileResult;
-  }
-
-  // Single file, no chunking needed
   const fd = new FormData();
   fd.append('file', new File([entry.content], filename, { type: 'text/plain' }));
 
@@ -186,7 +81,7 @@ export async function analyzeOneFile(
   for (let attempt = 0; attempt < 3; attempt++) {
     if (signal?.aborted) throw new AbortError();
     try {
-      const res = await fetch(`${analyzerBase}/analyzer/analyze`, {
+      const res = await fetch(`${ragBase}/analyze`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -207,7 +102,7 @@ export async function analyzeOneFile(
           const detail = await readErrorDetail(res, '');
           if (detail.toLowerCase().includes('too large') || detail.toLowerCase().includes('size')) {
             const mb = (entry.size_bytes / (1024 * 1024)).toFixed(1);
-            throw new Error(`File too large (${mb} MB) — analyzer limit is 500 KB. Skipped.`);
+            throw new Error(`File too large (${mb} MB) — limit is 10 MB. Skipped.`);
           }
         }
         const detail = await readErrorDetail(res, `Analysis failed (HTTP ${res.status})`);
@@ -235,26 +130,12 @@ export async function analyzeOneFile(
     return { path: entry.path, filename, document_id: null, analysis: null };
   }
 
-  let document_id: string | null = null;
-  try {
-    const ragFd = new FormData();
-    ragFd.append('file', new File([entry.content], filename, { type: 'text/plain' }));
-    ragFd.append('analysis_json', JSON.stringify(data.analysis ?? data));
-    const ragRes = await fetch(`${ragBase}/analyze`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: ragFd,
-    });
-    if (ragRes.ok) {
-      document_id = (await ragRes.json()).document_id ?? null;
-    }
-  } catch { /* best-effort */ }
-
   const fileResult: FileResult = {
     path: entry.path,
     filename,
-    document_id,
+    document_id: data.document_id ?? null,
     analysis: data.analysis ?? data,
+    cached: data.cached ?? false,
   };
   accumulated.results.push(fileResult);
   accumulated.completed++;
@@ -289,14 +170,25 @@ export async function analyzeFiles(
 
     const batch = batches[b];
 
-    for (const entry of batch) {
+    // Process files within each batch concurrently (limit 10)
+    const concurrencyLimit = 10;
+    const slices: FileEntry[][] = [];
+    for (let i = 0; i < batch.length; i += concurrencyLimit) {
+      slices.push(batch.slice(i, i + concurrencyLimit));
+    }
+
+    for (const slice of slices) {
       if (signal?.aborted) break;
-      await analyzeOneFile(entry, options, onProgress, accumulated);
+      await Promise.all(
+        slice.map(entry => {
+          if (signal?.aborted) return Promise.resolve();
+          return analyzeOneFile(entry, options, onProgress, accumulated);
+        }),
+      );
     }
   }
 
   accumulated.currentFile = undefined;
-  accumulated.chunkProgress = undefined;
   onProgress({ ...accumulated });
   return accumulated;
 }

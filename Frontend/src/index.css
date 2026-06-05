@@ -112,6 +112,10 @@ body {
   opacity: 1 !important;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 :root {
   color-scheme: dark;
 }

@@ -10,7 +10,6 @@ import type {
 } from './types';
 
 const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/rag';
-const ANALYZER_BASE = import.meta.env.VITE_ANALYZER_URL || 'http://localhost:8002';
 
 async function getAuthToken(): Promise<string> {
   const raw = localStorage.getItem('auth-storage');
@@ -75,6 +74,65 @@ export const analysisAPI = {
     await apiClient.delete(`/api/analysis/${analysisId}/`);
   },
 
+  // Unified analysis: sends file to RAG service which runs Groq analysis + stores in vector DB
+  analyzeFile: async (file: File): Promise<{
+    filename: string;
+    document_id: string;
+    chunk_count: number;
+    analysis: {
+      summary: {
+        total_issues: number;
+        severity_counts: Record<string, number>;
+        categories: Record<string, number>;
+        overall_health: string;
+        health_score?: number;
+      };
+      issues: Array<{
+        id: string; category: string; severity: string;
+        line_start: number; line_end: number; name: string | null;
+        description: string; code_snippet: string; suggestion: string;
+        safe_to_remove: boolean; confidence?: number;
+      }>;
+      metrics: {
+        total_lines: number; code_lines?: number; comment_lines?: number;
+        blank_lines?: number; dead_lines_estimate: number;
+        dead_code_percentage: number; complexity_hint?: string;
+      };
+      refactor_hints?: string[];
+    };
+    auto_analyzed: boolean;
+    cached?: boolean;
+  }> => {
+    const token = await getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${RAG_BASE}/analyze`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (response.status === 401) {
+      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before analyzing files.');
+    }
+    if (response.status === 403) {
+      throw new Error('MFA verification is required before using the analyzer.');
+    }
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Analysis failed (HTTP ${response.status})`);
+      console.error('Analysis failed:', { status: response.status, detail });
+      throw new Error(detail);
+    }
+    const result = await response.json();
+    return {
+      filename: result.filename,
+      document_id: result.document_id,
+      chunk_count: result.chunk_count,
+      analysis: result.analysis,
+      auto_analyzed: result.auto_analyzed ?? true,
+      cached: result.cached ?? false,
+    };
+  },
+
   // RAG: Upload file to vector store + auto-analyze with Grok
   ragAnalyze: async (file: File): Promise<{
     document_id: string;
@@ -121,129 +179,6 @@ export const analysisAPI = {
     if (!response.ok) {
       const detail = await readErrorDetail(response, `RAG analyze failed (HTTP ${response.status})`);
       console.error('RAG analyze failed:', { status: response.status, detail });
-      throw new Error(detail);
-    }
-    return response.json();
-  },
-
-  // Analyzer: Single file analysis via ghostcode-analyzer microservice
-  analyzeFile: async (file: File): Promise<{
-    filename: string;
-    language: string;
-    analysis: {
-      summary: {
-        total_issues: number;
-        severity_counts: Record<string, number>;
-        categories: Record<string, number>;
-        overall_health: string;
-        health_score: number;
-      };
-      issues: Array<{
-        id: string; category: string; severity: string;
-        line_start: number; line_end: number; name: string | null;
-        description: string; code_snippet: string; suggestion: string;
-        safe_to_remove: boolean; confidence: number;
-      }>;
-      metrics: {
-        total_lines: number; code_lines: number; comment_lines: number;
-        blank_lines: number; dead_lines_estimate: number;
-        dead_code_percentage: number; complexity_hint: string;
-      };
-      refactor_hints: string[];
-    };
-    document_id: string | null;
-  }> => {
-    const token = await getAuthToken();
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(`${ANALYZER_BASE}/analyzer/analyze`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (response.status === 401) {
-      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before analyzing files.');
-    }
-    if (response.status === 403) {
-      throw new Error('MFA verification is required before using the analyzer.');
-    }
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `Analyze failed (HTTP ${response.status})`);
-      throw new Error(detail);
-    }
-    const result = await response.json();
-
-    let document_id: string | null = null;
-    try {
-      const ragFormData = new FormData();
-      ragFormData.append('file', file);
-      ragFormData.append('analysis_json', JSON.stringify(result.analysis));
-      const ragResponse = await fetch(`${RAG_BASE}/analyze`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: ragFormData,
-      });
-      if (ragResponse.ok) {
-        const ragResult = await ragResponse.json();
-        document_id = ragResult.document_id ?? null;
-      } else {
-        const detail = await readErrorDetail(ragResponse, 'RAG storage failed');
-        if (ragResponse.status === 503) {
-          console.warn('RAG storage unavailable (503), analysis will not be saved. Retry later.', detail);
-        } else {
-          console.warn('RAG storage failed (HTTP %d): %s', ragResponse.status, detail);
-        }
-      }
-    } catch (err) {
-      console.warn('RAG storage failed:', err);
-    }
-
-    result.document_id = document_id;
-    return result;
-  },
-
-  // Analyzer: Batch analysis (up to 10 files)
-  analyzeBatch: async (files: File[]): Promise<{
-    results: Array<{
-      filename: string;
-      analysis?: {
-        summary: {
-          total_issues: number; severity_counts: Record<string, number>;
-          categories: Record<string, number>; overall_health: string;
-          health_score: number;
-        };
-        issues: Array<{
-          id: string; category: string; severity: string;
-          line_start: number; line_end: number; name: string | null;
-          description: string; code_snippet: string; suggestion: string;
-          safe_to_remove: boolean; confidence: number;
-        }>;
-        metrics: {
-          total_lines: number; code_lines: number; comment_lines: number;
-          blank_lines: number; dead_lines_estimate: number;
-          dead_code_percentage: number; complexity_hint: string;
-        };
-        refactor_hints: string[];
-      };
-      error?: string;
-    }>;
-  }> => {
-    const token = await getAuthToken();
-    const formData = new FormData();
-    files.forEach(f => formData.append('files', f));
-    const response = await fetch(`${ANALYZER_BASE}/analyzer/analyze-batch`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (response.status === 401) {
-      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before analyzing files.');
-    }
-    if (response.status === 403) {
-      throw new Error('MFA verification is required before using the analyzer.');
-    }
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `Batch analyze failed (HTTP ${response.status})`);
       throw new Error(detail);
     }
     return response.json();

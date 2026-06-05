@@ -1,6 +1,8 @@
+import asyncio
 import hashlib
 import json
 import logging
+from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
@@ -9,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db, IS_SQLITE
 from app.auth import get_current_user
-from app.services.chunker import chunk_code, chunk_issues, detect_language
+from app.services.chunker import chunk_code, chunk_issues, detect_language as _detect_language_direct
 from app.services.embedder import embed_texts
-from app.services.analyzer import analyze_code_with_grok
+from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.storage import store_analysis, get_history, get_document, delete_document, check_hash
 
 logger = logging.getLogger("ghostcode-rag.analysis")
@@ -308,3 +310,87 @@ async def rag_history(
 ):
     items = await get_history(db, user["user_id"], limit=limit, offset=offset)
     return {"items": items, "total": len(items)}
+
+
+# ── Analyzer alias endpoints (replaces services/analyzer entirely) ──────────
+# These routes mirror the old ghostcode-analyzer service API so the browser
+# extension and any existing clients continue to work without changes.
+
+MAX_ANALYZER_FILE_SIZE = 500 * 1024
+ANALYZER_ACCEPTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".md"}
+
+
+def _validate_analyzer_file(file: UploadFile) -> str:
+    ext = (
+        "." + file.filename.rsplit(".", 1)[-1].lower()
+        if "." in (file.filename or "")
+        else ""
+    )
+    if ext not in ANALYZER_ACCEPTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type '{ext}' not supported. Accepted: {', '.join(sorted(ANALYZER_ACCEPTED_EXTENSIONS))}",
+        )
+    if file.size and file.size > MAX_ANALYZER_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File exceeds 500 KB limit ({file.size} bytes).",
+        )
+    return ext
+
+
+async def _read_analyzer_file(file: UploadFile) -> str:
+    try:
+        content = await file.read()
+        return content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decode file as UTF-8 (byte offset: {exc.start})",
+        )
+
+
+@router.post("/analyzer/analyze")
+async def analyzer_analyze(
+    file: UploadFile,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Drop-in replacement for the old ghostcode-analyzer POST /analyzer/analyze.
+    Returns { filename, language, analysis } — identical response shape.
+    """
+    _validate_analyzer_file(file)
+    source = await _read_analyzer_file(file)
+    language = _detect_language_direct(file.filename)
+    analysis = await _analyze_file_direct(source, file.filename)
+    return {"filename": file.filename, "language": language, "analysis": analysis}
+
+
+@router.post("/analyzer/analyze-batch")
+async def analyzer_analyze_batch(
+    files: List[UploadFile],
+    user: dict = Depends(get_current_user),
+):
+    """
+    Drop-in replacement for the old ghostcode-analyzer POST /analyzer/analyze-batch.
+    Returns { results: [{ filename, analysis, error }] }.
+    """
+    if len(files) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Maximum 10 files per batch, got {len(files)}.",
+        )
+
+    async def process_one(file: UploadFile) -> dict:
+        try:
+            _validate_analyzer_file(file)
+            source = await _read_analyzer_file(file)
+            analysis = await _analyze_file_direct(source, file.filename)
+            return {"filename": file.filename, "analysis": analysis, "error": None}
+        except HTTPException as exc:
+            return {"filename": file.filename, "analysis": None, "error": exc.detail}
+        except Exception as exc:
+            return {"filename": file.filename, "analysis": None, "error": str(exc)}
+
+    results = await asyncio.gather(*(process_one(f) for f in files))
+    return {"results": list(results)}

@@ -36,9 +36,15 @@ app.add_middleware(
 )
 
 app.include_router(analysis.router, prefix="/rag", tags=["Analysis"])
+app.include_router(analysis.router, prefix="", tags=["Analyzer-alias"])
 app.include_router(chat.router, prefix="/rag", tags=["Chat"])
 
 
 @app.get("/rag/health")
 async def health():
     return {"status": "ok", "service": "ghostcode-rag"}
+
+
+@app.get("/analyzer/health")
+async def analyzer_health_alias():
+    return {"status": "ok", "service": "ghostcode-analyzer"}
