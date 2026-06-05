@@ -153,7 +153,7 @@ def _merge_chunk_results(chunk_results, source: str):
                 hints_seen.add(key)
                 refactor_hints.append(hint)
     
-    return {
+    result = {
         "summary": {
             "total_issues": len(all_issues),
             "severity_counts": severity_counts,
@@ -165,6 +165,24 @@ def _merge_chunk_results(chunk_results, source: str):
         "metrics": metrics,
         "refactor_hints": refactor_hints,
     }
+
+    total_tok = sum(
+        c[0].get("_token_usage", {}).get("total_tokens", 0) for c in chunk_results
+    )
+    if total_tok:
+        result["_token_usage"] = {
+            "prompt_tokens": sum(
+                c[0].get("_token_usage", {}).get("prompt_tokens", 0)
+                for c in chunk_results
+            ),
+            "completion_tokens": sum(
+                c[0].get("_token_usage", {}).get("completion_tokens", 0)
+                for c in chunk_results
+            ),
+            "total_tokens": total_tok,
+        }
+
+    return result
 
 
 @router.post("/analyze-batch", response_model=BatchResponse)

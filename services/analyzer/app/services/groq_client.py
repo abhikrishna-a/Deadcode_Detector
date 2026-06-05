@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 from openai import AsyncOpenAI, APIError
 from dotenv import load_dotenv

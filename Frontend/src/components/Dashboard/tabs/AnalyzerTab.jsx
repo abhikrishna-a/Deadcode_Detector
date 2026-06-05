@@ -857,6 +857,11 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
                           {r.analysis.issues.length} iss.
                         </span>
                       )}
+                      {r.analysis?._token_usage?.total_tokens > 0 && (
+                        <span style={{ color: '#4a4038', flexShrink: 0 }}>
+                          {r.analysis._token_usage.total_tokens}tok
+                        </span>
+                      )}
                     </div>
                   ))}
                   {batchProgress.errors.map((e, i) => (
@@ -895,6 +900,30 @@ export default function AnalyzerTab({ results, onResultsChange, onFileChange, fi
                     </div>
                   )}
                 </div>
+
+                {/* Token usage summary */}
+                {(() => {
+                  const total = batchProgress.results.reduce(
+                    (s, r) => s + (r.analysis?._token_usage?.total_tokens ?? 0), 0
+                  );
+                  const prompt = batchProgress.results.reduce(
+                    (s, r) => s + (r.analysis?._token_usage?.prompt_tokens ?? 0), 0
+                  );
+                  const completion = batchProgress.results.reduce(
+                    (s, r) => s + (r.analysis?._token_usage?.completion_tokens ?? 0), 0
+                  );
+                  if (total === 0) return null;
+                  return (
+                    <div style={{
+                      marginTop: 8, padding: '6px 8px',
+                      background: 'rgba(255,255,255,0.02)',
+                      borderRadius: 6, fontSize: 10,
+                      color: '#6b7280', fontFamily: "'DM Mono', monospace",
+                    }}>
+                      Tokens: {total.toLocaleString()} total · {prompt.toLocaleString()} input · {completion.toLocaleString()} output
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

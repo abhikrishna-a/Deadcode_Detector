@@ -74,7 +74,17 @@ export function mergeChunkResults(
     }
   }
 
-  return {
+  const totalPrompt = chunkResults.reduce(
+    (s, r) => s + (r.analysis?._token_usage?.prompt_tokens ?? 0), 0,
+  );
+  const totalCompletion = chunkResults.reduce(
+    (s, r) => s + (r.analysis?._token_usage?.completion_tokens ?? 0), 0,
+  );
+  const totalTokens = chunkResults.reduce(
+    (s, r) => s + (r.analysis?._token_usage?.total_tokens ?? 0), 0,
+  );
+
+  const merged = {
     summary: {
       total_issues: allIssues.length,
       severity_counts: severityCounts,
@@ -88,4 +98,14 @@ export function mergeChunkResults(
     _chunked: true,
     _chunk_count: chunkResults.length,
   };
+
+  if (totalTokens > 0) {
+    merged._token_usage = {
+      prompt_tokens: totalPrompt,
+      completion_tokens: totalCompletion,
+      total_tokens: totalTokens,
+    };
+  }
+
+  return merged;
 }
