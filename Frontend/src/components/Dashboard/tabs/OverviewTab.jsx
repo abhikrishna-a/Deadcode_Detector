@@ -5,16 +5,20 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 export default function OverviewTab({ history, results, onViewResult }) {
   const stats = useMemo(() => {
     const totalScans = history.length;
-    const allIssues = history.flatMap(r => r.issues || []);
+    const allResults = history.flatMap(r => r._batch_results || [r]);
+    const allIssues = allResults.flatMap(r => (r.issues || []));
+    const individualFiles = allResults.length;
     const totalIssues = allIssues.length;
-    const cleanFiles = history.filter(r => (r.issues || []).length === 0).length;
-    const totalLines = history.reduce((sum, r) => sum + (r.metrics?.total_lines || 0), 0);
-    return { totalScans, totalIssues, cleanFiles, totalLines };
+    const cleanFiles = allResults.filter(r => (r.issues || []).length === 0).length;
+    const totalLines = allResults.reduce((sum, r) => sum + (r.metrics?.total_lines || 0), 0);
+    const batchSessions = history.filter(r => r._chunked || r._batch_results).length;
+    return { totalScans: individualFiles, totalIssues, cleanFiles, totalLines, batchSessions, rawSessions: history.length };
   }, [history]);
 
   const breakdown = useMemo(() => {
     const counts = {};
-    history.forEach(r => {
+    const allResults = history.flatMap(r => r._batch_results || [r]);
+    allResults.forEach(r => {
       (r.issues || []).forEach(i => {
         const key = i.category || i.type;
         counts[key] = (counts[key] || 0) + 1;
@@ -44,7 +48,13 @@ export default function OverviewTab({ history, results, onViewResult }) {
     return null;
   };
 
-  const recentScans = useMemo(() => [...history].reverse().slice(0, 10), [history]);
+  const recentScans = useMemo(() => {
+    const all = history.flatMap(r => {
+      if (r._batch_results) return r._batch_results.map((br, i) => ({ ...br, _batch_id: r.document_id || i }));
+      return [r];
+    });
+    return [...all].reverse().slice(0, 10);
+  }, [history]);
 
   return (
     <motion.div
@@ -54,12 +64,13 @@ export default function OverviewTab({ history, results, onViewResult }) {
       transition={{ duration: 0.2 }}
     >
       {/* Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 32 }}>
         {[
-          { value: stats.totalScans, label: 'Total Scans', sub: 'this session' },
+          { value: stats.totalScans, label: 'Total Scans', sub: 'individual files' },
           { value: stats.totalIssues, label: 'Issues Found', sub: 'across scans' },
           { value: stats.cleanFiles, label: 'Files Clean', sub: '(no issues)' },
           { value: stats.totalLines, label: 'Lines Saved', sub: 'est. removed' },
+          { value: stats.batchSessions, label: 'Repos / Folders', sub: `of ${stats.rawSessions} sessions` },
         ].map(s => (
           <motion.div
             key={s.label}

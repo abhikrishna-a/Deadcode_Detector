@@ -175,3 +175,23 @@ export interface FileNode {
   is_clean: boolean;
   has_warnings: boolean;
 }
+
+// Git / batch types
+export interface GitFileEntry {
+  path: string;
+  size_bytes: number;
+  language: string;
+}
+
+export interface GitManifest {
+  session_id: string;
+  repo_name: string;
+  branch: string;
+  total_files: number;
+  total_bytes: number;
+  files: GitFileEntry[];
+}
+
+export interface GitFileContents {
+  files: Array<{ path: string; content: string; size_bytes: number }>;
+}

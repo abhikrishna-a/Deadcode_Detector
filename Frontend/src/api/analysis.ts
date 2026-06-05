@@ -4,7 +4,9 @@ import type {
   AnalysisResponse,
   AnalysisStatusResponse,
   AnalysisResult,
-  FileNode
+  FileNode,
+  GitManifest,
+  GitFileContents,
 } from './types';
 
 const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/rag';
@@ -383,6 +385,42 @@ export const analysisAPI = {
         }
       }
     }
+  },
+
+  // Git: clone a repo and return file manifest
+  gitClone: async (repoUrl: string, branch: string, token?: string): Promise<GitManifest> => {
+    const token_ = await getAuthToken();
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/git/clone/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token_}`,
+      },
+      body: JSON.stringify({ repo_url: repoUrl, branch, token }),
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Git clone failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  // Git: fetch file contents for a subset of paths
+  gitFetchFiles: async (sessionId: string, paths: string[]): Promise<GitFileContents> => {
+    const token_ = await getAuthToken();
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/git/files/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token_}`,
+      },
+      body: JSON.stringify({ session_id: sessionId, paths }),
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Git file fetch failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
   },
 
   // RAG: Non-streaming JSON chat (cross-analysis search)

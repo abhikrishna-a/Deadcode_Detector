@@ -10,7 +10,9 @@ class IsMFAVerified(BasePermission):
             return False
 
         if request.user.has_mfa_enabled:
-            request.auth.payload.get("mfa_verified_for_session")
+            if not request.auth:
+                return False
+            return request.auth.payload.get("mfa_verified_for_session") is True
 
         return True
 

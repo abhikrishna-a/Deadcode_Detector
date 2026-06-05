@@ -1,5 +1,7 @@
+import json
 import pyotp
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -200,3 +202,103 @@ class AccountsAuthFlowTests(APITestCase):
         self.user.refresh_from_db()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotEqual(self.user.mfa_secret, original_secret)
+
+
+class GitEndpointsTests(APITestCase):
+    def setUp(self):
+        self.password = "TestPass123!"
+        self.user = User.objects.create_user(
+            username="gituser",
+            email="gituser@example.com",
+            password=self.password,
+            role="viewer",
+        )
+
+    def _get_mfa_token(self):
+        """Helper: get a fully verified MFA token for the test user."""
+        # Enable MFA
+        self.user.generate_mfa_secret()
+        self.user.is_mfa_enabled = True
+        self.user.save(update_fields=["is_mfa_enabled"])
+
+        # Stage 1 login -> pre-auth token
+        login_resp = self.client.post(
+            "/api/auth/token/",
+            {"username": self.user.username, "password": self.password},
+            format="json",
+        )
+        pre_auth = login_resp.data["pre_auth_token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {pre_auth}")
+
+        # Stage 2 MFA verify
+        otp = pyotp.TOTP(self.user.mfa_secret).now()
+        verify_resp = self.client.post(
+            "/api/auth/mfa/verify-login/",
+            {"token": otp},
+            format="json",
+        )
+        token = verify_resp.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        return token
+
+    def test_git_clone_requires_auth(self):
+        response = self.client.post(
+            "/api/git/clone/",
+            {"repo_url": "https://github.com/user/dummy"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_git_clone_rejects_non_github_url(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/clone/",
+            {"repo_url": "https://evil.com/x"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_git_clone_rejects_gitlab_http(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/clone/",
+            {"repo_url": "http://gitlab.com/user/repo"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_git_file_fetch_rejects_path_traversal(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/files/",
+            {"session_id": "any", "paths": ["../../etc/passwd"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_git_file_fetch_rejects_dot_dot_prefix(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/files/",
+            {"session_id": "any", "paths": ["../secret.txt"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_git_session_expiry_returns_404(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/files/",
+            {"session_id": "nonexistent-session", "paths": ["foo.py"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_git_file_fetch_rejects_more_than_10_paths(self):
+        self._get_mfa_token()
+        response = self.client.post(
+            "/api/git/files/",
+            {"session_id": "any", "paths": [f"file{i}.py" for i in range(11)]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

@@ -1,3 +1,6 @@
+import logging
+import threading
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -23,6 +26,20 @@ from .serializers import (
     AdminUserRoleSerializer,
 )
 from .permissions import IsAdminWithVerifiedMFA
+
+logger = logging.getLogger(__name__)
+
+def _send_email_async(subject, message, recipient):
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as e:
+        logger.error(f"Email to {recipient} failed: {e}")
 
 User = get_user_model()
 
@@ -67,17 +84,14 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        try:
-            send_mail(
+        threading.Thread(
+            target=lambda: _send_email_async(
                 subject="GhostCode — Welcome aboard",
                 message=f"Hi {user.username},\n\nYour GhostCode account has been created successfully.\n\nYou can now log in and start scanning your code for dead code.\n\nHappy coding,\nThe GhostCode Team",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Welcome email failed for {user.email}: {e}")
+                recipient=user.email,
+            ),
+            daemon=True,
+        ).start()
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -272,13 +286,14 @@ class PasswordResetRequestView(APIView):
             user = User.objects.get(email__iexact=email)
             token = user.generate_password_reset_token()
             reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-            send_mail(
-                subject="GhostCode — Reset your password",
-                message=f"Click the link below to reset your password (expires in 15 minutes):\n\n{reset_url}\n\nIf you did not request this, ignore this email.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
+            threading.Thread(
+                target=lambda: _send_email_async(
+                    subject="GhostCode — Reset your password",
+                    message=f"Click the link below to reset your password (expires in 15 minutes):\n\n{reset_url}\n\nIf you did not request this, ignore this email.",
+                    recipient=user.email,
+                ),
+                daemon=True,
+            ).start()
         except User.DoesNotExist:
             pass  # Silent — don't reveal if email exists
 

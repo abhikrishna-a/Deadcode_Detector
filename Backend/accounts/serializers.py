@@ -1,3 +1,6 @@
+import logging
+import threading
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -5,6 +8,20 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import InvalidToken
+
+logger = logging.getLogger(__name__)
+
+def _send_email_async(subject, message, recipient):
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as e:
+        logger.error(f"Email to {recipient} failed: {e}")
 
 User = get_user_model()
 
@@ -58,17 +75,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         refresh = self.get_token(self.user)
         refresh["mfa_verified_for_session"] = False
 
-        try:
-            send_mail(
+        threading.Thread(
+            target=lambda: _send_email_async(
                 subject="GhostCode — New login detected",
                 message=f"Hi {self.user.username},\n\nA new login was detected on your GhostCode account.\n\nIf this was you, you can ignore this email.\nIf this wasn't you, please change your password immediately.\n\nStay safe,\nThe GhostCode Team",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[self.user.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Login email failed for {self.user.email}: {e}")
+                recipient=self.user.email,
+            ),
+            daemon=True,
+        ).start()
 
         return {
             "mfa_required": True,

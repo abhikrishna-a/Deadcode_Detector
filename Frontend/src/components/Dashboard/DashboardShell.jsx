@@ -48,10 +48,25 @@ export default function DashboardShell({ session, onLogout }) {
 
   const handleResultsChange = (newResults) => {
     if (newResults) {
-      setHistory(prev => {
-        const filtered = prev.filter(h => h.filename !== newResults.filename);
-        return [...filtered, newResults];
-      });
+      const batchItems = newResults._batch_results;
+      if (Array.isArray(batchItems) && batchItems.length > 0) {
+        setHistory(prev => {
+          const existing = new Set(prev.map(h => h.filename + '|' + (h.document_id || '')));
+          const newItems = batchItems
+            .filter(r => r.analysis && !existing.has(r.filename + '|' + (r.document_id || '')))
+            .map(r => ({
+              filename: r.filename,
+              document_id: r.document_id,
+              ...r.analysis,
+            }));
+          return [...prev, ...newItems];
+        });
+      } else {
+        setHistory(prev => {
+          const filtered = prev.filter(h => h.filename !== newResults.filename);
+          return [...filtered, newResults];
+        });
+      }
     }
     setResults(newResults);
   };
