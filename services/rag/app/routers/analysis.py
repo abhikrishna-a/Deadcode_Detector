@@ -14,7 +14,9 @@ from app.auth import get_current_user
 from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
 from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
-from app.services.storage import store_analysis, get_history, get_document, delete_document, check_hash
+from app.services.cross_reference import batch_check_references
+from app.services.storage import store_analysis, get_history, get_document, delete_document, check_hash, cleanup_stale_documents, count_history
+from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
 
 logger = logging.getLogger("ghostcode-rag.analysis")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -29,6 +31,9 @@ SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".md"}
 async def analyze_file(
     file: UploadFile = File(...),
     analysis_json: str = Form(default=None),
+    store_for_rag: bool = Form(default=True),
+    scan_folder: str = Form(default=""),
+    scan_type: str = Form(default="single"),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -59,22 +64,54 @@ async def analyze_file(
             )
 
         if not source.strip():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty.")
+            # Empty files are valid - return clean analysis
+            language = detect_language(file.filename)
+            clean_analysis = {
+                "summary": {"total_issues": 0, "severity_counts": {}, "categories": {},
+                            "overall_health": "clean", "health_score": 100},
+                "issues": [],
+                "metrics": {"total_lines": 0, "code_lines": 0, "comment_lines": 0,
+                            "blank_lines": 0, "dead_lines_estimate": 0, "dead_code_percentage": 0},
+            }
+            try:
+                doc_id = await store_analysis(
+                    db=db, user_id=user["user_id"], filename=file.filename,
+                    language=language, source=source, scan_folder=scan_folder,
+                    scan_type=scan_type, analysis_json=clean_analysis,
+                )
+            except Exception:
+                doc_id = None
+            return {
+                "document_id": doc_id,
+                "chunk_count": 0,
+                "filename": file.filename,
+                "analysis": clean_analysis,
+                "auto_analyzed": True,
+                "cached": False,
+                "scan_folder": scan_folder,
+                "scan_type": scan_type,
+            }
 
         language = detect_language(file.filename)
 
-        # --- hash-based cache check ---
+        # --- hash-based duplicate removal: delete old analysis in current transaction ---
         file_hash = hashlib.sha256(source.encode()).hexdigest()
-        cached = await check_hash(db, user["user_id"], file_hash)
-        if cached and analysis_json is None:
-            return {
-                "document_id": cached["analysis_id"],
-                "chunk_count": 0,
-                "filename": cached["filename"],
-                "analysis": cached["analysis"],
-                "auto_analyzed": True,
-                "cached": True,
-            }
+        existing = await check_hash(db, user["user_id"], file_hash)
+        if existing and analysis_json is None:
+            try:
+                if IS_SQLITE:
+                    await db.execute(
+                        text("DELETE FROM analyses WHERE id = :id AND user_id = :uid"),
+                        {"id": existing["analysis_id"], "uid": user["user_id"]},
+                    )
+                else:
+                    await db.execute(
+                        text("DELETE FROM rag_documents WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
+                        {"id": existing["analysis_id"], "uid": user["user_id"]},
+                    )
+                logger.info("Removed existing analysis for hash %s (file: %s)", file_hash, file.filename)
+            except Exception as e:
+                logger.warning("Failed to remove old analysis for hash %s: %s", file_hash, e)
 
         # --- analysis ---
         if analysis_json and analysis_json.strip() not in ("", "null", "{}"):
@@ -86,7 +123,7 @@ async def analyze_file(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be a JSON object")
         else:
             try:
-                analysis_data = await analyze_code_with_grok(source, file.filename, language)
+                analysis_data = await analyze_code_with_grok(source, file.filename, db=db, user_id=user["user_id"])
             except RuntimeError as e:
                 logger.error("Groq API unavailable: %s", e)
                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
@@ -94,24 +131,27 @@ async def analyze_file(
                 logger.error("Grok analysis failed: %s", e, exc_info=True)
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Analysis failed: {str(e)}")
 
-        # --- chunking ---
-        source_chunks = chunk_code(source, file.filename)
-        issue_chunks = chunk_issues(analysis_data, file.filename)
-        all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
-        all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+        # --- chunking & embedding (skip if store_for_rag is false) ---
+        if store_for_rag:
+            source_chunks = chunk_code(source, file.filename)
+            issue_chunks = chunk_issues(analysis_data, file.filename)
+            all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
+            all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
 
-        if not all_chunks:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
+            if not all_chunks:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
 
-        # --- embedding ---
-        try:
-            embeddings = await embed_texts(all_chunk_texts)
-        except Exception as e:
-            logger.error("Embedding failed: %s", e, exc_info=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
+            try:
+                embeddings = await embed_texts(all_chunk_texts)
+            except Exception as e:
+                logger.error("Embedding failed: %s", e, exc_info=True)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
 
-        if len(embeddings) != len(all_chunks):
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+            if len(embeddings) != len(all_chunks):
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+        else:
+            all_chunks = None
+            embeddings = None
 
         # --- storage ---
         try:
@@ -121,6 +161,8 @@ async def analyze_file(
                 filename=file.filename,
                 language=language,
                 source=source,
+                scan_folder=scan_folder,
+                scan_type=scan_type,
                 analysis_json=analysis_data,
                 chunks=all_chunks,
                 embeddings=embeddings,
@@ -134,11 +176,13 @@ async def analyze_file(
         auto_analyzed = analysis_json is None or analysis_json.strip() in ("", "null", "{}")
         return {
             "document_id": document_id,
-            "chunk_count": len(all_chunks),
+            "chunk_count": len(all_chunks) if all_chunks else 0,
             "filename": file.filename,
             "analysis": analysis_data,
             "auto_analyzed": auto_analyzed,
             "cached": False,
+            "scan_folder": scan_folder,
+            "scan_type": scan_type,
         }
     except HTTPException:
         raise
@@ -147,10 +191,114 @@ async def analyze_file(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Unexpected error: {str(e)}")
 
 
+@router.post("/batch-analyze")
+async def batch_analyze(
+    req: BatchAnalyzeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Fast batch analysis using AST+grep cross-referencing across ALL files at once.
+    No LLM calls — pure symbol-level dead code detection.
+    Results are stored to the database with code chunks for RAG-enabled chat.
+    """
+    start = asyncio.get_event_loop().time()
+
+    # Filter to supported extensions
+    filtered = [
+        (f.name, f.content)
+        for f in req.files
+        if f.name and ("." in f.name and f".{f.name.rsplit('.', 1)[-1].lower()}" in SUPPORTED_EXTENSIONS)
+    ]
+
+    if not filtered:
+        return BatchAnalyzeResponse(results=[], total_time_ms=0)
+
+    # Run sync batch cross-reference in thread pool
+    loop = asyncio.get_event_loop()
+    per_file_results = await loop.run_in_executor(None, batch_check_references, filtered)
+
+    file_map = {f.name: f.content for f in req.files if f.name}
+
+    # Collect all chunk texts across all files for batched embedding
+    all_chunk_batches = []  # list of (filename, source, analysis, chunks)
+    all_chunk_texts = []
+    for filename, analysis in per_file_results.items():
+        source = file_map.get(filename, "")
+        if source.strip():
+            source_chunks = chunk_code(source, filename)
+            issue_texts = chunk_issues(analysis, filename)
+            chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": filename}}) for ic in issue_texts]
+            if chunks:
+                chunk_texts = [c.content for c in source_chunks] + issue_texts
+                all_chunk_batches.append((filename, source, analysis, chunks))
+                all_chunk_texts.extend(chunk_texts)
+            else:
+                all_chunk_batches.append((filename, source, analysis, None))
+        else:
+            all_chunk_batches.append((filename, source, analysis, None))
+
+    # Batch embed all chunk texts at once
+    if all_chunk_texts:
+        try:
+            all_embeddings = await embed_texts(all_chunk_texts)
+        except Exception as e:
+            logger.error("Batch embedding failed: %s", e, exc_info=True)
+            all_embeddings = None
+    else:
+        all_embeddings = None
+
+    # Distribute embeddings back to each file
+    embedding_idx = 0
+    results = []
+    for filename, source, analysis, chunks in all_chunk_batches:
+        language = detect_language(filename)
+        file_embeddings = None
+        if chunks and all_embeddings is not None:
+            n_chunks = len(chunks)
+            file_embeddings = all_embeddings[embedding_idx:embedding_idx + n_chunks]
+            embedding_idx += n_chunks
+        doc_id = await store_analysis(
+            db, user["user_id"], filename, language, source, analysis,
+            scan_folder=req.scan_folder, scan_type=req.scan_type,
+            chunks=chunks, embeddings=file_embeddings,
+        )
+        results.append(BatchFileResult(
+            filename=filename,
+            analysis=analysis,
+            document_id=doc_id,
+            error=None,
+        ))
+
+    await db.commit()
+    elapsed = int((asyncio.get_event_loop().time() - start) * 1000)
+    logger.info("Batch analyzed and stored %d files in %d ms", len(filtered), elapsed)
+
+    return BatchAnalyzeResponse(results=results, total_time_ms=elapsed)
+
+
+@router.post("/cleanup")
+async def cleanup_analyses(
+    req: BatchAnalyzeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Delete analysis data for files that no longer exist.
+    Send the current active file paths; anything in the DB not
+    matching those paths is removed. Returns count of deleted entries.
+    """
+    active = [f.name for f in req.files if f.name]
+    deleted = await cleanup_stale_documents(db, user["user_id"], active)
+    logger.info("Cleanup: removed %d stale document(s) for user %d", deleted, user["user_id"])
+    return {"deleted": deleted, "active_count": len(active)}
+
+
 @router.post("/analyze-only")
 async def analyze_only(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     ext = f".{file.filename.rsplit('.', 1)[-1].lower()}" if "." in (file.filename or "") else ""
     if ext not in SUPPORTED_EXTENSIONS:
@@ -168,7 +316,7 @@ async def analyze_only(
         )
     language = detect_language(file.filename)
     try:
-        analysis_data = await analyze_code_with_grok(source, file.filename, language)
+        analysis_data = await analyze_code_with_grok(source, file.filename, db=db, user_id=user["user_id"])
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except ValueError as e:
@@ -289,27 +437,38 @@ async def rag_get_analysis(
     }
 
 
-@router.delete("/analysis/{analysis_id}", status_code=204)
+@router.delete("/analysis/{analysis_id}")
 async def rag_delete_analysis(
     analysis_id: str,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    doc = await get_document(db, analysis_id, user["user_id"])
-    if not doc:
-        raise HTTPException(status_code=404, detail="Analysis not found.")
-    await delete_document(db, analysis_id, user["user_id"])
+    try:
+        doc = await get_document(db, analysis_id, user["user_id"])
+        if not doc:
+            raise HTTPException(status_code=404, detail="Analysis not found.")
+        deleted = await delete_document(db, analysis_id, user["user_id"])
+        if not deleted:
+            logger.warning("Delete returned 0 rows for analysis %s (user %s)", analysis_id, user["user_id"])
+        return {"message": "Analysis deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Delete failed for analysis %s: %s", analysis_id, str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete analysis: {str(e)}")
 
 
 @router.get("/history")
 async def rag_history(
     limit: int = 20,
     offset: int = 0,
+    search: str = "",
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await get_history(db, user["user_id"], limit=limit, offset=offset)
-    return {"items": items, "total": len(items)}
+    items = await get_history(db, user["user_id"], limit=limit, offset=offset, search=search)
+    total = await count_history(db, user["user_id"], search=search)
+    return {"items": items, "total": total}
 
 
 # ── Analyzer alias endpoints (replaces services/analyzer entirely) ──────────
@@ -354,6 +513,7 @@ async def _read_analyzer_file(file: UploadFile) -> str:
 async def analyzer_analyze(
     file: UploadFile,
     user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Drop-in replacement for the old ghostcode-analyzer POST /analyzer/analyze.
@@ -362,7 +522,7 @@ async def analyzer_analyze(
     _validate_analyzer_file(file)
     source = await _read_analyzer_file(file)
     language = detect_language(file.filename)
-    analysis = await _analyze_file_direct(source, file.filename)
+    analysis = await _analyze_file_direct(source, file.filename, db=db, user_id=user["user_id"])
     return {"filename": file.filename, "language": language, "analysis": analysis}
 
 
@@ -370,6 +530,7 @@ async def analyzer_analyze(
 async def analyzer_analyze_batch(
     files: List[UploadFile],
     user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Drop-in replacement for the old ghostcode-analyzer POST /analyzer/analyze-batch.
@@ -385,7 +546,7 @@ async def analyzer_analyze_batch(
         try:
             _validate_analyzer_file(file)
             source = await _read_analyzer_file(file)
-            analysis = await _analyze_file_direct(source, file.filename)
+            analysis = await _analyze_file_direct(source, file.filename, db=db, user_id=user["user_id"])
             return {"filename": file.filename, "analysis": analysis, "error": None}
         except HTTPException as exc:
             return {"filename": file.filename, "analysis": None, "error": exc.detail}
@@ -394,3 +555,46 @@ async def analyzer_analyze_batch(
 
     results = await asyncio.gather(*(process_one(f) for f in files))
     return {"results": list(results)}
+
+
+# ── Diagnostic endpoint ─────────────────────────────────────────────────
+
+DIAGNOSE_SYSTEM_PROMPT = (
+    "You are a code analysis diagnostic expert. "
+    "Given the batch analysis run context, identify why the scan stopped and provide a root cause and fix suggestion. "
+    "Be concise and technical. Return JSON with keys: diagnosis, root_cause, suggestion."
+)
+
+
+@router.post("/diagnose")
+async def diagnose_stop(
+    context: dict,
+    user: dict = Depends(get_current_user),
+):
+    from app.services.grok_client import call_groq_json
+
+    prompt = (
+        f"A batch code analysis scan stopped with the following context:\n"
+        f"- Total files: {context.get('total_files', 0)}\n"
+        f"- Completed: {context.get('completed', 0)}\n"
+        f"- Failed: {context.get('failed', 0)}\n"
+        f"- Total tokens consumed: {context.get('total_tokens', 0)}\n"
+        f"- Stop reason: {context.get('stop_reason', 'Unknown')}\n\n"
+        f"Analyze why the scan stopped and provide a root cause and fix suggestion. "
+        f"Return JSON with keys: diagnosis (short summary), root_cause (what caused the stop), suggestion (actionable fix)."
+    )
+
+    try:
+        result, _ = await call_groq_json(prompt=prompt, system=DIAGNOSE_SYSTEM_PROMPT)
+        return {
+            "diagnosis": result.get("diagnosis", "No diagnosis available."),
+            "root_cause": result.get("root_cause", "Unable to determine root cause."),
+            "suggestion": result.get("suggestion", "Check the analyzer logs for details."),
+        }
+    except Exception as e:
+        logger.error("Diagnosis failed: %s", e, exc_info=True)
+        return {
+            "diagnosis": "Diagnosis unavailable (LLM call failed).",
+            "root_cause": f"The analysis stopped at file {context.get('completed', 0) + context.get('failed', 0)} of {context.get('total_files', 0)}. This typically indicates a timeout or rate limit on the analysis API.",
+            "suggestion": "Reduce batch size, increase timeout, or check the API key rate limits. For large files, consider splitting them before analysis.",
+        }

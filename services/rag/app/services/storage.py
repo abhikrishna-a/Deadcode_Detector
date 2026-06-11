@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import IS_SQLITE, cosine_similarity
 
+logger = logging.getLogger("ghostcode-rag.storage")
+
 
 async def store_analysis(
     db: AsyncSession,
@@ -17,8 +20,10 @@ async def store_analysis(
     language: str,
     source: str,
     analysis_json: dict,
-    chunks: list[Any],
-    embeddings: list[list[float]],
+    scan_folder: str = "",
+    scan_type: str = "single",
+    chunks: list[Any] | None = None,
+    embeddings: list[list[float]] | None = None,
 ) -> str:
     file_hash = hashlib.sha256(source.encode()).hexdigest()
     health_score = analysis_json.get("summary", {}).get("health_score", 0)
@@ -29,63 +34,69 @@ async def store_analysis(
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
             text("""
-                INSERT INTO analyses (id, user_id, filename, language, file_hash, analysis_json, health_score, total_issues, created_at)
-                VALUES (:id, :uid, :fn, :lang, :hash, :json, :health, :issues, :now)
+                INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, analysis_json, health_score, total_issues, created_at)
+                VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :json, :health, :issues, :now)
             """),
             {
                 "id": analysis_id, "uid": user_id, "fn": filename,
-                "lang": language, "hash": file_hash, "json": json.dumps(analysis_json),
+                "lang": language, "hash": file_hash, "folder": scan_folder,
+                "stype": scan_type,
+                "json": json.dumps(analysis_json),
                 "health": health_score, "issues": total_issues, "now": now,
             },
         )
-        for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-            await db.execute(
-                text("""
-                    INSERT INTO embeddings (id, analysis_id, chunk_index, chunk_text, embedding, token_count)
-                    VALUES (:id, :aid, :idx, :text, :emb, :tokens)
-                """),
-                {
-                    "id": str(uuid.uuid4()), "aid": analysis_id,
-                    "idx": idx, "text": chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', ''),
-                    "emb": json.dumps(emb), "tokens": len((chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', '')).split()),
-                },
-            )
+        if chunks and embeddings:
+            for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+                await db.execute(
+                    text("""
+                        INSERT INTO embeddings (id, analysis_id, chunk_index, chunk_text, embedding, token_count)
+                        VALUES (:id, :aid, :idx, :text, :emb, :tokens)
+                    """),
+                    {
+                        "id": str(uuid.uuid4()), "aid": analysis_id,
+                        "idx": idx, "text": chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', ''),
+                        "emb": json.dumps(emb), "tokens": len((chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', '')).split()),
+                    },
+                )
         await db.commit()
         return analysis_id
     else:
         result = await db.execute(
             text("""
-                INSERT INTO rag_documents (user_id, filename, language, file_hash, analysis)
-                VALUES (:uid, :fn, :lang, :hash, CAST(:json AS jsonb))
+                INSERT INTO rag_documents (user_id, filename, language, file_hash, scan_folder, scan_type, analysis)
+                VALUES (:uid, :fn, :lang, :hash, :folder, :stype, CAST(:json AS jsonb))
                 RETURNING id
             """),
             {
                 "uid": user_id, "fn": filename, "lang": language,
-                "hash": file_hash, "json": json.dumps(analysis_json),
+                "hash": file_hash, "folder": scan_folder,
+                "stype": scan_type,
+                "json": json.dumps(analysis_json),
             },
         )
         document_id = result.scalar_one()
 
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            metadata = {}
-            if hasattr(chunk, 'metadata'):
-                metadata = chunk.metadata
-            elif isinstance(chunk, dict):
-                metadata = chunk.get('metadata', {})
-            content = chunk.content if hasattr(chunk, 'content') else (chunk if isinstance(chunk, str) else chunk.get('content', ''))
+        if chunks and embeddings:
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                metadata = {}
+                if hasattr(chunk, 'metadata'):
+                    metadata = chunk.metadata
+                elif isinstance(chunk, dict):
+                    metadata = chunk.get('metadata', {})
+                content = chunk.content if hasattr(chunk, 'content') else (chunk if isinstance(chunk, str) else chunk.get('content', ''))
 
-            await db.execute(
-                text("""
-                    INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
-                    VALUES (:doc_id, :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
-                """),
-                {
-                    "doc_id": document_id, "idx": i,
-                    "content": content,
-                    "metadata": json.dumps(metadata),
-                    "embedding": str(embedding),
-                },
-            )
+                await db.execute(
+                    text("""
+                        INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
+                        VALUES (:doc_id, :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
+                    """),
+                    {
+                        "doc_id": document_id, "idx": i,
+                        "content": content,
+                        "metadata": json.dumps(metadata),
+                        "embedding": str(embedding),
+                    },
+                )
 
         await db.commit()
         return str(document_id)
@@ -159,46 +170,88 @@ async def get_history(
     user_id: int,
     limit: int = 20,
     offset: int = 0,
+    search: str = "",
 ) -> list[dict]:
     if IS_SQLITE:
+        where = "WHERE user_id = :uid"
+        params = {"uid": user_id, "lim": limit, "off": offset}
+        if search:
+            where = "WHERE user_id = :uid AND (filename LIKE :search OR scan_folder LIKE :search)"
+            params["search"] = f"%{search}%"
         rows = (await db.execute(
-            text("""
-                SELECT id, filename, language, health_score, total_issues, created_at
+            text(f"""
+                SELECT id, filename, language, health_score, total_issues, created_at, scan_folder, scan_type
                 FROM analyses
-                WHERE user_id = :uid
+                {where}
                 ORDER BY created_at DESC
                 LIMIT :lim OFFSET :off
             """),
-            {"uid": user_id, "lim": limit, "off": offset},
+            params,
         )).fetchall()
         return [
             {"analysis_id": r[0], "filename": r[1], "language": r[2],
-             "health_score": r[3], "total_issues": r[4], "created_at": r[5]}
+             "health_score": r[3], "total_issues": r[4], "created_at": r[5],
+             "scan_folder": r[6], "scan_type": r[7]}
             for r in rows
         ]
     else:
+        where = "WHERE d.user_id = :uid"
+        params = {"uid": user_id, "lim": limit, "off": offset}
+        if search:
+            where = "WHERE d.user_id = :uid AND (d.filename ILIKE :search OR d.scan_folder ILIKE :search)"
+            params["search"] = f"%{search}%"
         rows = (await db.execute(
-            text("""
+            text(f"""
                 SELECT d.id, d.filename, d.language,
                        COALESCE((d.analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((d.analysis->'summary'->>'total_issues')::int, 0) AS total_issues,
                        d.created_at,
+                       d.scan_folder,
+                       d.scan_type,
                        COUNT(c.id) AS chunk_count
                 FROM rag_documents d
                 LEFT JOIN rag_chunks c ON c.document_id = d.id
-                WHERE d.user_id = :uid
+                {where}
                 GROUP BY d.id
                 ORDER BY d.created_at DESC
                 LIMIT :lim OFFSET :off
             """),
-            {"uid": user_id, "lim": limit, "off": offset},
+            params,
         )).fetchall()
         return [
             {"analysis_id": str(r[0]), "filename": r[1], "language": r[2],
              "health_score": r[3], "total_issues": r[4],
-             "created_at": r[5].isoformat()}
+             "created_at": r[5].isoformat(), "scan_folder": r[6],
+             "scan_type": r[7]}
             for r in rows
         ]
+
+
+async def count_history(
+    db: AsyncSession,
+    user_id: int,
+    search: str = "",
+) -> int:
+    if IS_SQLITE:
+        where = "WHERE user_id = :uid"
+        params = {"uid": user_id}
+        if search:
+            where = "WHERE user_id = :uid AND (filename LIKE :search OR scan_folder LIKE :search)"
+            params["search"] = f"%{search}%"
+        row = (await db.execute(
+            text(f"SELECT COUNT(*) FROM analyses {where}"), params
+        )).scalar()
+        return row or 0
+    else:
+        where = "WHERE d.user_id = :uid"
+        params = {"uid": user_id}
+        if search:
+            where = "WHERE d.user_id = :uid AND (d.filename ILIKE :search OR d.scan_folder ILIKE :search)"
+            params["search"] = f"%{search}%"
+        row = (await db.execute(
+            text(f"SELECT COUNT(*) FROM rag_documents d {where}"), params
+        )).scalar()
+        return row or 0
 
 
 async def get_document(
@@ -213,11 +266,16 @@ async def get_document(
         )).fetchone()
         if not row:
             return None
+        try:
+            analysis = json.loads(row[3])
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error("Failed to parse analysis_json for %s: %s", document_id, e)
+            analysis = {"summary": {"total_issues": 0, "overall_health": "unknown"}, "issues": [], "metrics": {}}
         return {
             "analysis_id": row[0],
             "filename": row[1],
             "language": row[2],
-            "analysis": json.loads(row[3]),
+            "analysis": analysis,
         }
     else:
         row = (await db.execute(
@@ -284,3 +342,50 @@ async def delete_document(
         )
     await db.commit()
     return result.rowcount > 0
+
+
+async def cleanup_stale_documents(
+    db: AsyncSession,
+    user_id: int,
+    active_filenames: list[str],
+) -> int:
+    """
+    Delete all analysis documents for this user whose filename is NOT
+    in the active_filenames list. Returns count of deleted documents.
+    """
+    deleted = 0
+    if IS_SQLITE:
+        rows = (await db.execute(
+            text("SELECT id, filename FROM analyses WHERE user_id = :uid"),
+            {"uid": user_id},
+        )).fetchall()
+        for row in rows:
+            if row[1] not in active_filenames:
+                await db.execute(
+                    text("DELETE FROM embeddings WHERE analysis_id = :id"),
+                    {"id": row[0]},
+                )
+                await db.execute(
+                    text("DELETE FROM analyses WHERE id = :id"),
+                    {"id": row[0]},
+                )
+                deleted += 1
+    else:
+        rows = (await db.execute(
+            text("SELECT id, filename FROM rag_documents WHERE user_id = :uid"),
+            {"uid": user_id},
+        )).fetchall()
+        for row in rows:
+            if row[1] not in active_filenames:
+                await db.execute(
+                    text("DELETE FROM rag_chunks WHERE document_id = CAST(:id AS uuid)"),
+                    {"id": row[0]},
+                )
+                await db.execute(
+                    text("DELETE FROM rag_documents WHERE id = CAST(:id AS uuid)"),
+                    {"id": row[0]},
+                )
+                deleted += 1
+
+    await db.commit()
+    return deleted

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const colors = {
   success: { bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.3)', text: '#4ade80' },
   error: { bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)', text: '#f87171' },
-  info: { bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)', text: '#fb923c' },
+  info: { bg: 'rgba(5,150,105,0.12)', border: 'rgba(5,150,105,0.3)', text: '#34d399' },
 };
 
 export default function Toast({ message, type = 'info', onClose, duration = 4000 }) {
@@ -34,7 +34,7 @@ export default function Toast({ message, type = 'info', onClose, duration = 4000
             padding: '12px 20px',
             color: c.text,
             fontSize: 13,
-            fontFamily: "'DM Mono', monospace",
+            fontFamily: "'Inter', sans-serif",
             backdropFilter: 'blur(12px)',
             display: 'flex',
             alignItems: 'center',

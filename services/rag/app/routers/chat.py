@@ -33,15 +33,19 @@ async def chat_endpoint(
     try:
         context_chunks = await retrieve(body.document_id, body.question, db)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Retrieval failed: {str(e)}",
-        )
+        context_chunks = []
 
     if not context_chunks:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No relevant chunks found")
-
-    messages = build_prompt(body.question, context_chunks, analysis_json)
+        messages = [
+            {"role": "system", "content":
+                "You are GhostCode Assistant. You have access to a code file's static analysis results.\n"
+                f"The analysis found the following dead code issues: {analysis_json}\n"
+                "Answer questions about WHY specific code is dead, cite exact line numbers, and suggest fixes.\n"
+                "No code context chunks were found, so answer based on the analysis data only."},
+            {"role": "user", "content": body.question},
+        ]
+    else:
+        messages = build_prompt(body.question, context_chunks, analysis_json)
 
     history_messages = []
     for msg in body.history:
@@ -52,7 +56,7 @@ async def chat_endpoint(
         messages = messages[:-1] + history_messages + [messages[-1]]
 
     async def event_stream():
-        async for event in stream_answer(messages, context_chunks):
+        async for event in stream_answer(messages, context_chunks or []):
             yield f"data: {event}\n\n"
         yield "data: [DONE]\n\n"
 

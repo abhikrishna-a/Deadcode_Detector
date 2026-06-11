@@ -66,11 +66,36 @@ class AnalysisHistoryItem(BaseModel):
     health_score: int
     total_issues: int
     created_at: str
+    scan_folder: str = ""
+    scan_type: str = "single"
 
 
 class HistoryResponse(BaseModel):
     items: list[AnalysisHistoryItem]
     total: int
+
+
+class BatchFileInput(BaseModel):
+    name: str
+    content: str
+
+
+class BatchAnalyzeRequest(BaseModel):
+    files: list[BatchFileInput]
+    scan_folder: str = ""
+    scan_type: str = "single"
+
+
+class BatchFileResult(BaseModel):
+    filename: str
+    analysis: dict[str, Any]
+    document_id: str | None = None
+    error: str | None = None
+
+
+class BatchAnalyzeResponse(BaseModel):
+    results: list[BatchFileResult]
+    total_time_ms: int
 
 
 class ChatQuery(BaseModel):

@@ -26,6 +26,10 @@ async function getAuthToken() {
   return token || '';
 }
 
+function safeRespond(sendResponse, data) {
+  try { sendResponse(data); } catch { /* port already closed */ }
+}
+
 // ---------- Message router ----------
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -34,18 +38,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       switch (msg.type) {
         case 'ANALYZE_CODE': {
           const result = await fetchAnalysis(msg.payload.code, msg.payload.filename);
-          sendResponse({ success: true, data: result });
+          safeRespond(sendResponse, { success: true, data: result });
           break;
         }
         case 'GET_STATUS':
-          sendResponse({ success: true, data: { status: 'ready', version: '1.0.0' } });
+          safeRespond(sendResponse, { success: true, data: { status: 'ready', version: '1.0.0' } });
           break;
         default:
-          sendResponse({ success: false, error: `Unknown message type: ${msg.type}` });
+          safeRespond(sendResponse, { success: false, error: `Unknown message type: ${msg.type}` });
       }
     } catch (e) {
-      sendResponse({ success: false, error: e.message });
+      safeRespond(sendResponse, { success: false, error: e.message });
     }
   })();
-  return true; // keep message channel open for async response
+  return true;
 });

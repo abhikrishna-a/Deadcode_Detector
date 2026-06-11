@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 
 _backend = os.getenv("EMBEDDING_BACKEND", "local").lower()
 _st_model = None
-BATCH_SIZE = 20
+BATCH_SIZE = 50
 
 
 def _get_st_model():

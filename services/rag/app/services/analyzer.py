@@ -1,7 +1,9 @@
 import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.grok_client import call_groq_json
 from app.services.prompts import get_analysis_prompt, get_analysis_system_prompt
 from app.services.chunker import detect_language
+from app.services.cross_reference import extract_symbols, check_references, build_result
 
 DEAD_CODE_CATEGORIES = [
     "unused_import", "unused_function", "unused_class", "unused_variable",
@@ -201,28 +203,133 @@ async def _analyze_single_chunk(content: str, filename: str) -> dict:
     return result
 
 
-async def analyze_file(source: str, filename: str) -> dict:
-    """
-    Analyze a source file. If it exceeds the token limit, splits into
-    overlapping chunks and analyzes ALL chunks in parallel via asyncio.gather.
-    """
-    if not _needs_chunking(source):
-        return await _analyze_single_chunk(source, filename)
+def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
+    """Merge RAG cross-reference findings into LLM results, deduping by symbol name."""
+    rag_issues = {i.get("name"): i for i in rag_result.get("issues", []) if i.get("name")}
+    llm_issues = llm_result.get("issues", [])
 
-    chunks = _chunk_file(source)
+    # Keep LLM issues, but remove any that RAG already confirmed as dead (use RAG's version)
+    deduped = []
+    seen_names = set(rag_issues.keys())
+    for issue in llm_issues:
+        name = issue.get("name")
+        if name and name in rag_issues:
+            # RAG version is more reliable — skip the LLM duplicate
+            continue
+        deduped.append(issue)
 
-    # ── PARALLEL: all chunks sent to LLM at the same time ──
-    tasks = [
-        _analyze_single_chunk(
-            f"[GhostCode chunk {c['index']+1}/{c['total']} "
-            f"lines {c['line_start']}-{c['line_end']}]\n{c['content']}",
-            filename,
-        )
-        for c in chunks
+    all_issues = list(rag_result.get("issues", [])) + deduped
+    all_issues.sort(key=lambda x: x.get("line_start", 0))
+
+    for i, issue in enumerate(all_issues):
+        issue["id"] = f"DC{i+1:03d}"
+
+    # Recompute summary
+    severity_counts = {"high": 0, "medium": 0, "low": 0}
+    categories = {}
+    for issue in all_issues:
+        sev = issue.get("severity", "low")
+        if sev in severity_counts:
+            severity_counts[sev] += 1
+        cat = issue.get("category", "unknown")
+        categories[cat] = categories.get(cat, 0) + 1
+
+    metrics = llm_result.get("metrics", {}).copy()
+    metrics["dead_lines_estimate"] = metrics.get("dead_lines_estimate", 0) + rag_result.get("metrics", {}).get("dead_lines_estimate", 0)
+    if metrics.get("total_lines", 0) > 0:
+        metrics["dead_code_percentage"] = round((metrics["dead_lines_estimate"] / metrics["total_lines"]) * 100, 1)
+    else:
+        metrics["dead_code_percentage"] = 0.0
+
+    health_scores = [
+        rag_result.get("summary", {}).get("health_score", 0),
+        llm_result.get("summary", {}).get("health_score", 0),
     ]
-    chunk_analyses = await asyncio.gather(*tasks)
-    chunk_results = list(zip(chunk_analyses, chunks))
-    return _merge_chunk_results(chunk_results, source)
+    health_scores = [s for s in health_scores if s is not None and s > 0]
+    avg_health = round(sum(health_scores) / len(health_scores)) if health_scores else 0
+    if avg_health >= 90:
+        overall = "clean"
+    elif avg_health >= 70:
+        overall = "good"
+    elif avg_health >= 40:
+        overall = "needs_attention"
+    else:
+        overall = "poor"
+
+    llm_usage = llm_result.get("_token_usage")
+    rag_usage = rag_result.get("_token_usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+    token_usage = llm_usage if llm_usage else rag_usage
+
+    return {
+        "summary": {
+            "total_issues": len(all_issues),
+            "severity_counts": severity_counts,
+            "categories": categories,
+            "overall_health": overall,
+            "health_score": avg_health,
+        },
+        "issues": all_issues,
+        "metrics": metrics,
+        "refactor_hints": llm_result.get("refactor_hints", []) + rag_result.get("refactor_hints", []),
+        "_token_usage": token_usage,
+        "_cross_referenced": True,
+    }
+
+
+async def analyze_file(source: str, filename: str, db: AsyncSession | None = None, user_id: int | None = None) -> dict:
+    """
+    Analyze a source file. Uses RAG cross-reference as a pre-pass:
+    each symbol is checked against previously analyzed files.
+    Known-dead symbols return instantly; the LLM only processes
+    remaining code. Results are merged.
+    """
+    rag_result = None
+    if db is not None and user_id is not None:
+        symbols = extract_symbols(source, filename)
+        if symbols:
+            unreferenced = await check_references(db, user_id, symbols, source)
+            if len(unreferenced) == len(symbols):
+                return build_result(unreferenced, source, filename)
+            if unreferenced:
+                # Partial RAG hit — build result for known-dead symbols
+                rag_result = build_result(unreferenced, source, filename)
+
+    if not _needs_chunking(source):
+        llm_result = await _analyze_single_chunk(source, filename)
+    else:
+        chunks = _chunk_file(source)
+        tasks = [
+            _analyze_single_chunk(
+                f"[GhostCode chunk {c['index']+1}/{c['total']} "
+                f"lines {c['line_start']}-{c['line_end']}]\n{c['content']}",
+                filename,
+            )
+            for c in chunks
+        ]
+        chunk_analyses = await asyncio.gather(*tasks)
+        chunk_results = list(zip(chunk_analyses, chunks))
+        llm_result = _merge_chunk_results(chunk_results, source)
+
+    if rag_result:
+        result = _merge_rag_with_llm(rag_result, llm_result)
+    else:
+        result = llm_result
+
+    total = len(result.get("issues", []))
+    health = max(0, 100 - (total * 15)) if total > 0 else 100
+    if health >= 90:
+        overall = "clean"
+    elif health >= 70:
+        overall = "good"
+    elif health >= 40:
+        overall = "needs_attention"
+    else:
+        overall = "poor"
+    result.setdefault("summary", {})["health_score"] = health
+    result["summary"]["overall_health"] = overall
+    result["summary"]["total_issues"] = total
+
+    return result
 
 
 # Backwards-compatible alias (used by rag/routers/analysis.py)

@@ -56,10 +56,10 @@ export default function Auth({ onSuccess, onBack }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'relative', minHeight: '100vh', background: '#0c0a09', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <NoiseSVG />
       <GridBg />
-      <GlowOrb primary="#f97316" secondary="#7c2d12" top="50%" left="50%" size={500} />
+      <GlowOrb primary="#059669" secondary="#022c22" top="50%" left="50%" size={500} />
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
 
@@ -69,51 +69,48 @@ export default function Auth({ onSuccess, onBack }) {
         style={{
           position: 'relative', zIndex: 1,
           width: '100%', maxWidth: 440, margin: '0 16px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(249,115,22,0.2)',
-          borderRadius: 20,
-          backdropFilter: 'blur(20px)',
+          background: '#1c1917',
+          border: '1px solid #353230',
+          borderRadius: 16,
           padding: 40,
         }}
       >
-        {/* Back */}
         <button
           onClick={onBack}
           style={{
-            background: 'none', border: 'none', color: '#6b7280',
-            cursor: 'pointer', fontSize: 13, fontFamily: "'DM Mono', monospace",
+            background: 'none', border: 'none', color: '#a8a29e',
+            cursor: 'pointer', fontSize: 13, fontFamily: "'Inter', sans-serif",
             marginBottom: 20, padding: 0,
           }}
         >
           ← Back
         </button>
 
-        {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
            <span style={{
-             background: 'linear-gradient(135deg, #ea580c, #f97316)',
+              background: 'linear-gradient(135deg, #047857, #059669)',
              borderRadius: 10, padding: '8px 16px',
-             fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff',
+             fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff',
              display: 'inline-block', marginBottom: 12,
            }}>GC</span>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff5eb' }}>
+            <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 22, color: '#ecfdf5' }}>
             {mode === 'login' ? 'Welcome back' : mode === 'forgot' ? 'Reset password' : 'Create account'}
           </h2>
         </div>
 
         {mode !== 'forgot' && (
           <div style={{
-            display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 4, marginBottom: 28,
+            display: 'flex', background: '#292524', borderRadius: 10, padding: 3, marginBottom: 28,
           }}>
             {['login', 'register'].map(m => (
               <button
                 key={m}
                 onClick={() => { setMode(m); setToast(null); }}
                 style={{
-                  flex: 1, padding: '8px 0', borderRadius: 10,
-                  background: mode === m ? 'rgba(234,88,12,0.7)' : 'transparent',
-                  border: 'none', color: mode === m ? '#fff' : '#6b7280',
-                  fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600,
+                  flex: 1, padding: '8px 0', borderRadius: 8,
+                  background: mode === m ? '#059669' : 'transparent',
+                  border: 'none', color: mode === m ? '#fff' : '#a8a29e',
+                  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
                   cursor: 'pointer', transition: 'all 0.2s',
                 }}
               >
@@ -139,8 +136,8 @@ export default function Auth({ onSuccess, onBack }) {
                 <button
                   onClick={() => { setMode('forgot'); setToast(null); setForgotSent(false); }}
                   style={{
-                    background: 'none', border: 'none', color: '#6b7280',
-                    fontSize: 12, fontFamily: "'DM Mono', monospace",
+                    background: 'none', border: 'none', color: '#a8a29e',
+                    fontSize: 12, fontFamily: "'Inter', sans-serif",
                     cursor: 'pointer', padding: 0, textAlign: 'right', alignSelf: 'flex-end',
                   }}
                 >
@@ -153,7 +150,7 @@ export default function Auth({ onSuccess, onBack }) {
             ) : mode === 'forgot' ? (
               forgotSent ? (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#9ca3af', marginBottom: 24, lineHeight: 1.6 }}>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: '#a8a29e', marginBottom: 24, lineHeight: 1.6 }}>
                     If that email is registered, a reset link has been sent. Check your inbox (and spam folder).
                   </p>
                   <Btn variant="solid" onClick={() => { setMode('login'); setForgotSent(false); setForgotEmail(''); }} style={{ width: '100%' }}>

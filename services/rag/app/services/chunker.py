@@ -2,9 +2,9 @@ import ast
 import re
 from typing import List, Optional
 
-MAX_CHUNK_CHARS = 1600
-SLIDING_WINDOW_LINES = 40
-SLIDING_OVERLAP_LINES = 8
+MAX_CHUNK_CHARS = 2400
+SLIDING_WINDOW_LINES = 60
+SLIDING_OVERLAP_LINES = 10
 
 
 class Chunk:

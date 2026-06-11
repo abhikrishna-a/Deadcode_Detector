@@ -87,8 +87,8 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
             transition={{ duration: 0.15 }}
             style={{
               width, maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto',
-              background: '#0f0f0f',
-              border: '1px solid rgba(249,115,22,0.15)',
+              background: '#1c1917',
+              border: '1px solid #44403c',
               borderRadius: 16,
               padding: 24,
               position: 'relative',
@@ -103,7 +103,7 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
                 background: 'none', border: 'none', color: '#6b7280',
                 cursor: 'pointer', fontSize: 18, lineHeight: 1,
                 padding: '4px 8px', borderRadius: 6,
-                fontFamily: "'DM Mono', monospace",
+                fontFamily: "'Inter', sans-serif",
               }}
               onMouseEnter={(e) => { e.currentTarget.style.color = '#f87171'; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; }}
@@ -112,9 +112,9 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
             </button>
 
             {/* Title */}
-            {title && (
+              {title && (
               <p style={{
-                fontSize: 12, color: '#fb923c', fontFamily: "'DM Mono', monospace",
+                fontSize: 13, color: '#34d399', fontFamily: "'Inter', sans-serif",
                 fontWeight: 600, letterSpacing: 0.5, marginBottom: 16, paddingRight: 30,
               }}>
                 {title}
