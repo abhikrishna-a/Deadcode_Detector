@@ -1,4 +1,4 @@
-export default function GlowOrb({ primary = '#f97316', secondary = '#7c2d12', top, left, size = 600 }) {
+export default function GlowOrb({ primary = '#059669', secondary = '#022c22', top, left, size = 600 }) {
   return (
     <div
       style={{

@@ -36,7 +36,7 @@ class GitCloneView(APIView):
 
     def post(self, request):
         repo_url = request.data.get('repo_url', '').strip().rstrip('/')
-        branch = request.data.get('branch', 'main').strip()
+        branch = (request.data.get('branch') or 'main').strip()
         token = request.data.get('token', '').strip()
 
         if not repo_url:
@@ -45,11 +45,36 @@ class GitCloneView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not (repo_url.startswith('https://github.com/') or repo_url.startswith('https://gitlab.com/')):
+        # Normalize: strip www, upgrade http→https, handle SSH-style git@ URLs
+        repo_url_lower = repo_url.lower()
+        if 'github.com' not in repo_url_lower and 'gitlab.com' not in repo_url_lower:
             return Response(
-                {'error': 'Only https://github.com and https://gitlab.com URLs are supported.'},
+                {'error': 'Only GitHub and GitLab repositories are supported.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Convert to lowercase for consistency
+        repo_url = repo_url.lower()
+
+        if repo_url.startswith('git@'):
+            # SSH: git@github.com:user/repo → https://github.com/user/repo
+            repo_url = repo_url.replace(':', '/').replace('git@', 'https://').removesuffix('.git')
+        else:
+            if not repo_url.startswith('https://'):
+                repo_url = 'https://' + repo_url.removeprefix('http://').removeprefix('https://')
+            repo_url = repo_url.replace('://www.', '://')
+
+        # Strip GitHub web path: /tree/branch/... or /blob/branch/...
+        # Git clone only needs the repo root: https://github.com/owner/repo
+        for prefix in ('/tree/', '/blob/'):
+            idx = repo_url.find(prefix)
+            if idx != -1:
+                repo_url = repo_url[:idx]
+                break
+
+        # Remove .git suffix if present (after web-path stripping)
+        repo_url = repo_url.removesuffix('.git')
+        repo_url_clean = repo_url  # preserve without token for response
 
         if token:
             # Insert token into URL as credential: https://token@github.com/user/repo
@@ -126,6 +151,7 @@ class GitCloneView(APIView):
             return Response({
                 'session_id': session_id,
                 'repo_name': repo_name,
+                'repo_url': repo_url_clean,
                 'branch': branch,
                 'total_files': len(file_list),
                 'total_bytes': total_bytes,

@@ -42,10 +42,10 @@ export default function ResetPassword({ token, onBack }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'relative', minHeight: '100vh', background: '#0c0a09', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <NoiseSVG />
       <GridBg />
-      <GlowOrb primary="#f97316" secondary="#7c2d12" top="50%" left="50%" size={500} />
+      <GlowOrb primary="#059669" secondary="#022c22" top="50%" left="50%" size={500} />
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
 
@@ -55,9 +55,9 @@ export default function ResetPassword({ token, onBack }) {
         style={{
           position: 'relative', zIndex: 1,
           width: '100%', maxWidth: 440, margin: '0 16px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(249,115,22,0.2)',
-          borderRadius: 20,
+          background: '#1c1917',
+          border: '1px solid #353230',
+           borderRadius: 16,
           backdropFilter: 'blur(20px)',
           padding: 40,
         }}
@@ -65,8 +65,8 @@ export default function ResetPassword({ token, onBack }) {
         <button
           onClick={onBack}
           style={{
-            background: 'none', border: 'none', color: '#6b7280',
-            cursor: 'pointer', fontSize: 13, fontFamily: "'DM Mono', monospace",
+            background: 'none', border: 'none', color: '#78716c',
+            cursor: 'pointer', fontSize: 13, fontFamily: "'Inter', sans-serif",
             marginBottom: 20, padding: 0,
           }}
         >
@@ -75,19 +75,19 @@ export default function ResetPassword({ token, onBack }) {
 
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <span style={{
-            background: 'linear-gradient(135deg, #ea580c, #f97316)',
+            background: 'linear-gradient(135deg, #047857, #059669)',
             borderRadius: 10, padding: '8px 16px',
-            fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff',
+            fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff',
             display: 'inline-block', marginBottom: 12,
           }}>GC</span>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: '#fff5eb' }}>
+          <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, color: '#e7e5e4' }}>
             {success ? 'Password reset' : 'Set new password'}
           </h2>
         </div>
 
         {success ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#9ca3af', marginBottom: 24, lineHeight: 1.6 }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: '#a8a29e', marginBottom: 24, lineHeight: 1.6 }}>
               Your password has been reset successfully. You can now log in with your new password.
             </p>
             <Btn variant="solid" onClick={onBack} style={{ width: '100%' }}>

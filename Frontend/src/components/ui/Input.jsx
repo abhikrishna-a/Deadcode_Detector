@@ -2,7 +2,7 @@ export default function Input({ label, value, onChange, type = 'text', placehold
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...style }}>
       {label && (
-        <label style={{ fontSize: 12, color: '#fb923c', fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>
+        <label style={{ fontSize: 12, color: '#34d399', fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
           {label}
         </label>
       )}
@@ -13,18 +13,18 @@ export default function Input({ label, value, onChange, type = 'text', placehold
         placeholder={placeholder}
         maxLength={maxLength}
         style={{
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(249,115,22,0.25)',
+          background: '#292524',
+          border: '1px solid #44403c',
           borderRadius: 10,
           padding: '10px 14px',
           fontSize: 14,
-          color: '#f5ede0',
-          fontFamily: "'DM Mono', monospace",
+          color: '#e7e5e4',
+          fontFamily: "'Inter', sans-serif",
           outline: 'none',
           transition: 'border-color 0.2s',
         }}
-        onFocus={(e) => { e.target.style.borderColor = 'rgba(249,115,22,0.7)'; }}
-        onBlur={(e) => { e.target.style.borderColor = 'rgba(249,115,22,0.25)'; }}
+        onFocus={(e) => { e.target.style.borderColor = '#059669'; }}
+        onBlur={(e) => { e.target.style.borderColor = '#44403c'; }}
         {...props}
       />
     </div>

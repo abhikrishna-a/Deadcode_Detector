@@ -11,15 +11,11 @@ import type {
 
 const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/rag';
 
-async function getAuthToken(): Promise<string> {
-  const raw = localStorage.getItem('auth-storage');
-  if (!raw) return '';
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed?.state?.token || '';
-  } catch {
-    return '';
-  }
+function getAuthToken(): string {
+  return document.cookie
+    .split('; ')
+    .find(r => r.startsWith('ghostcode_access='))
+    ?.split('=')[1] || '';
 }
 
 async function readErrorDetail(response: Response, fallback: string): Promise<string> {
@@ -75,7 +71,7 @@ export const analysisAPI = {
   },
 
   // Unified analysis: sends file to RAG service which runs Groq analysis + stores in vector DB
-  analyzeFile: async (file: File): Promise<{
+  analyzeFile: async (file: File, scanFolder: string = ''): Promise<{
     filename: string;
     document_id: string;
     chunk_count: number;
@@ -102,10 +98,13 @@ export const analysisAPI = {
     };
     auto_analyzed: boolean;
     cached?: boolean;
+    scan_folder?: string;
+    scan_type?: string;
   }> => {
     const token = await getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
+    if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`${RAG_BASE}/analyze`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -130,6 +129,8 @@ export const analysisAPI = {
       analysis: result.analysis,
       auto_analyzed: result.auto_analyzed ?? true,
       cached: result.cached ?? false,
+      scan_folder: result.scan_folder || scanFolder,
+      scan_type: result.scan_type || '',
     };
   },
 
@@ -211,7 +212,7 @@ export const analysisAPI = {
   },
 
   // RAG: Paginated history
-  ragHistory: async (limit: number = 20, offset: number = 0): Promise<{
+  ragHistory: async (limit: number = 20, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
       analysis_id: string;
       filename: string;
@@ -219,11 +220,15 @@ export const analysisAPI = {
       health_score: number;
       total_issues: number;
       created_at: string;
+      scan_folder?: string;
+      scan_type?: string;
     }>;
     total: number;
   }> => {
     const token = await getAuthToken();
-    const response = await fetch(`${RAG_BASE}/history?limit=${limit}&offset=${offset}`, {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (search) params.set('search', search);
+    const response = await fetch(`${RAG_BASE}/history?${params}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -382,6 +387,30 @@ export const analysisAPI = {
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `RAG chat-json failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  async ragDiagnose(context: {
+    total_files: number;
+    completed: number;
+    failed: number;
+    total_tokens: number;
+    stop_reason: string;
+    file_results?: { filename: string; health_score: number; issues: number }[];
+  }): Promise<{ diagnosis: string; root_cause: string; suggestion: string }> {
+    const token = await getAuthToken();
+    const response = await fetch(`${RAG_BASE}/diagnose`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(context),
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Diagnosis failed (HTTP ${response.status})`);
       throw new Error(detail);
     }
     return response.json();

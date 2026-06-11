@@ -1,9 +1,11 @@
 import logging
+import secrets
 import threading
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.utils import timezone
 
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -17,6 +19,7 @@ import base64
 from io import BytesIO
 import qrcode
 
+from .models import UserSession
 from .serializers import (
     CustomTokenObtainPairSerializer,
     CustomTokenRefreshSerializer,
@@ -59,6 +62,45 @@ def build_qr_code_data_url(data):
     return f"data:image/png;base64,{encoded}"
 
 
+def _set_refresh_cookie(response, session_key):
+    response.set_cookie(
+        key=settings.REFRESH_TOKEN_COOKIE_NAME,
+        value=session_key,
+        max_age=settings.REFRESH_TOKEN_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite='Lax',
+        secure=not settings.DEBUG,
+        path='/',
+    )
+
+def _set_access_cookie(response, access_token):
+    response.set_cookie(
+        key='ghostcode_access',
+        value=access_token,
+        max_age=settings.REFRESH_TOKEN_COOKIE_MAX_AGE,
+        httponly=False,
+        samesite='Lax',
+        secure=not settings.DEBUG,
+        path='/',
+    )
+
+
+def _create_session(user, refresh_token_str, request):
+    session_key = secrets.token_urlsafe(32)
+    expires_at = timezone.now() + timezone.timedelta(
+        days=int(settings.REFRESH_TOKEN_COOKIE_MAX_AGE / 86400)
+    )
+    session = UserSession.objects.create(
+        user=user,
+        session_key=session_key,
+        refresh_token=refresh_token_str,
+        user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+        ip_address=request.META.get('REMOTE_ADDR'),
+        expires_at=expires_at,
+    )
+    return session.session_key
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Stage 1 Login Endpoint:
@@ -75,6 +117,12 @@ class CustomTokenRefreshView(TokenRefreshView):
     pre-auth refresh tokens from minting high-privilege active sessions.
     """
     serializer_class = CustomTokenRefreshSerializer
+
+    def post(self, request, *args, **kwargs):
+        resp = super().post(request, *args, **kwargs)
+        if resp.status_code == 200 and 'access' in resp.data:
+            _set_access_cookie(resp, resp.data['access'])
+        return resp
 
 
 class RegisterView(APIView):
@@ -145,12 +193,12 @@ class CompleteMFALoginView(APIView):
 
         # Verify using the model method (incorporating the clock-drift window)
         if user.verify_mfa_token(token):
-            # Generate genuine, fully-privileged active session tokens
             refresh = RefreshToken.for_user(user)
             refresh["role"] = user.role
             refresh["mfa_verified_for_session"] = True
 
-            return Response(
+            session_key = _create_session(user, str(refresh), request)
+            resp = Response(
                 {
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),
@@ -158,6 +206,9 @@ class CompleteMFALoginView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+            _set_refresh_cookie(resp, session_key)
+            _set_access_cookie(resp, str(refresh.access_token))
+            return resp
 
         return Response(
             {"error": "Invalid verification code."},
@@ -242,7 +293,8 @@ class MFAInitialVerifyView(APIView):
             refresh["role"] = user.role
             refresh["mfa_verified_for_session"] = True
 
-            return Response(
+            session_key = _create_session(user, str(refresh), request)
+            resp = Response(
                 {
                     "message": "Multi-factor authentication successfully activated.",
                     "refresh": str(refresh),
@@ -251,6 +303,9 @@ class MFAInitialVerifyView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+            _set_refresh_cookie(resp, session_key)
+            _set_access_cookie(resp, str(refresh.access_token))
+            return resp
 
         return Response(
             {"error": "Invalid verification code. Activation failed."},
@@ -363,3 +418,72 @@ class AdminUserRoleUpdateView(APIView):
             AdminUserSerializer(target_user).data,
             status=status.HTTP_200_OK,
         )
+
+
+class SessionCheckView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        session_key = request.COOKIES.get(settings.REFRESH_TOKEN_COOKIE_NAME)
+        if not session_key:
+            return Response({"isAuthenticated": False})
+
+        try:
+            session = UserSession.objects.get(
+                session_key=session_key, is_active=True
+            )
+        except UserSession.DoesNotExist:
+            return Response({"isAuthenticated": False})
+
+        if not session.is_valid():
+            session.is_active = False
+            session.save(update_fields=["is_active"])
+            resp = Response({"isAuthenticated": False})
+            resp.delete_cookie(settings.REFRESH_TOKEN_COOKIE_NAME, path='/')
+            return resp
+
+        user = session.user
+        try:
+            stored_refresh = RefreshToken(session.refresh_token)
+            stored_refresh.check_exp()
+        except Exception:
+            session.is_active = False
+            session.save(update_fields=["is_active"])
+            resp = Response({"isAuthenticated": False})
+            resp.delete_cookie(settings.REFRESH_TOKEN_COOKIE_NAME, path='/')
+            return resp
+
+        new_refresh = RefreshToken.for_user(user)
+        new_refresh["role"] = user.role
+        new_refresh["mfa_verified_for_session"] = True
+
+        session.refresh_token = str(new_refresh)
+        session.expires_at = timezone.now() + timezone.timedelta(
+            days=int(settings.REFRESH_TOKEN_COOKIE_MAX_AGE / 86400)
+        )
+        session.save(update_fields=["refresh_token", "expires_at"])
+
+        resp = Response({
+            "isAuthenticated": True,
+            "user": UserSerializer(user).data,
+            "access": str(new_refresh.access_token),
+        })
+        _set_refresh_cookie(resp, session.session_key)
+        _set_access_cookie(resp, str(new_refresh.access_token))
+        return resp
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        session_key = request.COOKIES.get(settings.REFRESH_TOKEN_COOKIE_NAME)
+        if session_key:
+            UserSession.objects.filter(session_key=session_key).update(
+                is_active=False
+            )
+        resp = Response({"message": "Logged out successfully."})
+        resp.delete_cookie(settings.REFRESH_TOKEN_COOKIE_NAME, path='/')
+        resp.delete_cookie('ghostcode_access', path='/')
+        return resp

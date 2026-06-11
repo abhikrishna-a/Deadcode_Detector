@@ -3,51 +3,42 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import OverviewTab from './tabs/OverviewTab';
 import AnalyzerTab from './tabs/AnalyzerTab';
-import ChatTab from './tabs/ChatTab';
-import SettingsTab from './tabs/SettingsTab';
+import HistoryTab from './tabs/HistoryTab';
 import AdminTab from './tabs/AdminTab';
+import ChatTab from './tabs/ChatTab';
 
 const STORAGE_KEY = 'dashboard-shell';
-const FILE_STORAGE_KEY = 'dashboard-file';
 
 function loadSaved() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.activeTab === 'profile') parsed.activeTab = 'history';
+      return {
+        activeTab: parsed.activeTab || 'overview',
+        results: parsed.results || null,
+        history: parsed.history || [],
+      };
+    }
   } catch {}
   return {};
-}
-
-function loadFileInfo() {
-  try {
-    const raw = localStorage.getItem(FILE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return null;
 }
 
 const tabs = [
   { key: 'overview', label: 'Dashboard' },
   { key: 'analyzer', label: 'Analyzer' },
-  { key: 'profile', label: 'Profile' },
+  { key: 'history', label: 'History' },
+  { key: 'chat', label: 'Chat' },
 ];
 
 const adminTab = { key: 'admin', label: 'Admin' };
 
 export default function DashboardShell({ session, onLogout }) {
   const saved = loadSaved();
-  const savedFileInfo = loadFileInfo();
   const [activeTab, setActiveTab] = useState(saved.activeTab || 'overview');
   const [results, setResults] = useState(saved.results || null);
   const [history, setHistory] = useState(saved.history || []);
-  const [file, setFile] = useState(() => {
-    if (savedFileInfo) {
-      return new File([savedFileInfo.content], savedFileInfo.name, { type: 'text/plain' });
-    }
-    return null;
-  });
-  const [chatDocumentId, setChatDocumentId] = useState(null);
-  const [chatFilename, setChatFilename] = useState(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab, results, history }));
@@ -57,7 +48,21 @@ export default function DashboardShell({ session, onLogout }) {
   const visibleTabs = user?.role === 'admin' ? [...tabs, adminTab] : tabs;
 
   const handleViewResult = (result) => {
-    setResults(result);
+    const wrapped = {
+      document_id: result.document_id || result.analysis_id,
+      filename: result.filename,
+      analysis: result.analysis || result._full || result,
+      _batch_results: result._batch_results || (result.filename ? [{
+        filename: result.filename,
+        document_id: result.document_id || result.analysis_id,
+        analysis: result.analysis || result._full || result,
+        scan_folder: result.scan_folder || '',
+        scan_type: result.scan_type || 'single',
+      }] : []),
+      _batch_errors: result._batch_errors || [],
+      _source_content: result._source_content || '',
+    };
+    setResults(wrapped);
     setActiveTab('analyzer');
   };
 
@@ -68,69 +73,49 @@ export default function DashboardShell({ session, onLogout }) {
         setHistory(prev => {
           const existing = new Set(prev.map(h => h.filename + '|' + (h.document_id || '')));
           const newItems = batchItems
-            .filter(r => r.analysis && !existing.has(r.filename + '|' + (r.document_id || '')))
+            .filter(r => !existing.has(r.filename + '|' + (r.document_id || '')))
             .map(r => ({
               filename: r.filename,
               document_id: r.document_id,
-              ...r.analysis,
+              scan_folder: r.scan_folder || '',
+              scan_type: r.scan_type || '',
+              error: r.error || (r.analysis ? undefined : 'Analysis failed'),
+              ...(r.analysis || {}),
             }));
           return [...prev, ...newItems];
         });
       } else {
         setHistory(prev => {
           const filtered = prev.filter(h => h.filename !== newResults.filename);
-          return [...filtered, newResults];
+          return [...filtered, { ...newResults, scan_type: 'single' }];
         });
       }
     }
     setResults(newResults);
   };
 
-  const handleFileChange = (f) => {
-    setFile(f);
-    if (f) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result || '';
-        localStorage.setItem(FILE_STORAGE_KEY, JSON.stringify({ name: f.name, content }));
-      };
-      reader.readAsText(f);
-    } else {
-      localStorage.removeItem(FILE_STORAGE_KEY);
-    }
-  };
-
-  const handleChatAboutFile = (documentId, filename) => {
-    setChatDocumentId(documentId);
-    setChatFilename(filename);
-    setActiveTab('chat');
-  };
-
   return (
-    <div style={{ minHeight: '100vh', background: '#080808' }}>
-      {/* Sticky Top Nav */}
+    <div style={{ minHeight: '100vh', background: '#0c0a09' }}>
       <header style={{
         position: 'sticky', top: 0, zIndex: 50,
-        background: 'rgba(8,8,8,0.85)',
+        background: 'rgba(12,10,9,0.9)',
         backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(249,115,22,0.08)',
+        borderBottom: '1px solid rgba(5,150,105,0.08)',
         padding: '0 32px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-         {/* Left */}
          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
            <span style={{
-             background: 'linear-gradient(135deg, #ea580c, #f97316)',
-             borderRadius: 10, padding: '6px 12px',
-             fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff',
+            background: 'linear-gradient(135deg, #047857, #059669)',
+            borderRadius: 10, padding: '6px 12px',
+            fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff',
            }}>GC</span>
-           <span style={{ color: '#f5ede0', fontSize: 18, fontWeight: 800, fontFamily: "'Syne', sans-serif" }}
+           <span style={{ color: '#ecfdf5', fontSize: 18, fontWeight: 700, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
              className="brand-text">GhostCode</span>
-           <span style={{ color: '#9ca3af', fontSize: 12, fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
+           <span style={{ color: '#a8a29e', fontSize: 12, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}
              className="brand-subtitle">static analysis</span>
          </div>
 
-        {/* Center Tabs */}
         <nav style={{ display: 'flex', gap: 0, height: '100%', alignItems: 'stretch' }}>
           {visibleTabs.map(t => {
             const isActive = activeTab === t.key;
@@ -139,16 +124,16 @@ export default function DashboardShell({ session, onLogout }) {
                 key={t.key}
                 onClick={() => setActiveTab(t.key)}
                 style={{
-                  background: 'none', border: 'none', borderBottom: isActive ? '2px solid #f97316' : '2px solid transparent',
-                  color: isActive ? '#fb923c' : '#6b7280',
-                  fontFamily: "'DM Mono', monospace", fontSize: 13,
+                  background: 'none', border: 'none', borderBottom: isActive ? '2px solid #059669' : '2px solid transparent',
+                  color: isActive ? '#34d399' : '#78716c',
+                  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: isActive ? 600 : 400,
                   padding: '0 20px', cursor: 'pointer',
                   transition: 'all 0.15s',
                   display: 'flex', alignItems: 'center',
                   whiteSpace: 'nowrap',
                 }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = '#f5ede0'; }}
-                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = '#6b7280'; }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = '#e7e5e4'; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = '#78716c'; }}
               >
                 {t.label}
               </button>
@@ -156,19 +141,18 @@ export default function DashboardShell({ session, onLogout }) {
           })}
         </nav>
 
-        {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
             <>
-              <span style={{ color: '#fb923c', fontSize: 12, fontFamily: "'DM Mono', monospace" }}>
+              <span style={{ color: '#34d399', fontSize: 12, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
                 {user.username}
               </span>
               <span style={{
-                background: 'rgba(249,115,22,0.15)',
-                border: '1px solid rgba(249,115,22,0.3)',
+                background: 'rgba(5,150,105,0.12)',
+                border: '1px solid rgba(5,150,105,0.25)',
                 borderRadius: 12, padding: '2px 10px',
-                fontSize: 10, color: '#fb923c',
-                fontFamily: "'DM Mono', monospace",
+                fontSize: 10, color: '#34d399',
+                fontFamily: "'Inter', sans-serif", fontWeight: 500,
               }}>
                 {user.role}
               </span>
@@ -177,11 +161,11 @@ export default function DashboardShell({ session, onLogout }) {
           <button
             onClick={onLogout}
             style={{
-              background: 'none', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171',
+              background: 'none', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444',
               borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer',
-              fontFamily: "'DM Mono', monospace", transition: 'all 0.2s',
+              fontFamily: "'Inter', sans-serif", fontWeight: 500, transition: 'all 0.2s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.1)'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
           >
             Logout
@@ -195,6 +179,7 @@ export default function DashboardShell({ session, onLogout }) {
           {activeTab === 'overview' && (
             <OverviewTab
               key="overview"
+              session={session}
               history={history}
               results={results}
               onViewResult={handleViewResult}
@@ -205,22 +190,19 @@ export default function DashboardShell({ session, onLogout }) {
               key="analyzer"
               results={results}
               onResultsChange={handleResultsChange}
-              file={file}
-              onFileChange={handleFileChange}
-              onChatAboutFile={handleChatAboutFile}
+            />
+          )}
+          {activeTab === 'history' && (
+            <HistoryTab
+              key="history"
+              history={history}
+              results={results}
+              onViewResult={handleViewResult}
             />
           )}
           {activeTab === 'chat' && (
             <ChatTab
               key="chat"
-              initialDocumentId={chatDocumentId}
-              initialFilename={chatFilename}
-            />
-          )}
-          {activeTab === 'profile' && (
-            <SettingsTab
-              key="profile"
-              session={session}
             />
           )}
           {activeTab === 'admin' && (

@@ -14,7 +14,12 @@ import type {
   User,
 } from './types';
 
-// Auth endpoints
+interface SessionCheckResponse {
+  isAuthenticated: boolean;
+  user?: User;
+  access?: string;
+}
+
 export const authAPI = {
   register: async (data: RegisterRequest): Promise<RegisterResponse> => {
     const response = await apiClient.post('/api/auth/register/', data);
@@ -38,9 +43,7 @@ export const authAPI = {
     const response = await apiClient.post(
       '/api/auth/mfa/verify-login/',
       data,
-      {
-        headers: { Authorization: `Bearer ${preAuthToken}` }
-      }
+      { headers: { Authorization: `Bearer ${preAuthToken}` } }
     );
     return response.data;
   },
@@ -50,16 +53,13 @@ export const authAPI = {
     return response.data;
   },
 
-  activateMFA: async (
-    data: MFAActivateRequest
-  ): Promise<MFAActivateResponse> => {
+  activateMFA: async (data: MFAActivateRequest): Promise<MFAActivateResponse> => {
     const response = await apiClient.post('/api/auth/mfa/activate/', data);
     return response.data;
   },
 
-  // Get current user info (using the user endpoint from auth)
   getCurrentUser: async (): Promise<User> => {
-    const response = await apiClient.get('/api/auth/user/'); // Assuming this exists
+    const response = await apiClient.get('/api/auth/user/');
     return response.data;
   },
 
@@ -81,5 +81,14 @@ export const authAPI = {
   confirmPasswordReset: async (token: string, new_password: string): Promise<{ message: string }> => {
     const response = await apiClient.post('/api/auth/password-reset/confirm/', { token, new_password });
     return response.data;
-  }
+  },
+
+  checkSession: async (): Promise<SessionCheckResponse> => {
+    const response = await apiClient.get('/api/auth/session/');
+    return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await apiClient.post('/api/auth/logout/');
+  },
 };

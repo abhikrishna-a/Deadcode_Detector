@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import environ
 from datetime import timedelta
+import secrets
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # Adjusted to go 3 levels up since we are now in Backend/settings/base.py
@@ -10,10 +11,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, []),
-    CORS_ALLOWED_ORIGINS=(list, [])
+    CORS_ALLOWED_ORIGINS=(list, []),
+    CORS_ALLOW_CREDENTIALS=(bool, True),
 )
 
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+
+CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+CORS_ALLOW_CREDENTIALS = env('CORS_ALLOW_CREDENTIALS')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
@@ -44,6 +49,10 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'core.urls'
 AUTH_USER_MODEL = "accounts.CustomUser"
+
+# Refresh token cookie settings (httpOnly)
+REFRESH_TOKEN_COOKIE_NAME = 'ghostcode_refresh'
+REFRESH_TOKEN_COOKIE_MAX_AGE = int(env('JWT_REFRESH_TOKEN_LIFETIME_DAYS', default=7)) * 86400
 
 TEMPLATES = [
     {

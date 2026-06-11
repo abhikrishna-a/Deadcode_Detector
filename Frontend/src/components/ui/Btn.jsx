@@ -2,19 +2,19 @@ import { motion } from 'framer-motion';
 
 const variants = {
   solid: {
-    background: 'linear-gradient(135deg, #ea580c, #f97316)',
+    background: 'linear-gradient(135deg, #047857, #059669)',
     color: '#fff',
-    boxShadow: '0 0 20px rgba(249,115,22,0.35)',
+    boxShadow: '0 0 20px rgba(5,150,105,0.3)',
   },
   ghost: {
     background: 'transparent',
-    color: '#fb923c',
-    border: '1px solid rgba(249,115,22,0.35)',
+    color: '#34d399',
+    border: '1px solid rgba(5,150,105,0.35)',
   },
   danger: {
     background: 'transparent',
-    color: '#f87171',
-    border: '1px solid rgba(248,113,113,0.3)',
+    color: '#ef4444',
+    border: '1px solid rgba(239,68,68,0.3)',
   },
 };
 
@@ -31,7 +31,7 @@ export default function Btn({ children, variant = 'solid', disabled, onClick, st
         borderRadius: 12,
         fontSize: 14,
         fontWeight: 600,
-        fontFamily: "'DM Mono', monospace",
+        fontFamily: "'JetBrains Mono', monospace",
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1,
         transition: 'all 0.2s',

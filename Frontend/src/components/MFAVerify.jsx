@@ -33,10 +33,10 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
   };
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'relative', minHeight: '100vh', background: '#0c0a09', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <NoiseSVG />
       <GridBg />
-      <GlowOrb primary="#f97316" secondary="#7c2d12" top="50%" left="50%" size={500} />
+      <GlowOrb primary="#059669" secondary="#022c22" top="50%" left="50%" size={500} />
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
 
@@ -46,9 +46,9 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
         style={{
           position: 'relative', zIndex: 1,
           width: '100%', maxWidth: 400, margin: '0 16px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(249,115,22,0.2)',
-          borderRadius: 20,
+          background: '#1c1917',
+          border: '1px solid #353230',
+           borderRadius: 16,
           backdropFilter: 'blur(20px)',
           padding: 40,
           textAlign: 'center',
@@ -57,8 +57,8 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
         <button
           onClick={onBack}
           style={{
-            background: 'none', border: 'none', color: '#6b7280',
-            cursor: 'pointer', fontSize: 13, fontFamily: "'DM Mono', monospace",
+            background: 'none', border: 'none', color: '#78716c',
+            cursor: 'pointer', fontSize: 13, fontFamily: "'Inter', sans-serif",
             marginBottom: 24, padding: 0, display: 'block',
           }}
         >
@@ -66,11 +66,11 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
         </button>
 
         <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
-        <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, color: '#fff5eb', marginBottom: 8 }}>
+        <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 22, color: '#e7e5e4', marginBottom: 8 }}>
           Two-factor auth
         </h2>
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#9ca3af', marginBottom: 32, lineHeight: 1.6 }}>
-          Enter the 6-digit code from your authenticator app for <strong style={{ color: '#fb923c' }}>{mfaData?.username || mfaData?.user?.username}</strong>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: '#a8a29e', marginBottom: 32, lineHeight: 1.6 }}>
+          Enter the 6-digit code from your authenticator app for <strong style={{ color: '#34d399' }}>{mfaData?.username || mfaData?.user?.username}</strong>
         </p>
 
         <input
@@ -85,21 +85,21 @@ export default function MFAVerify({ mfaData, onSuccess, onBack }) {
           placeholder="000000"
           style={{
             width: '100%',
-            background: 'rgba(255,255,255,0.03)',
-            border: `2px solid ${code.length === 6 ? 'rgba(249,115,22,0.7)' : 'rgba(249,115,22,0.25)'}`,
+            background: '#292524',
+            border: `2px solid ${code.length === 6 ? 'rgba(5,150,105,0.7)' : '#44403c'}`,
             borderRadius: 14,
             padding: '14px 16px',
             fontSize: 28,
             letterSpacing: '0.4em',
             textAlign: 'center',
-            color: '#fb923c',
-            fontFamily: "'DM Mono', monospace",
+            color: '#34d399',
+            fontFamily: "'JetBrains Mono', monospace",
             outline: 'none',
             transition: 'border-color 0.2s',
             marginBottom: 24,
           }}
-          onFocus={e => { e.target.style.borderColor = 'rgba(249,115,22,0.7)'; }}
-          onBlur={e => { e.target.style.borderColor = code.length === 6 ? 'rgba(249,115,22,0.7)' : 'rgba(249,115,22,0.25)'; }}
+          onFocus={e => { e.target.style.borderColor = 'rgba(5,150,105,0.7)'; }}
+          onBlur={e => { e.target.style.borderColor = code.length === 6 ? 'rgba(5,150,105,0.7)' : '#44403c'; }}
           onKeyDown={e => { if (e.key === 'Enter') handleVerify(); }}
           autoFocus
         />

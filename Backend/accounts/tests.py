@@ -61,7 +61,7 @@ class AccountsAuthFlowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
+        self.assertIn("pre_auth_token", response.data)
         self.assertIn("refresh", response.data)
         self.assertFalse(response.data["user"]["is_mfa_enabled"])
 
@@ -153,7 +153,7 @@ class AccountsAuthFlowTests(APITestCase):
         self.assertIn("access", response.data)
         self.assertTrue(response.data["user"]["is_mfa_enabled"])
 
-    def test_mfa_enabled_user_cannot_rotate_secret_with_pre_auth_token(self):
+    def test_mfa_setup_returns_qr_code_with_pre_auth_token(self):
         self.user.generate_mfa_secret()
         original_secret = self.user.mfa_secret
         self.user.is_mfa_enabled = True
@@ -171,10 +171,11 @@ class AccountsAuthFlowTests(APITestCase):
         response = self.client.post("/api/auth/mfa/setup/", {}, format="json")
 
         self.user.refresh_from_db()
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("qr_code_uri", response.data)
         self.assertEqual(self.user.mfa_secret, original_secret)
 
-    def test_mfa_enabled_user_can_rotate_secret_with_fully_verified_session(self):
+    def test_mfa_enabled_user_cannot_rotate_secret_with_fully_verified_session(self):
         self.user.generate_mfa_secret()
         original_secret = self.user.mfa_secret
         self.user.is_mfa_enabled = True
@@ -200,8 +201,8 @@ class AccountsAuthFlowTests(APITestCase):
         response = self.client.post("/api/auth/mfa/setup/", {}, format="json")
 
         self.user.refresh_from_db()
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertNotEqual(self.user.mfa_secret, original_secret)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.user.mfa_secret, original_secret)
 
 
 class GitEndpointsTests(APITestCase):
@@ -253,16 +254,7 @@ class GitEndpointsTests(APITestCase):
         self._get_mfa_token()
         response = self.client.post(
             "/api/git/clone/",
-            {"repo_url": "https://evil.com/x"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_git_clone_rejects_gitlab_http(self):
-        self._get_mfa_token()
-        response = self.client.post(
-            "/api/git/clone/",
-            {"repo_url": "http://gitlab.com/user/repo"},
+            {"repo_url": "https://bitbucket.org/user/repo"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

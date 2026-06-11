@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 import { analysisAPI } from '../../../api/analysis';
 
 const docRowStyle = (selected) => ({
-  background: selected ? 'rgba(249,115,22,0.08)' : 'transparent',
+  background: selected ? 'rgba(5,150,105,0.08)' : 'transparent',
   border: selected
-    ? '1px solid rgba(249,115,22,0.35)'
-    : '1px solid rgba(255,255,255,0.04)',
+    ? '1px solid rgba(5,150,105,0.35)'
+    : '1px solid #44403c',
   borderRadius: 10,
   padding: '12px 14px',
   cursor: 'pointer',
@@ -140,8 +140,8 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 24, alignItems: 'start', height: 'calc(100vh - 180px)' }}>
         {/* Document sidebar */}
         <div style={{
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(249,115,22,0.1)',
+          background: '#1c1917',
+          border: '1px solid #44403c',
           borderRadius: 16,
           padding: 20,
           height: '100%',
@@ -151,7 +151,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
           gap: 10,
         }}>
           <p style={{
-            fontSize: 11, color: '#fb923c', fontFamily: "'DM Mono', monospace",
+            fontSize: 11, color: '#34d399', fontFamily: "'Inter', sans-serif",
             fontWeight: 600, letterSpacing: 0.5, marginBottom: 6,
           }}>
             DOCUMENTS ({documents.length})
@@ -159,16 +159,16 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
 
           {loadingDocs && (
             <div style={{ padding: 20, textAlign: 'center' }}>
-              <p style={{ fontSize: 12, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>Loading...</p>
+              <p style={{ fontSize: 12, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>Loading...</p>
             </div>
           )}
 
           {!loadingDocs && documents.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center' }}>
-              <p style={{ fontSize: 12, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+              <p style={{ fontSize: 12, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>
                 No documents yet.
               </p>
-              <p style={{ fontSize: 11, color: '#4a4038', marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: '#57534e', marginTop: 4 }}>
                 Analyze a file first.
               </p>
             </div>
@@ -182,7 +182,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                 style={docRowStyle(isSelected)}
                 onClick={() => handleSelectDoc(doc)}
                 onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                  if (!isSelected) e.currentTarget.style.background = '#353230';
                 }}
                 onMouseLeave={(e) => {
                   if (!isSelected) e.currentTarget.style.background = 'transparent';
@@ -195,7 +195,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                     flexShrink: 0,
                   }} />
                   <span style={{
-                    fontSize: 13, color: '#f5ede0', fontFamily: "'DM Mono', monospace",
+                    fontSize: 13, color: '#e7e5e4', fontFamily: "'JetBrains Mono', monospace",
                     fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {doc.filename}
@@ -203,12 +203,12 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16 }}>
                   <span style={{
-                    fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace",
+                    fontSize: 10, color: '#78716c', fontFamily: "'Inter', sans-serif",
                   }}>
                     {formatDate(doc.created_at)}
                   </span>
                   <span style={{
-                    fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace",
+                    fontSize: 10, color: '#78716c', fontFamily: "'Inter', sans-serif",
                   }}>
                     {doc.chunk_count} chunks
                   </span>
@@ -220,8 +220,8 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
 
         {/* Chat area */}
         <div style={{
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(249,115,22,0.1)',
+          background: '#1c1917',
+          border: '1px solid #44403c',
           borderRadius: 16,
           height: '100%',
           display: 'flex',
@@ -233,10 +233,10 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexDirection: 'column', gap: 12,
             }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth={1.5} style={{ opacity: 0.4 }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth={1.5} style={{ opacity: 0.4 }}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <p style={{ fontSize: 14, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+              <p style={{ fontSize: 14, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>
                 Select a document to start chatting
               </p>
             </div>
@@ -245,7 +245,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               {/* Chat header */}
               <div style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid rgba(249,115,22,0.1)',
+                borderBottom: '1px solid #44403c',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 <span style={{
@@ -254,13 +254,13 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   flexShrink: 0,
                 }} />
                 <span style={{
-                  fontSize: 13, color: '#f5ede0', fontFamily: "'DM Mono', monospace",
+                  fontSize: 13, color: '#e7e5e4', fontFamily: "'JetBrains Mono', monospace",
                   fontWeight: 600,
                 }}>
                   {selectedDoc.filename}
                 </span>
                 <span style={{
-                  fontSize: 10, color: '#6b7280', fontFamily: "'DM Mono', monospace",
+                  fontSize: 10, color: '#78716c', fontFamily: "'Inter', sans-serif",
                   marginLeft: 'auto',
                 }}>
                   {selectedDoc.chunk_count} chunks
@@ -276,9 +276,9 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   <div style={{
                     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <p style={{ fontSize: 13, color: '#6b7280', fontFamily: "'DM Mono', monospace", textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: '#78716c', fontFamily: "'Inter', sans-serif", textAlign: 'center' }}>
                       Ask a question about this file<br />
-                      <span style={{ fontSize: 11, color: '#4a4038' }}>
+                      <span style={{ fontSize: 11, color: '#57534e' }}>
                         e.g. "What dead code was found?" or "Explain issue #1"
                       </span>
                     </p>
@@ -297,18 +297,18 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                     <div style={{
                       maxWidth: '80%',
                       background: msg.role === 'user'
-                        ? 'rgba(249,115,22,0.1)'
-                        : 'rgba(255,255,255,0.03)',
+                        ? 'rgba(5,150,105,0.1)'
+                        : '#292524',
                       border: msg.role === 'user'
-                        ? '1px solid rgba(249,115,22,0.2)'
-                        : '1px solid rgba(255,255,255,0.06)',
+                        ? '1px solid rgba(5,150,105,0.2)'
+                        : '1px solid #44403c',
                       borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                       padding: '12px 16px',
                     }}>
                       <p style={{
                         fontSize: 13,
-                        color: msg.role === 'user' ? '#fb923c' : '#f5ede0',
-                        fontFamily: "'DM Mono', monospace",
+                        color: msg.role === 'user' ? '#34d399' : '#e7e5e4',
+                        fontFamily: "'Inter', sans-serif",
                         lineHeight: 1.6,
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
@@ -320,7 +320,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                       </p>
                     </div>
                     <span style={{
-                      fontSize: 10, color: '#4a4038', fontFamily: "'DM Mono', monospace",
+                      fontSize: 10, color: '#57534e', fontFamily: "'Inter', sans-serif",
                       marginTop: 4, padding: '0 4px',
                     }}>
                       {msg.role === 'user' ? 'You' : 'GhostCode'}
@@ -333,7 +333,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               {/* Input */}
               <div style={{
                 padding: '14px 20px',
-                borderTop: '1px solid rgba(249,115,22,0.1)',
+                borderTop: '1px solid #44403c',
                 display: 'flex', gap: 10, alignItems: 'flex-end',
               }}>
                 <textarea
@@ -345,20 +345,20 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   rows={1}
                   style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(249,115,22,0.2)',
+                    background: '#292524',
+                    border: '1px solid rgba(5,150,105,0.2)',
                     borderRadius: 12,
                     padding: '10px 14px',
                     fontSize: 13,
-                    color: '#f5ede0',
-                    fontFamily: "'DM Mono', monospace",
+                    color: '#e7e5e4',
+                    fontFamily: "'Inter', sans-serif",
                     outline: 'none',
                     resize: 'none',
                     lineHeight: 1.5,
                     maxHeight: 120,
                   }}
-                  onFocus={(e) => { e.target.style.borderColor = 'rgba(249,115,22,0.6)'; }}
-                  onBlur={(e) => { e.target.style.borderColor = 'rgba(249,115,22,0.2)'; }}
+                  onFocus={(e) => { e.target.style.borderColor = 'rgba(5,150,105,0.6)'; }}
+                  onBlur={(e) => { e.target.style.borderColor = 'rgba(5,150,105,0.2)'; }}
                   onInput={(e) => {
                     e.target.style.height = 'auto';
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
@@ -370,14 +370,14 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   disabled={!input.trim() || streaming}
                   style={{
                     background: !input.trim() || streaming
-                      ? 'rgba(249,115,22,0.2)'
-                      : 'linear-gradient(135deg, #ea580c, #f97316)',
+                      ? 'rgba(5,150,105,0.2)'
+                      : 'linear-gradient(135deg, #047857, #059669)',
                     border: 'none',
                     borderRadius: 12,
                     padding: '10px 18px',
-                    color: !input.trim() || streaming ? '#6b7280' : '#fff',
+                    color: !input.trim() || streaming ? '#78716c' : '#fff',
                     cursor: !input.trim() || streaming ? 'not-allowed' : 'pointer',
-                    fontFamily: "'DM Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     transition: 'all 0.2s',
@@ -423,7 +423,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
           border: '1px solid rgba(248,113,113,0.3)',
           borderRadius: 12, padding: '12px 20px',
           color: '#f87171', fontSize: 13,
-          fontFamily: "'DM Mono', monospace",
+          fontFamily: "'Inter', sans-serif",
           backdropFilter: 'blur(12px)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         }}>

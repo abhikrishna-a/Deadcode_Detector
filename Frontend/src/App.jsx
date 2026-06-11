@@ -7,6 +7,7 @@ import MFASetupPage from './components/MFASetupPage';
 import MFAVerify from './components/MFAVerify';
 import ResetPassword from './components/ResetPassword';
 import DashboardShell from './components/Dashboard/DashboardShell';
+import PlacementHero from './components/PlacementHero';
 import Toast from './components/ui/Toast';
 
 export default function App() {
@@ -14,19 +15,32 @@ export default function App() {
   const [mfaPending, setMfaPending] = useState(null);
   const [toast, setToast] = useState(null);
   const [resetToken, setResetToken] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
-  const { isAuthenticated } = useAuthStore();
+  const { checkSession, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
-    if (token) {
+    const placement = params.get('placement');
+
+    if (placement !== null) {
+      setScreen('placement');
+      setInitialLoading(false);
+    } else if (token) {
       setResetToken(token);
       setScreen('reset_password');
-    } else if (isAuthenticated) {
-      setScreen('dashboard');
+      setInitialLoading(false);
+    } else {
+      checkSession().finally(() => setInitialLoading(false));
     }
   }, []);
+
+  useEffect(() => {
+    if (!initialLoading && isAuthenticated && screen === 'landing') {
+      setScreen('dashboard');
+    }
+  }, [initialLoading, isAuthenticated]);
 
   const handleAuthSuccess = useCallback((data) => {
     if (data && data.mfa_required) {
@@ -43,8 +57,6 @@ export default function App() {
 
   const handleLogout = useCallback(() => {
     useAuthStore.getState().logout();
-    localStorage.removeItem('dashboard-shell');
-    localStorage.removeItem('dashboard-file');
     setScreen('landing');
     setMfaPending(null);
   }, []);
@@ -55,6 +67,10 @@ export default function App() {
     }
     setScreen(target);
   }, []);
+
+  if (initialLoading) {
+    return null;
+  }
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh' }}>
@@ -135,6 +151,18 @@ export default function App() {
               onSuccess={handleAuthSuccess}
               onBack={() => setScreen('auth')}
             />
+          </motion.div>
+        )}
+
+        {screen === 'placement' && (
+          <motion.div
+            key="placement"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <PlacementHero />
           </motion.div>
         )}
 

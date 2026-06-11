@@ -55,33 +55,33 @@ export default function AdminTab() {
     >
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
 
-      <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, color: '#fff5eb', marginBottom: 8 }}>
+      <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 22, color: '#e7e5e4', marginBottom: 8 }}>
         User Management
       </h2>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#6b7280', marginBottom: 28, letterSpacing: 0.5 }}>
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: '#78716c', marginBottom: 28, letterSpacing: 0.5 }}>
         MANAGE USER ROLES — ADMIN ACCESS ONLY
       </p>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
-          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13 }}>Loading users...</p>
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#78716c' }}>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13 }}>Loading users...</p>
         </div>
       ) : users.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
-          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13 }}>No users found.</p>
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#78716c' }}>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13 }}>No users found.</p>
         </div>
       ) : (
         <div style={{
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(249,115,22,0.1)',
+          background: '#1c1917',
+          border: '1px solid #44403c',
           borderRadius: 16, overflow: 'hidden',
         }}>
           {/* Table Header */}
           <div style={{
             display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1.2fr 1.5fr',
             gap: 12, padding: '14px 20px',
-            borderBottom: '1px solid rgba(249,115,22,0.08)',
-            fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#6b7280',
+            borderBottom: '1px solid #353230',
+            fontFamily: "'Inter', sans-serif", fontSize: 10, color: '#78716c',
             textTransform: 'uppercase', letterSpacing: 0.5,
           }}>
             <span>Username</span>
@@ -101,39 +101,39 @@ export default function AdminTab() {
               style={{
                 display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1.2fr 1.5fr',
                 gap: 12, padding: '14px 20px',
-                borderBottom: idx < users.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                borderBottom: idx < users.length - 1 ? '1px solid #353230' : 'none',
                 alignItems: 'center',
                 transition: 'background 0.15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#292524'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: '#f5ede0' }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#e7e5e4' }}>
                 {u.username}
               </span>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#6b7280' }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: '#78716c' }}>
                 {u.email}
               </span>
               <span>
                 <span style={{
-                  background: u.role === 'admin' ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${u.role === 'admin' ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                  background: u.role === 'admin' ? 'rgba(5,150,105,0.15)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${u.role === 'admin' ? 'rgba(5,150,105,0.3)' : 'rgba(255,255,255,0.1)'}`,
                   borderRadius: 12, padding: '2px 10px',
-                  fontSize: 10, color: u.role === 'admin' ? '#fb923c' : '#6b7280',
-                  fontFamily: "'DM Mono', monospace",
+                  fontSize: 10, color: u.role === 'admin' ? '#34d399' : '#78716c',
+                  fontFamily: "'Inter', sans-serif",
                 }}>
                   {u.role}
                 </span>
               </span>
               <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 12,
-                color: u.is_mfa_enabled ? '#4ade80' : '#6b7280',
+                fontFamily: "'Inter', sans-serif", fontSize: 12,
+                color: u.is_mfa_enabled ? '#4ade80' : '#78716c',
               }}>
                 {u.is_mfa_enabled ? 'Enabled' : 'Disabled'}
               </span>
               <span>
                 {currentUser && u.id === currentUser.id ? (
-                  <span style={{ fontSize: 11, color: '#6b7280', fontFamily: "'DM Mono', monospace" }}>
+                  <span style={{ fontSize: 11, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>
                     Cannot change own role
                   </span>
                 ) : (
@@ -142,20 +142,20 @@ export default function AdminTab() {
                     style={{
                       background: u.role === 'admin'
                         ? 'rgba(248,113,113,0.1)'
-                        : 'rgba(249,115,22,0.15)',
-                      border: `1px solid ${u.role === 'admin' ? 'rgba(248,113,113,0.35)' : 'rgba(249,115,22,0.35)'}`,
-                      color: u.role === 'admin' ? '#f87171' : '#fb923c',
+                        : 'rgba(5,150,105,0.15)',
+                      border: `1px solid ${u.role === 'admin' ? 'rgba(248,113,113,0.35)' : 'rgba(5,150,105,0.35)'}`,
+                      color: u.role === 'admin' ? '#f87171' : '#34d399',
                       borderRadius: 8, padding: '6px 14px', fontSize: 11,
-                      cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                      cursor: 'pointer', fontFamily: "'Inter', sans-serif",
                       transition: 'all 0.2s',
                     }}
                     onMouseEnter={e => {
                       e.currentTarget.style.background = u.role === 'admin'
-                        ? 'rgba(248,113,113,0.2)' : 'rgba(249,115,22,0.25)';
+                        ? 'rgba(248,113,113,0.2)' : 'rgba(5,150,105,0.25)';
                     }}
                     onMouseLeave={e => {
                       e.currentTarget.style.background = u.role === 'admin'
-                        ? 'rgba(248,113,113,0.1)' : 'rgba(249,115,22,0.15)';
+                        ? 'rgba(248,113,113,0.1)' : 'rgba(5,150,105,0.15)';
                     }}
                   >
                     {u.role === 'admin' ? 'Demote to Viewer' : 'Promote to Admin'}
@@ -168,8 +168,8 @@ export default function AdminTab() {
           {/* Footer */}
           <div style={{
             padding: '12px 20px',
-            borderTop: '1px solid rgba(249,115,22,0.08)',
-            fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#6b7280',
+            borderTop: '1px solid #353230',
+            fontFamily: "'Inter', sans-serif", fontSize: 10, color: '#78716c',
           }}>
             {users.length} user{users.length !== 1 ? 's' : ''} total
           </div>
