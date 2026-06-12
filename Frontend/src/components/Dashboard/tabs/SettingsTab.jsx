@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { User, Mail, Shield, BadgeCheck } from 'lucide-react';
 import Toast from '../../ui/Toast';
 import { useState } from 'react';
 
@@ -30,37 +31,42 @@ export default function SettingsTab({ session }) {
          PROFILE
        </h2>
          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-           {[
-             { label: 'Username', value: user.username || '-' },
-             { label: 'Email', value: user.email || '-' },
-             { label: 'Role', value: user.role || '-' },
-             { label: 'MFA Status', value: isMfaEnabled ? 'Enabled' : 'Not enabled' },
-           ].map((f, index) => (
-             <div key={f.label} style={{ 
-               display: 'flex', 
-               justifyContent: 'space-between', 
-               alignItems: 'center', 
-               padding: '12px 16px',
+            {[
+              { label: 'Username', value: user.username || '-', icon: User },
+              { label: 'Email', value: user.email || '-', icon: Mail },
+              { label: 'Role', value: user.role || '-', icon: Shield },
+              { label: 'MFA Status', value: isMfaEnabled ? 'Enabled' : 'Not enabled', icon: BadgeCheck },
+            ].map((f, index) => (
+              <div key={f.label} style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                padding: '12px 16px',
                 background: index === 0 ? 'rgba(5,150,105,0.08)' : '#292524',
                 borderRadius: 12,
                 border: index === 0 ? '1px solid rgba(5,150,105,0.3)' : '1px solid #44403c',
-               marginBottom: index === 3 ? 0 : 4
-             }}>
-               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                 <span style={{ fontSize: 13, fontWeight: 600, color: '#e7e5e4', fontFamily: "'Inter', sans-serif", letterSpacing: 0.5 }}>
-                   {f.label}
-                 </span>
-                 {f.label === 'MFA Status' && (
-                   <span style={{ fontSize: 11, color: isMfaEnabled ? '#4ade80' : '#f87171', fontFamily: "'Inter', sans-serif", fontWeight: 500, marginTop: 2 }}>
-                     {isMfaEnabled ? '● Active' : '○ Inactive'}
-                     </span>
+                marginBottom: index === 3 ? 0 : 4
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(5,150,105,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <f.icon size={14} style={{ color: '#34d399' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#e7e5e4', fontFamily: "'Inter', sans-serif", letterSpacing: 0.5 }}>
+                      {f.label}
+                    </span>
+                    {f.label === 'MFA Status' && (
+                      <span style={{ fontSize: 11, color: isMfaEnabled ? '#4ade80' : '#f87171', fontFamily: "'Inter', sans-serif", fontWeight: 500, marginTop: 2 }}>
+                        {isMfaEnabled ? 'Active' : 'Inactive'}
+                      </span>
                     )}
-               </div>
-               <span style={{ fontSize: 14, fontWeight: 500, color: '#e7e5e4', fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.25 }}>
-                 {f.value}
-               </span>
-             </div>
-           ))}
+                  </div>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: '#e7e5e4', fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.25 }}>
+                  {f.value}
+                </span>
+              </div>
+            ))}
          </div>
       </div>
     </motion.div>

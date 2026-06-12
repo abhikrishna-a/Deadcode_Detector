@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { text } from '../../lib/styles';
 
 const variants = {
   solid: {
@@ -31,7 +32,7 @@ export default function Btn({ children, variant = 'solid', disabled, onClick, st
         borderRadius: 12,
         fontSize: 14,
         fontWeight: 600,
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: text.mono.fontFamily,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1,
         transition: 'all 0.2s',

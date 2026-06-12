@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Folder, X, MessageSquare } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import FileTree from './FileTree';
 import ResultsPanel from './ResultsPanel';
@@ -28,7 +29,7 @@ function FolderSummary({ folder, onSelectFile, onClear }) {
   return (
     <div>
       <div style={styles.header}>
-        <span style={{ fontSize: 14 }}>📁</span>
+        <Folder size={16} style={{ color: '#34d399', flexShrink: 0 }} />
         <span style={styles.name}>{folder.name}/</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 16 }}>
           <span style={styles.stat}>{files.length} files</span>
@@ -39,7 +40,8 @@ function FolderSummary({ folder, onSelectFile, onClear }) {
           background: 'none', border: '1px solid rgba(255,255,255,0.08)', color: '#78716c',
           borderRadius: 6, padding: '4px 10px', fontSize: 10, cursor: 'pointer',
           fontFamily: "'JetBrains Mono', monospace",
-        }}>✕</button>
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}><X size={12} /></button>
       </div>
       <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 400px)' }}>
         {files.length === 0 ? (
@@ -78,19 +80,13 @@ function FolderSummary({ folder, onSelectFile, onClear }) {
 
 export default function ResultsPage({ 
   batchResults, batchErrors, 
-  onBackToImport 
+  onBackToImport,
+  onChatNavigate 
 }) {
   // File selection
   const [selectedFile, setSelectedFile] = useState(null);
   const [detailResult, setDetailResult] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatStreaming, setChatStreaming] = useState(false);
-  const [chatError, setChatError] = useState(null);
-  const chatEndRef = useRef(null);
-  const chatInputRef = useRef(null);
 
   const handleHistoryClick = async (item) => {
     try {
@@ -186,66 +182,16 @@ export default function ResultsPage({
     setDetailResult(null);
   };
 
-  // Chat handlers
-  const handleChatSelectFile = (file) => {
-    if (file) {
-      setSelectedFile(file);
-      setChatMessages([]);
-      setChatError(null);
+  const handleChatClick = () => {
+    if (onChatNavigate) {
+      const target = selectedFile || batchResults?.[0];
+      if (target) onChatNavigate(target);
     }
   };
-
-  // Files with a usable ID for chat (document_id or analysis_id)
-  const chatFiles = useMemo(() =>
-    allFiles.filter(f => f.document_id || f.analysis_id),
-  [allFiles]);
-
-  const handleChatSend = async () => {
-    const q = chatInput.trim();
-    const docId = selectedFile?.document_id || selectedFile?.analysis_id;
-    if (!q || !docId || chatStreaming) return;
-    setChatInput('');
-    const userMsg = { role: 'user', content: q };
-    setChatMessages(prev => [...prev, userMsg]);
-    setChatStreaming(true);
-    const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
-    const assistantMsg = { role: 'assistant', content: '' };
-    setChatMessages(prev => [...prev, assistantMsg]);
-    try {
-      for await (const delta of analysisAPI.ragChat(docId, q, history)) {
-        setChatMessages(prev => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last && last.role === 'assistant') {
-            updated[updated.length - 1] = { ...last, content: last.content + delta };
-          }
-          return updated;
-        });
-      }
-    } catch (err) {
-      setChatMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last && last.role === 'assistant' && !last.content) updated.pop();
-        return updated;
-      });
-      setChatError(err.message || 'Chat failed');
-      setTimeout(() => setChatError(null), 4000);
-    } finally {
-      setChatStreaming(false);
-      chatInputRef.current?.focus();
-    }
-  };
-
-  const scrollChat = useCallback(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
-  useEffect(() => { scrollChat(); }, [chatMessages, scrollChat]);
 
   const sectionStyle = {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(5,150,105,0.1)',
+    background: '#1c1917',
+    border: '1px solid rgba(5,150,105,0.12)',
     borderRadius: 16, overflow: 'hidden',
   };
 
@@ -260,12 +206,14 @@ export default function ResultsPage({
         <button onClick={onBackToImport} style={{
           background: 'none', border: '1px solid rgba(5,150,105,0.3)', color: '#34d399',
           borderRadius: 8, padding: '6px 14px', fontSize: 11, cursor: 'pointer',
-          fontFamily: "'JetBrains Mono', monospace", transition: 'all 0.2s',
+          fontFamily: "'JetBrains Mono', monospace",
+          display: 'flex', alignItems: 'center', gap: 6,
+          transition: 'all 0.2s',
         }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.1)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.1)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(5,150,105,0.08)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.boxShadow = 'none'; }}
         >
-          ← Back to Import
+          <ArrowLeft size={14} /> Back to Import
         </button>
         <span style={{ fontSize: 12, color: '#78716c', fontFamily: "'JetBrains Mono', monospace" }}>
           {batchResults?.length || 0} file{(batchResults?.length || 0) !== 1 ? 's' : ''} analyzed
@@ -273,15 +221,18 @@ export default function ResultsPage({
             <span style={{ color: '#f87171', marginLeft: 8 }}>{batchErrors.length} failed</span>
           )}
         </span>
-        <button onClick={() => setChatOpen(v => !v)} style={{
-          marginLeft: 'auto', background: 'none', border: `1px solid ${chatOpen ? 'rgba(5,150,105,0.5)' : 'rgba(5,150,105,0.2)'}`,
-          color: chatOpen ? '#34d399' : '#78716c', borderRadius: 8, padding: '6px 14px', fontSize: 11,
-          cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", transition: 'all 0.2s',
+        <button onClick={handleChatClick} style={{
+          marginLeft: 'auto', background: 'none', border: '1px solid rgba(5,150,105,0.3)',
+          color: '#34d399', borderRadius: 8, padding: '6px 14px', fontSize: 11,
+          cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
+          display: 'flex', alignItems: 'center', gap: 6,
+          transition: 'all 0.2s',
         }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.1)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.1)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(5,150,105,0.08)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.boxShadow = 'none'; }}
         >
-          💬 {chatOpen ? 'Close Chat' : 'Chat'}
+          <MessageSquare size={14} />
+          Chat about this file
         </button>
       </div>
 
@@ -333,138 +284,6 @@ export default function ResultsPage({
           )}
         </div>
       </div>
-
-      {/* Chat bar (collapsible) */}
-      <AnimatePresence>
-        {chatOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 300, opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            style={{ overflow: 'hidden', marginTop: 16 }}
-          >
-            <div style={{
-              ...sectionStyle, height: '100%',
-              display: 'flex', flexDirection: 'column',
-            }}>
-              {/* Chat header with file selector */}
-              <div style={{
-                padding: '10px 16px',
-                borderBottom: '1px solid rgba(5,150,105,0.1)',
-                display: 'flex', alignItems: 'center', gap: 10,
-              }}>
-                <span style={{ fontSize: 11, color: '#34d399', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                  💬 Chat
-                </span>
-                <select
-                  value={selectedFile?.document_id || selectedFile?.analysis_id || ''}
-                  onChange={(e) => {
-                    const match = chatFiles.find(f => (f.document_id || f.analysis_id) === e.target.value);
-                    if (match) handleChatSelectFile(match);
-                  }}
-                  style={{
-                    background: '#292524', border: '1px solid rgba(5,150,105,0.2)', borderRadius: 6,
-                    padding: '4px 8px', fontSize: 11, color: '#ecfdf5',
-                    fontFamily: "'JetBrains Mono', monospace", outline: 'none',
-                    cursor: 'pointer', maxWidth: 300,
-                  }}
-                >
-                  {chatFiles.map(f => (
-                    <option key={f.document_id || f.analysis_id} value={f.document_id || f.analysis_id}>
-                      {(f.path || f.filename).split('/').pop()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Messages */}
-              <div style={{
-                flex: 1, overflowY: 'auto', padding: 12,
-                display: 'flex', flexDirection: 'column', gap: 10,
-              }}>
-                {!(selectedFile?.document_id || selectedFile?.analysis_id) ? (
-                  <div style={{ textAlign: 'center', padding: 20, color: '#78716c', fontSize: 12 }}>
-                    Select a file to chat about
-                  </div>
-                ) : chatMessages.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 20, color: '#78716c', fontSize: 12 }}>
-                    Ask a question about {(selectedFile.path || selectedFile.filename).split('/').pop()}
-                  </div>
-                ) : (
-                  chatMessages.map((msg, i) => (
-                    <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                      <div style={{
-                        maxWidth: '80%',
-                        background: msg.role === 'user' ? 'rgba(5,150,105,0.1)' : '#292524',
-                        border: msg.role === 'user' ? '1px solid rgba(5,150,105,0.2)' : '1px solid #44403c',
-                        borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                        padding: '10px 14px',
-                      }}>
-                        <p style={{ fontSize: 12, color: msg.role === 'user' ? '#34d399' : '#e7e5e4', fontFamily: "'Inter', sans-serif", lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {msg.content}
-                          {msg.role === 'assistant' && i === chatMessages.length - 1 && chatStreaming && (
-                            <span style={{ animation: 'pulse 1s infinite', marginLeft: 2 }}>▊</span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Input */}
-              <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(5,150,105,0.1)', display: 'flex', gap: 8 }}>
-                <textarea
-                  ref={chatInputRef}
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
-                  placeholder={(selectedFile?.document_id || selectedFile?.analysis_id) ? "Ask a question..." : "Select a file first..."}
-                  rows={1}
-                  disabled={!(selectedFile?.document_id || selectedFile?.analysis_id) || chatStreaming}
-                  style={{
-                    flex: 1, background: '#292524', border: '1px solid rgba(5,150,105,0.2)',
-                    borderRadius: 10, padding: '8px 12px', fontSize: 12, color: '#e7e5e4',
-                    fontFamily: "'Inter', sans-serif", outline: 'none', resize: 'none',
-                    lineHeight: 1.5, maxHeight: 80,
-                  }}
-                  onFocus={(e) => { e.target.style.borderColor = 'rgba(5,150,105,0.6)'; }}
-                  onBlur={(e) => { e.target.style.borderColor = 'rgba(5,150,105,0.2)'; }}
-                  onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 80) + 'px'; }}
-                />
-                <button
-                  onClick={handleChatSend}
-                  disabled={!chatInput.trim() || !(selectedFile?.document_id || selectedFile?.analysis_id) || chatStreaming}
-                  style={{
-                    background: !chatInput.trim() || !(selectedFile?.document_id || selectedFile?.analysis_id) || chatStreaming ? 'rgba(5,150,105,0.2)' : 'linear-gradient(135deg, #047857, #059669)',
-                    border: 'none', borderRadius: 10, padding: '8px 14px',
-                    color: !chatInput.trim() || !(selectedFile?.document_id || selectedFile?.analysis_id) || chatStreaming ? '#78716c' : '#fff',
-                    cursor: !chatInput.trim() || !(selectedFile?.document_id || selectedFile?.analysis_id) || chatStreaming ? 'not-allowed' : 'pointer',
-                    fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600,
-                    transition: 'all 0.2s', whiteSpace: 'nowrap',
-                  }}
-                >
-                  {chatStreaming ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.6s linear infinite', display: 'inline-block' }} />
-                      Sending
-                    </span>
-                  ) : 'Send'}
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Chat error toast */}
-      {chatError && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 12, padding: '12px 20px', color: '#f87171', fontSize: 12, fontFamily: "'Inter', sans-serif", backdropFilter: 'blur(12px)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-          {chatError}
-        </div>
-      )}
     </motion.div>
   );
 }

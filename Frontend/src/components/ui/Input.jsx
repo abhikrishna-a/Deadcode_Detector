@@ -1,8 +1,10 @@
+import { text } from '../../lib/styles';
+
 export default function Input({ label, value, onChange, type = 'text', placeholder, maxLength, style, ...props }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...style }}>
       {label && (
-        <label style={{ fontSize: 12, color: '#34d399', fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
+        <label style={{ fontSize: 12, color: text.accent.color, fontFamily: text.ui.fontFamily, fontWeight: 500 }}>
           {label}
         </label>
       )}
@@ -18,8 +20,8 @@ export default function Input({ label, value, onChange, type = 'text', placehold
           borderRadius: 10,
           padding: '10px 14px',
           fontSize: 14,
-          color: '#e7e5e4',
-          fontFamily: "'Inter', sans-serif",
+          color: text.hero.color,
+          fontFamily: text.ui.fontFamily,
           outline: 'none',
           transition: 'border-color 0.2s',
         }}

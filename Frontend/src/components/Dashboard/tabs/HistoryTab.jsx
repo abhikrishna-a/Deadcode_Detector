@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, File, Folder, Globe, ChevronRight, FileText, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react';
 import { analysisAPI } from '../../../api/analysis';
 
 function formatDate(iso) {
@@ -30,40 +31,49 @@ function DetailCard({ item, detail, detailLoading, onViewFull }) {
 
   if (item?.error) {
     return (
-      <div style={{
-        marginTop: 6, marginLeft: 20,
-        background: 'rgba(248,113,113,0.06)',
-        border: '1px solid rgba(248,113,113,0.2)',
-        borderRadius: 10, padding: 12,
-      }}>
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{
+          marginTop: 6, marginLeft: 20,
+          background: 'rgba(248,113,113,0.06)',
+          border: '1px solid rgba(248,113,113,0.2)',
+          borderRadius: 10, padding: 12,
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={14} color="#f87171" />
             <p style={{ fontSize: 12, color: '#f87171', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
               {item.filename?.split('/').pop()}
             </p>
           </div>
           <button onClick={() => onViewFull?.(item)}
-            style={{ background: 'none', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', borderRadius: 8, padding: '4px 10px', fontSize: 9, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
-            View Full →
+            style={{ background: 'none', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', borderRadius: 8, padding: '4px 10px', fontSize: 9, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+            View Full <ExternalLink size={10} />
           </button>
         </div>
         <p style={{ fontSize: 10, color: '#f87171', fontFamily: "'Inter', sans-serif" }}>{item.error}</p>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div style={{
-      marginTop: 6, marginLeft: 20,
-      background: 'rgba(5,150,105,0.04)',
-      border: '1px solid rgba(5,150,105,0.1)',
-      borderRadius: 10, padding: 12,
-    }}>
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        marginTop: 6, marginLeft: 20,
+        background: 'rgba(5,150,105,0.04)',
+        border: '1px solid rgba(5,150,105,0.1)',
+        borderRadius: 10, padding: 12,
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
           {item?.scan_folder && (
-            <p style={{ fontSize: 9, color: '#78716c', fontFamily: "'JetBrains Mono', monospace", marginBottom: 2, letterSpacing: 0.3 }}>
-              📁 {item.scan_folder}/
+            <p style={{ fontSize: 9, color: '#78716c', fontFamily: "'JetBrains Mono', monospace", marginBottom: 2, letterSpacing: 0.3, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Folder size={10} color="#78716c" /> {item.scan_folder}/
             </p>
           )}
           <p style={{ fontSize: 12, color: '#34d399', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
@@ -74,8 +84,8 @@ function DetailCard({ item, detail, detailLoading, onViewFull }) {
           </p>
         </div>
         <button onClick={() => onViewFull?.(item)}
-          style={{ background: 'none', border: '1px solid rgba(5,150,105,0.3)', color: '#34d399', borderRadius: 8, padding: '4px 10px', fontSize: 9, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
-          View Full →
+          style={{ background: 'none', border: '1px solid rgba(5,150,105,0.3)', color: '#34d399', borderRadius: 8, padding: '4px 10px', fontSize: 9, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+          View Full <ExternalLink size={10} />
         </button>
       </div>
 
@@ -123,7 +133,7 @@ function DetailCard({ item, detail, detailLoading, onViewFull }) {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -142,7 +152,7 @@ function renderHistoryTreeNodes(node, depth, parentKey, expandedNodes, toggleNod
         <div
           onClick={() => toggleNode(key)}
           style={{
-            display: 'flex', alignItems: 'center', gap: 4,
+            display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 8px', cursor: 'pointer',
             fontSize: 10, color: '#a8a29e',
             fontFamily: "'JetBrains Mono', monospace",
@@ -152,11 +162,11 @@ function renderHistoryTreeNodes(node, depth, parentKey, expandedNodes, toggleNod
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.06)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <span style={{
+          <ChevronRight size={10} color="#78716c" style={{
             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s', fontSize: 7, color: '#78716c',
-          }}>▶</span>
-          <span style={{ fontSize: 11, opacity: 0.7 }}>📁</span>
+            transition: 'transform 0.2s',
+          }} />
+          <Folder size={12} color="#78716c" />
           <span>{name}/</span>
           <span style={{ color: '#57534e', fontSize: 9, marginLeft: 'auto' }}>{childCount}</span>
         </div>
@@ -181,7 +191,7 @@ function renderHistoryTreeNodes(node, depth, parentKey, expandedNodes, toggleNod
           transition={{ delay: Math.min(idx * 0.02, 0.15) }}
           onClick={() => handleItemClick(item)}
           style={{
-            display: 'flex', alignItems: 'center', gap: 6,
+            display: 'flex', alignItems: 'center', gap: 8,
             padding: '4px 8px', cursor: 'pointer',
             background: isSelected ? 'rgba(5,150,105,0.08)' : 'transparent',
             border: isSelected ? '1px solid rgba(5,150,105,0.2)' : '1px solid transparent',
@@ -212,14 +222,16 @@ function renderHistoryTreeNodes(node, depth, parentKey, expandedNodes, toggleNod
             )}
           </>)}
         </motion.div>
-        {isSelected && (
-          <DetailCard
-            item={item}
-            detail={detail}
-            detailLoading={detailLoading}
-            onViewFull={onViewFull}
-          />
-        )}
+        <AnimatePresence>
+          {isSelected && (
+            <DetailCard
+              item={item}
+              detail={detail}
+              detailLoading={detailLoading}
+              onViewFull={onViewFull}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -240,7 +252,7 @@ function SingleFileRow({ item, expandedId, onToggle, onViewFull, detail, detailL
         animate={{ opacity: 1, y: 0 }}
         onClick={() => onToggle(item)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 6,
+          display: 'flex', alignItems: 'center', gap: 8,
           padding: '5px 8px', cursor: 'pointer',
           background: isSelected ? 'rgba(5,150,105,0.08)' : 'transparent',
           border: isSelected ? '1px solid rgba(5,150,105,0.2)' : '1px solid transparent',
@@ -271,14 +283,16 @@ function SingleFileRow({ item, expandedId, onToggle, onViewFull, detail, detailL
           )}
         </>)}
       </motion.div>
-      {isSelected && (
-        <DetailCard
-          item={item}
-          detail={detail}
-          detailLoading={detailLoading}
-          onViewFull={onViewFull}
-        />
-      )}
+      <AnimatePresence>
+        {isSelected && (
+          <DetailCard
+            item={item}
+            detail={detail}
+            detailLoading={detailLoading}
+            onViewFull={onViewFull}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -353,7 +367,7 @@ function GroupSection({ type, title, items, onViewFull, expandedId, onToggle, de
           <div
             onClick={() => toggleFolder(folder)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 4,
+              display: 'flex', alignItems: 'center', gap: 6,
               padding: '5px 8px', cursor: 'pointer',
               fontSize: 10, color: '#34d399',
               fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
@@ -363,11 +377,11 @@ function GroupSection({ type, title, items, onViewFull, expandedId, onToggle, de
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.08)'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
           >
-            <span style={{
+            <ChevronRight size={12} color="#34d399" style={{
               transform: expandedFolders[folder] ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s', fontSize: 8,
-            }}>▶</span>
-            <span style={{ fontSize: 12 }}>📁</span>
+              transition: 'transform 0.2s',
+            }} />
+            <Folder size={14} color="#34d399" />
             <span>{folder}/</span>
             <span style={{ color: '#78716c', fontWeight: 400, marginLeft: 'auto', fontSize: 9 }}>
               {tree.files.length + Object.keys(tree.dirs).length} item{(tree.files.length + Object.keys(tree.dirs).length) !== 1 ? 's' : ''}
@@ -404,16 +418,16 @@ function treeTotal(node) {
 }
 
 const sectionStyle = {
-  background: 'rgba(255,255,255,0.02)',
-  border: '1px solid rgba(5,150,105,0.1)',
+  background: '#1c1917',
+  border: '1px solid rgba(5,150,105,0.12)',
   borderRadius: 16, overflow: 'hidden',
 };
 
 
 const FILTER_TYPES = [
-  { key: 'single', icon: '📄' },
-  { key: 'folder', icon: '📁' },
-  { key: 'repo', icon: '🌐' },
+  { key: 'single', icon: File, label: 'Single Files' },
+  { key: 'folder', icon: Folder, label: 'Folder Analyses' },
+  { key: 'repo', icon: Globe, label: 'Repo Analyses' },
 ];
 
 export default function HistoryTab({ history, results, onViewResult }) {
@@ -547,44 +561,48 @@ export default function HistoryTab({ history, results, onViewResult }) {
       transition={{ duration: 0.2 }}
       style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
     >
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <span style={{ position: 'absolute', left: 12, top: 10, color: '#78716c', fontSize: 14, zIndex: 1, pointerEvents: 'none' }}>🔍</span>
-        <input
-          value={search}
-          onChange={e => { setSearch(e.target.value); setExpandedId(null); setDetail(null); }}
-          placeholder="Search by filename or folder..."
-          style={{
-            flex: 1, padding: '10px 14px 10px 36px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(5,150,105,0.15)',
-            borderRadius: 10, color: '#e7e5e4',
-            fontSize: 13, fontFamily: "'Inter', sans-serif",
-            outline: 'none', paddingRight: 170,
-          }}
-        />
-        <div style={{ position: 'absolute', right: 6, top: 5, display: 'flex', gap: 4, zIndex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={14} color="#78716c" style={{ position: 'absolute', left: 12, top: 10, zIndex: 1, pointerEvents: 'none' }} />
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setExpandedId(null); setDetail(null); }}
+            placeholder="Search by filename or folder..."
+            style={{
+              flex: 1, padding: '10px 14px 10px 36px',
+              background: '#292524',
+              border: '1px solid rgba(5,150,105,0.15)',
+              borderRadius: 10, color: '#e7e5e4',
+              fontSize: 13, fontFamily: "'Inter', sans-serif",
+              outline: 'none',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {FILTER_TYPES.map(f => {
             const active = filterTypes.has(f.key);
+            const Icon = f.icon;
             return (
               <button
                 key={f.key}
                 onClick={() => toggleFilter(f.key)}
                 style={{
-                  background: active ? 'rgba(5,150,105,0.2)' : 'transparent',
-                  border: active ? '1px solid rgba(5,150,105,0.4)' : '1px solid transparent',
-                  borderRadius: 6, padding: '3px 8px',
+                  background: active ? 'rgba(5,150,105,0.2)' : '#292524',
+                  border: active ? '1px solid rgba(5,150,105,0.4)' : '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: 8, padding: '5px 12px',
                   cursor: 'pointer', fontSize: 10,
                   fontFamily: "'JetBrains Mono', monospace",
-                  color: active ? '#34d399' : '#57534e',
-                  display: 'flex', alignItems: 'center', gap: 4,
+                  color: active ? '#34d399' : '#78716c',
+                  display: 'flex', alignItems: 'center', gap: 6,
                   transition: 'all 0.15s',
                   whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={e => { if (!active) e.currentTarget.style.color = '#a8a29e'; }}
-                onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#57534e'; }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#78716c'; }}
               >
-                <span>{f.icon}</span>
-                <span>({groupedByType[f.key].length})</span>
+                <Icon size={12} />
+                <span>{f.label}</span>
+                <span style={{ color: active ? '#34d399' : '#57534e' }}>({groupedByType[f.key].length})</span>
               </button>
             );
           })}
@@ -597,6 +615,7 @@ export default function HistoryTab({ history, results, onViewResult }) {
         </div>
       ) : allItems.length === 0 ? (
         <div style={{ ...sectionStyle, textAlign: 'center', padding: 40, color: '#78716c' }}>
+          <FileText size={24} color="#57534e" style={{ marginBottom: 8 }} />
           <p style={{ fontSize: 13, fontFamily: "'Inter', sans-serif" }}>No analysis history found.</p>
         </div>
       ) : (
@@ -608,6 +627,7 @@ export default function HistoryTab({ history, results, onViewResult }) {
           ) : visibleTypes.map(col => {
             const items = groupedByType[col.key];
             if (items.length === 0) return null;
+            const Icon = col.icon;
             return (
               <div key={col.key} style={{ marginBottom: 16 }}>
                 <p style={{
@@ -616,15 +636,15 @@ export default function HistoryTab({ history, results, onViewResult }) {
                   paddingBottom: 8, borderBottom: '1px solid rgba(5,150,105,0.08)',
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
-                  <span>{col.icon}</span>
-                  <span>{col.key === 'single' ? 'Single Files' : col.key === 'folder' ? 'Folder Analyses' : 'Repo Analyses'}</span>
+                  <Icon size={12} color="#34d399" />
+                  <span>{col.label}</span>
                   <span style={{ color: '#78716c', fontWeight: 400, marginLeft: 'auto', fontSize: 9 }}>
                     ({items.length})
                   </span>
                 </p>
                 <GroupSection
                   type={col.key}
-                  title={col.key === 'single' ? 'Single Files' : col.key === 'folder' ? 'Folder Analyses' : 'Repo Analyses'}
+                  title={col.label}
                   items={items}
                   onViewFull={onViewResult}
                   expandedId={expandedId}

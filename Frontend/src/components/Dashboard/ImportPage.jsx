@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { FileText, Folder, Check, X, Upload, ArrowRight, GitBranch } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { analyzeFiles, splitIntoBatches } from '../../lib/batchAnalyzer';
 import { simulateFiles } from '../../lib/simulation';
@@ -380,16 +381,17 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
   }
 
   const dropZoneStyle = {
-    border: `2px dashed ${file ? 'rgba(74,222,128,0.5)' : dragOver ? 'rgba(5,150,105,0.7)' : 'rgba(5,150,105,0.25)'}`,
-    background: dragOver ? 'rgba(5,150,105,0.06)' : 'rgba(255,255,255,0.02)',
+    border: `2px dashed ${file ? 'rgba(74,222,128,0.5)' : dragOver ? 'rgba(5,150,105,0.7)' : 'rgba(5,150,105,0.2)'}`,
+    background: dragOver ? 'rgba(5,150,105,0.08)' : '#1c1917',
     borderRadius: 16, padding: 28, minHeight: 140, cursor: 'pointer',
     transition: 'all 0.25s',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+    boxShadow: dragOver ? '0 0 24px rgba(5,150,105,0.15)' : '0 2px 8px rgba(0,0,0,0.15)',
   };
 
   const sectionStyle = {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(5,150,105,0.1)',
+    background: '#1c1917',
+    border: '1px solid rgba(5,150,105,0.12)',
     borderRadius: 16, overflow: 'hidden',
   };
 
@@ -407,13 +409,13 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
       <div style={dropZoneStyle} onClick={() => inputRef.current?.click()} onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}>
         {file && !batchMode ? (
           <>
-            <span style={{ fontSize: 28, marginBottom: 6 }}>📄</span>
+            <FileText size={28} style={{ color: '#34d399', marginBottom: 6 }} />
             <p style={{ fontSize: 13, color: '#ecfdf5', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{file.name}</p>
             <p style={{ fontSize: 10, color: '#78716c', marginTop: 2 }}>{(file.size / 1024).toFixed(1)} KB · Click to change</p>
           </>
         ) : batchProgress ? (
           <>
-            <span style={{ fontSize: 28, marginBottom: 6 }}>📁</span>
+            <Folder size={28} style={{ color: '#34d399', marginBottom: 6 }} />
             <p style={{ fontSize: 13, color: '#ecfdf5', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
               {batchProgress.total} file{batchProgress.total !== 1 ? 's' : ''}
             </p>
@@ -423,9 +425,7 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
           </>
         ) : (
           <>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth={1.5} style={{ marginBottom: 10, opacity: 0.6 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0l-3 3m3-3l3 3" />
-            </svg>
+            <Upload size={36} style={{ color: '#34d399', marginBottom: 10, opacity: 0.6 }} />
             <p style={{ fontSize: 13, color: '#78716c', fontFamily: "'JetBrains Mono', monospace" }}>Drop a file or folder</p>
             <p style={{ fontSize: 10, color: '#57534e', marginTop: 4 }}>or click · .py .js .ts .txt</p>
           </>
@@ -437,10 +437,12 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
       {!file && !batchMode && !batchProgress && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn variant="ghost" onClick={handleFolderPicker} style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}>
-              📁 Upload folder
+            <Btn variant="ghost" onClick={handleFolderPicker} style={{ flex: 1, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Folder size={14} />
+              Upload folder
             </Btn>
-            <Btn variant="ghost" onClick={() => setGitPanelOpen(true)} style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}>
+            <Btn variant="ghost" onClick={() => setGitPanelOpen(true)} style={{ flex: 1, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <GitBranch size={14} />
               Import from GitHub
             </Btn>
           </div>
@@ -453,7 +455,7 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
 
       {file && !batchMode && (
         <Btn variant="solid" onClick={handleAnalyze} disabled={isAnalyzing} style={{ width: '100%' }}>
-          {isAnalyzing ? 'Analyzing…' : `Analyze ${file.name} →`}
+          {isAnalyzing ? 'Analyzing…' : <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Analyze {file.name} <ArrowRight size={14} /></span>}
         </Btn>
       )}
 
@@ -486,13 +488,18 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
               {batchProgress.completed} done · {batchProgress.failed} failed
             </span>
           </div>
-          <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-            <div style={{ width: `${batchProgress.total > 0 ? ((batchProgress.completed + batchProgress.failed) / batchProgress.total * 100) : 0}%`, height: '100%', background: 'linear-gradient(90deg, #047857, #059669)', borderRadius: 4, transition: 'width 0.3s' }} />
+          <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 4, overflow: 'hidden', marginBottom: 8, boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
+            <div style={{
+              width: `${batchProgress.total > 0 ? ((batchProgress.completed + batchProgress.failed) / batchProgress.total * 100) : 0}%`,
+              height: '100%', background: 'linear-gradient(90deg, #047857, #059669, #34d399)',
+              borderRadius: 4, transition: 'width 0.4s ease-out',
+              boxShadow: '0 0 8px rgba(5,150,105,0.3)',
+            }} />
           </div>
           <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
             {batchProgress.results.map((r, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', borderRadius: 6, fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                <span style={{ color: '#4ade80' }}>✓</span>
+                <Check size={12} style={{ color: '#4ade80', flexShrink: 0 }} />
                 <span style={{ color: '#78716c', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.filename}</span>
                 {r.analysis?.summary?.health_score != null && (
                   <span style={{ color: r.analysis.summary.health_score > 80 ? '#4ade80' : r.analysis.summary.health_score > 50 ? '#fb923c' : '#f87171', flexShrink: 0 }}>
@@ -504,7 +511,7 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
             ))}
             {batchProgress.errors.map((e, i) => (
               <div key={`err-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', borderRadius: 6, fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                <span style={{ color: '#f87171' }}>✗</span>
+                <X size={12} style={{ color: '#f87171', flexShrink: 0 }} />
                 <span style={{ color: '#78716c', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.path.split('/').pop()}</span>
                 <span style={{ color: '#f87171', fontSize: 9, flexShrink: 0 }}>{e.error}</span>
               </div>
@@ -516,7 +523,7 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
       {/* View Results button */}
       {batchDone && batchProgress.results.length > 0 && (
         <Btn variant="solid" onClick={() => onAnalysisComplete(batchProgress.results, batchProgress.errors)} style={{ width: '100%', padding: '14px 20px', fontSize: 14 }}>
-          View Results →
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>View Results <ArrowRight size={14} /></span>
         </Btn>
       )}
 

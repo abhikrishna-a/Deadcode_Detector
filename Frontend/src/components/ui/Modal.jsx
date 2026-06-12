@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
 
 export default function Modal({ open, onClose, title, children, width = 520 }) {
   const overlayRef = useRef(null);
@@ -72,7 +73,8 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
           style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0,0,0,0.55)',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
             padding: 20,
           }}
         >
@@ -88,10 +90,11 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
             style={{
               width, maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto',
               background: '#1c1917',
-              border: '1px solid #44403c',
+              border: '1px solid rgba(5,150,105,0.12)',
               borderRadius: 16,
               padding: 24,
               position: 'relative',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
             }}
           >
             {/* Close button */}
@@ -101,14 +104,14 @@ export default function Modal({ open, onClose, title, children, width = 520 }) {
               style={{
                 position: 'absolute', top: 12, right: 12,
                 background: 'none', border: 'none', color: '#6b7280',
-                cursor: 'pointer', fontSize: 18, lineHeight: 1,
-                padding: '4px 8px', borderRadius: 6,
-                fontFamily: "'Inter', sans-serif",
+                cursor: 'pointer', lineHeight: 1,
+                padding: '6px', borderRadius: 6,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
               onMouseEnter={(e) => { e.currentTarget.style.color = '#f87171'; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; }}
             >
-              ✕
+              <X size={16} />
             </button>
 
             {/* Title */}

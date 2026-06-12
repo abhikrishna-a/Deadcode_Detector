@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, ArrowUp, Shield } from 'lucide-react';
 
 const extColor = (lang) => {
   const m = { python: '#3572A5', javascript: '#f7df1e', typescript: '#3178c6', jsx: '#61dafb', tsx: '#3178c6' };
@@ -144,24 +145,28 @@ export default function OverviewTab({ session, history, results, onViewResult })
       {/* Stats Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 32 }}>
         {[
-          { value: stats.scanSessions, label: 'Scans Performed', sub: 'scan sessions' },
-          { value: stats.totalIssues, label: 'Issues Found', sub: 'across scans' },
-          { value: stats.cleanFiles, label: 'Files Clean', sub: '(no issues)' },
-          { value: stats.individualFiles, label: 'Files Analyzed', sub: 'total' },
-          { value: stats.uniqueFolders, label: 'Repos / Folders', sub: 'unique' },
+          { value: stats.scanSessions, label: 'Scans Performed', sub: 'scan sessions', icon: BarChart3 },
+          { value: stats.totalIssues, label: 'Issues Found', sub: 'across scans', icon: Bug },
+          { value: stats.cleanFiles, label: 'Files Clean', sub: '(no issues)', icon: CheckCircle },
+          { value: stats.individualFiles, label: 'Files Analyzed', sub: 'total', icon: File },
+          { value: stats.uniqueFolders, label: 'Repos / Folders', sub: 'unique', icon: Folder },
         ].map(s => (
           <motion.div
             key={s.label}
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.015, y: -2 }}
             style={{
-              background: 'rgba(5,150,105,0.04)',
+              background: 'rgba(5,150,105,0.03)',
               border: '1px solid rgba(5,150,105,0.15)',
-              borderRadius: 16, padding: 24,
-              transition: 'border-color 0.2s',
+              borderRadius: 16, padding: 20,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(5,150,105,0.35)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(5,150,105,0.15)'; }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(5,150,105,0.35)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(5,150,105,0.12)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(5,150,105,0.15)'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)'; }}
           >
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, rgba(5,150,105,0.12), rgba(5,150,105,0.05))', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+              <s.icon size={18} style={{ color: '#34d399' }} />
+            </div>
             <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 36, color: '#e7e5e4', lineHeight: 1 }}>{s.value}</p>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: '#78716c', textTransform: 'uppercase', marginTop: 8, letterSpacing: 0.5 }}>{s.label}</p>
             <p style={{ fontSize: 10, color: '#57534e', marginTop: 2 }}>{s.sub}</p>
@@ -172,16 +177,18 @@ export default function OverviewTab({ session, history, results, onViewResult })
       {/* Profile Card */}
       {session?.user && (
         <div style={{
-          background: 'rgba(5,150,105,0.04)', border: '1px solid rgba(5,150,105,0.12)',
+          background: '#1c1917', border: '1px solid rgba(5,150,105,0.12)',
           borderRadius: 16, padding: 20, marginBottom: 32,
           display: 'flex', alignItems: 'center', gap: 20,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
         }}>
           <div style={{
             width: 48, height: 48, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #047857, #059669)',
+            background: 'linear-gradient(135deg, #047857, #059669, #34d399)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 20, color: '#fff', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
             flexShrink: 0,
+            boxShadow: '0 0 16px rgba(5,150,105,0.2)',
           }}>
             {(session.user.username || 'U')[0].toUpperCase()}
           </div>
@@ -196,13 +203,14 @@ export default function OverviewTab({ session, history, results, onViewResult })
               <span style={{
                 background: 'rgba(5,150,105,0.1)', border: '1px solid rgba(5,150,105,0.2)',
                 borderRadius: 8, padding: '2px 8px', fontSize: 10, color: '#34d399',
-                fontFamily: "'Inter', sans-serif",
+                fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: 4,
               }}>
+                <Shield size={8} />
                 {session.user.role || 'viewer'}
               </span>
               <span style={{
-                background: session.user.is_mfa_enabled ? 'rgba(5,150,105,0.1)' : 'rgba(248,113,113,0.1)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: session.user.is_mfa_enabled ? 'rgba(5,150,105,0.1)' : 'rgba(248,113,113,0.08)',
+                border: `1px solid ${session.user.is_mfa_enabled ? 'rgba(5,150,105,0.2)' : 'rgba(248,113,113,0.2)'}`,
                 borderRadius: 8, padding: '2px 8px', fontSize: 10,
                 color: session.user.is_mfa_enabled ? '#4ade80' : '#f87171',
                 fontFamily: "'Inter', sans-serif",
@@ -216,10 +224,13 @@ export default function OverviewTab({ session, history, results, onViewResult })
 
       {/* Chart */}
       <div style={{
-        background: '#1c1917', border: '1px solid #44403c',
+        background: '#1c1917', border: '1px solid rgba(5,150,105,0.12)',
         borderRadius: 16, padding: 24, marginBottom: 32,
       }}>
-        <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 16, color: '#e7e5e4', marginBottom: 16 }}>Ghost Code Breakdown</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 20, borderRadius: 2, background: 'linear-gradient(180deg, #059669, #34d399)' }} />
+          <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 16, color: '#e7e5e4' }}>Ghost Code Breakdown</h3>
+        </div>
         {history.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#78716c' }}>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13 }}>No data yet — analyze a file to see breakdown</p>
@@ -238,17 +249,18 @@ export default function OverviewTab({ session, history, results, onViewResult })
 
       {/* Recent Scans — grouped by folder */}
       <div style={{
-        background: '#1c1917', border: '1px solid #44403c',
+        background: '#1c1917', border: '1px solid rgba(5,150,105,0.12)',
         borderRadius: 16, padding: 24,
       }}>
-        <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 16, color: '#e7e5e4', marginBottom: 16 }}>
-          Recent Scans
-          <span style={{ fontSize: 12, color: '#78716c', fontWeight: 400, marginLeft: 8 }}>({history.length})</span>
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 20, borderRadius: 2, background: 'linear-gradient(180deg, #059669, #34d399)' }} />
+          <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 16, color: '#e7e5e4' }}>Recent Scans</h3>
+          <span style={{ fontSize: 11, color: '#78716c', fontFamily: "'Inter', sans-serif", background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '1px 8px' }}>{history.length}</span>
+        </div>
         {Object.keys(scanFolderTree).length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#78716c' }}>
+            <Folder size={32} style={{ color: '#57534e', marginBottom: 8, opacity: 0.5 }} />
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13 }}>No files analyzed yet. Go to Analyzer to get started.</p>
-            <p style={{ fontSize: 20, marginTop: 8 }}>↑</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -268,11 +280,13 @@ export default function OverviewTab({ session, history, results, onViewResult })
                   onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.08)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >
-                  <span style={{
+                  <ChevronRight size={12} style={{
                     transform: expandedNodes[folder] ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s', fontSize: 10,
-                  }}>▶</span>
-                  <span style={{ fontSize: 14 }}>📁</span>
+                    transition: 'transform 0.2s',
+                    color: '#78716c',
+                    flexShrink: 0,
+                  }} />
+                  <Folder size={14} style={{ color: '#34d399', flexShrink: 0 }} />
                   <span>{folder}/</span>
                   <span style={{ color: '#78716c', fontWeight: 400, marginLeft: 'auto' }}>{tree.files.length + Object.keys(tree.dirs).length} item{(tree.files.length + Object.keys(tree.dirs).length) !== 1 ? 's' : ''}</span>
                 </div>
@@ -312,11 +326,13 @@ function renderTreeNodes(node, depth, parentKey, expandedNodes, toggleNode, onVi
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.06)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <span style={{
+          <ChevronRight size={10} style={{
             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s', fontSize: 8, color: '#78716c',
-          }}>▶</span>
-          <span style={{ fontSize: 12, opacity: 0.7 }}>📁</span>
+            transition: 'transform 0.2s',
+            color: '#57534e',
+            flexShrink: 0,
+          }} />
+          <Folder size={12} style={{ color: '#a8a29e', flexShrink: 0 }} />
           <span>{name}/</span>
           <span style={{ color: '#57534e', fontSize: 10, marginLeft: 'auto' }}>{childCount}</span>
         </div>

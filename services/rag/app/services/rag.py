@@ -19,7 +19,7 @@ def _get_gemini_model() -> str:
     return os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 
-TOP_K = 6
+TOP_K = 3
 
 
 def _get_groq_client() -> AsyncOpenAI:
@@ -116,7 +116,7 @@ async def stream_answer(
                 messages=messages,
                 stream=True,
                 temperature=0.3,
-                max_tokens=2048,
+                max_tokens=1024,
             )
             last_error = None
             break
@@ -135,7 +135,7 @@ async def stream_answer(
                 messages=messages,
                 stream=True,
                 temperature=0.3,
-                max_tokens=2048,
+                max_tokens=1024,
             )
             last_error = None
         except Exception as e:
@@ -177,7 +177,7 @@ async def answer_question(messages: List[dict]) -> str:
                 model=groq_model,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=2048,
+                max_tokens=1024,
             )
             last_error = None
             break
@@ -195,7 +195,7 @@ async def answer_question(messages: List[dict]) -> str:
                 model=gemini_model,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=2048,
+                max_tokens=1024,
             )
             last_error = None
         except Exception as e:

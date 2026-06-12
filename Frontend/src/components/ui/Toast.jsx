@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 const colors = {
-  success: { bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.3)', text: '#4ade80' },
-  error: { bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)', text: '#f87171' },
-  info: { bg: 'rgba(5,150,105,0.12)', border: 'rgba(5,150,105,0.3)', text: '#34d399' },
+  success: { bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.3)', text: '#4ade80', icon: CheckCircle },
+  error: { bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)', text: '#f87171', icon: AlertCircle },
+  info: { bg: 'rgba(5,150,105,0.12)', border: 'rgba(5,150,105,0.3)', text: '#34d399', icon: Info },
 };
 
 export default function Toast({ message, type = 'info', onClose, duration = 4000 }) {
@@ -43,7 +44,8 @@ export default function Toast({ message, type = 'info', onClose, duration = 4000
             boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           }}
         >
-          <span>{message}</span>
+          <c.icon size={18} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{message}</span>
           <button
             onClick={onClose}
             style={{
@@ -51,13 +53,13 @@ export default function Toast({ message, type = 'info', onClose, duration = 4000
               border: 'none',
               color: c.text,
               cursor: 'pointer',
-              fontSize: 16,
               opacity: 0.6,
-              padding: 0,
+              padding: 2,
+              display: 'flex',
               lineHeight: 1,
             }}
           >
-            ×
+            <X size={16} />
           </button>
         </motion.div>
       )}

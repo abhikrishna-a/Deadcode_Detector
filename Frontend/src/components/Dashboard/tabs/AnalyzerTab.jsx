@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { ArrowLeft, PlusCircle, FileSearch, BarChart3 } from 'lucide-react';
 import { analysisAPI } from '../../../api/analysis';
 import ImportPage from '../ImportPage';
 import ResultsPage from '../ResultsPage';
 
-export default function AnalyzerTab({ results, onResultsChange }) {
+export default function AnalyzerTab({ results, onResultsChange, onChatNavigate }) {
   const [view, setView] = useState('import');
   const [batchResults, setBatchResults] = useState([]);
   const [batchErrors, setBatchErrors] = useState([]);
@@ -75,20 +77,113 @@ export default function AnalyzerTab({ results, onResultsChange }) {
 
   if (loadingAnalysis) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 400, gap: 16 }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid rgba(5,150,105,0.2)', borderTopColor: '#34d399', animation: 'spin 0.6s linear infinite' }} />
-        <p style={{ fontSize: 13, color: '#78716c', fontFamily: "'JetBrains Mono', monospace" }}>Analyzing results...</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
+        <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              flex: 1, height: 80,
+              background: 'linear-gradient(90deg, #292524 25%, #353230 50%, #292524 75%)',
+              backgroundSize: '200% 100%',
+              borderRadius: 12,
+              animation: 'shimmer 1.5s ease-in-out infinite',
+            }} />
+          ))}
+        </div>
+        <div style={{
+          height: 200,
+          background: 'linear-gradient(90deg, #292524 25%, #353230 50%, #292524 75%)',
+          backgroundSize: '200% 100%',
+          borderRadius: 12,
+          animation: 'shimmer 1.5s ease-in-out infinite',
+        }} />
+        <div style={{
+          height: 120,
+          background: 'linear-gradient(90deg, #292524 25%, #353230 50%, #292524 75%)',
+          backgroundSize: '200% 100%',
+          borderRadius: 12,
+          animation: 'shimmer 1.5s ease-in-out infinite',
+        }} />
+      </motion.div>
     );
   }
 
   if (view === 'results') {
     return (
-      <ResultsPage
-        batchResults={batchResults}
-        batchErrors={batchErrors}
-        onBackToImport={handleBackToImport}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+          padding: '8px 12px',
+          background: '#1c1917',
+          border: '1px solid rgba(5,150,105,0.12)',
+          borderRadius: 12,
+        }}>
+          <div style={{ display: 'flex', gap: 4, background: '#292524', borderRadius: 8, padding: 2 }}>
+            <button
+              onClick={() => setView('import')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 6, padding: '6px 14px',
+                color: '#78716c', fontSize: 11,
+                fontFamily: "'Inter', sans-serif", fontWeight: 500,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#e7e5e4'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#78716c'; }}
+            >
+              <FileSearch size={14} /> Import
+            </button>
+            <button
+              style={{
+                background: 'rgba(5,150,105,0.15)',
+                border: '1px solid rgba(5,150,105,0.3)',
+                borderRadius: 6, padding: '6px 14px',
+                color: '#34d399', fontSize: 11,
+                fontFamily: "'Inter', sans-serif", fontWeight: 600,
+                cursor: 'default', display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <BarChart3 size={14} /> Results
+            </button>
+          </div>
+          <span style={{ fontSize: 11, color: '#78716c', fontFamily: "'JetBrains Mono', monospace", marginLeft: 'auto' }}>
+            {batchResults?.length || 0} file{(batchResults?.length || 0) !== 1 ? 's' : ''} analyzed
+            {batchErrors?.length > 0 && (
+              <span style={{ color: '#f87171', marginLeft: 6 }}>{batchErrors.length} failed</span>
+            )}
+          </span>
+          <button
+            onClick={handleBackToImport}
+            style={{
+              background: 'none',
+              border: '1px solid rgba(5,150,105,0.3)', color: '#34d399',
+              borderRadius: 8, padding: '6px 14px', fontSize: 11,
+              cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 500,
+              display: 'flex', alignItems: 'center', gap: 6,
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(5,150,105,0.1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <PlusCircle size={14} /> New Analysis
+          </button>
+        </div>
+        <ResultsPage
+          batchResults={batchResults}
+          batchErrors={batchErrors}
+          onBackToImport={handleBackToImport}
+          onChatNavigate={onChatNavigate}
+        />
+      </motion.div>
     );
   }
 

@@ -1,12 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageSquare, FileText, Send, Search, ChevronRight, AlertCircle } from 'lucide-react';
 import { analysisAPI } from '../../../api/analysis';
+
+const sectionStyle = {
+  background: '#1c1917',
+  border: '1px solid rgba(5,150,105,0.12)',
+  borderRadius: 16,
+};
 
 const docRowStyle = (selected) => ({
   background: selected ? 'rgba(5,150,105,0.08)' : 'transparent',
   border: selected
     ? '1px solid rgba(5,150,105,0.35)'
-    : '1px solid #44403c',
+    : '1px solid rgba(255,255,255,0.06)',
   borderRadius: 10,
   padding: '12px 14px',
   cursor: 'pointer',
@@ -43,10 +50,17 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  const [docSearch, setDocSearch] = useState('');
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const autoSelectDone = useRef(false);
+
+  const filteredDocuments = useMemo(() => {
+    if (!docSearch) return documents;
+    const q = docSearch.toLowerCase();
+    return documents.filter(d => (d.filename || '').toLowerCase().includes(q));
+  }, [documents, docSearch]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -62,8 +76,14 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
       try {
         const docs = await analysisAPI.ragListDocuments();
         setDocuments(docs);
-        if (initialDocumentId && !autoSelectDone.current) {
-          const match = docs.find(d => d.id === initialDocumentId);
+        if (!autoSelectDone.current) {
+          let match = null;
+          if (initialDocumentId) {
+            match = docs.find(d => d.id === initialDocumentId);
+          }
+          if (!match && initialFilename) {
+            match = docs.find(d => d.filename === initialFilename);
+          }
           if (match) {
             setSelectedDoc(match);
             autoSelectDone.current = true;
@@ -75,7 +95,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
         setLoadingDocs(false);
       }
     })();
-  }, [initialDocumentId]);
+  }, [initialDocumentId, initialFilename]);
 
   const handleSelectDoc = (doc) => {
     setSelectedDoc(doc);
@@ -140,9 +160,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 24, alignItems: 'start', height: 'calc(100vh - 180px)' }}>
         {/* Document sidebar */}
         <div style={{
-          background: '#1c1917',
-          border: '1px solid #44403c',
-          borderRadius: 16,
+          ...sectionStyle,
           padding: 20,
           height: '100%',
           overflowY: 'auto',
@@ -150,12 +168,32 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
           flexDirection: 'column',
           gap: 10,
         }}>
-          <p style={{
-            fontSize: 11, color: '#34d399', fontFamily: "'Inter', sans-serif",
-            fontWeight: 600, letterSpacing: 0.5, marginBottom: 6,
-          }}>
-            DOCUMENTS ({documents.length})
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <FileText size={14} color="#34d399" />
+            <p style={{
+              fontSize: 11, color: '#34d399', fontFamily: "'Inter', sans-serif",
+              fontWeight: 600, letterSpacing: 0.5,
+            }}>
+              DOCUMENTS ({documents.length})
+            </p>
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            <Search size={12} color="#57534e" style={{ position: 'absolute', left: 8, top: 8, pointerEvents: 'none' }} />
+            <input
+              value={docSearch}
+              onChange={e => setDocSearch(e.target.value)}
+              placeholder="Search documents..."
+              style={{
+                width: '100%', padding: '6px 8px 6px 26px',
+                background: '#292524',
+                border: '1px solid rgba(5,150,105,0.15)',
+                borderRadius: 8, color: '#e7e5e4',
+                fontSize: 11, fontFamily: "'Inter', sans-serif",
+                outline: 'none',
+              }}
+            />
+          </div>
 
           {loadingDocs && (
             <div style={{ padding: 20, textAlign: 'center' }}>
@@ -163,18 +201,19 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
             </div>
           )}
 
-          {!loadingDocs && documents.length === 0 && (
+          {!loadingDocs && filteredDocuments.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center' }}>
+              <MessageSquare size={24} color="#57534e" style={{ marginBottom: 8 }} />
               <p style={{ fontSize: 12, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>
-                No documents yet.
+                {documents.length === 0 ? 'No documents yet.' : 'No matches found.'}
               </p>
               <p style={{ fontSize: 11, color: '#57534e', marginTop: 4 }}>
-                Analyze a file first.
+                {documents.length === 0 ? 'Analyze a file first.' : 'Try a different search term.'}
               </p>
             </div>
           )}
 
-          {!loadingDocs && documents.map((doc) => {
+          {!loadingDocs && filteredDocuments.map((doc) => {
             const isSelected = selectedDoc?.id === doc.id;
             return (
               <div
@@ -182,7 +221,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                 style={docRowStyle(isSelected)}
                 onClick={() => handleSelectDoc(doc)}
                 onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = '#353230';
+                  if (!isSelected) e.currentTarget.style.background = '#292524';
                 }}
                 onMouseLeave={(e) => {
                   if (!isSelected) e.currentTarget.style.background = 'transparent';
@@ -220,9 +259,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
 
         {/* Chat area */}
         <div style={{
-          background: '#1c1917',
-          border: '1px solid #44403c',
-          borderRadius: 16,
+          ...sectionStyle,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
@@ -233,9 +270,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexDirection: 'column', gap: 12,
             }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth={1.5} style={{ opacity: 0.4 }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+              <MessageSquare size={40} color="#34d399" style={{ opacity: 0.4 }} />
               <p style={{ fontSize: 14, color: '#78716c', fontFamily: "'Inter', sans-serif" }}>
                 Select a document to start chatting
               </p>
@@ -245,7 +280,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               {/* Chat header */}
               <div style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid #44403c',
+                borderBottom: '1px solid rgba(5,150,105,0.12)',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 <span style={{
@@ -297,11 +332,11 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                     <div style={{
                       maxWidth: '80%',
                       background: msg.role === 'user'
-                        ? 'rgba(5,150,105,0.1)'
+                        ? 'linear-gradient(135deg, rgba(5,150,105,0.12), rgba(5,150,105,0.06))'
                         : '#292524',
                       border: msg.role === 'user'
-                        ? '1px solid rgba(5,150,105,0.2)'
-                        : '1px solid #44403c',
+                        ? '1px solid rgba(5,150,105,0.25)'
+                        : '1px solid rgba(255,255,255,0.06)',
                       borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                       padding: '12px 16px',
                     }}>
@@ -333,7 +368,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
               {/* Input */}
               <div style={{
                 padding: '14px 20px',
-                borderTop: '1px solid #44403c',
+                borderTop: '1px solid rgba(5,150,105,0.12)',
                 display: 'flex', gap: 10, alignItems: 'flex-end',
               }}>
                 <textarea
@@ -370,12 +405,12 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   disabled={!input.trim() || streaming}
                   style={{
                     background: !input.trim() || streaming
-                      ? 'rgba(5,150,105,0.2)'
+                      ? 'rgba(5,150,105,0.15)'
                       : 'linear-gradient(135deg, #047857, #059669)',
                     border: 'none',
                     borderRadius: 12,
                     padding: '10px 18px',
-                    color: !input.trim() || streaming ? '#78716c' : '#fff',
+                    color: !input.trim() || streaming ? '#57534e' : '#fff',
                     cursor: !input.trim() || streaming ? 'not-allowed' : 'pointer',
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
@@ -386,6 +421,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                     gap: 6,
                     height: 40,
                     whiteSpace: 'nowrap',
+                    opacity: !input.trim() || streaming ? 0.6 : 1,
                   }}
                 >
                   {streaming ? (
@@ -402,10 +438,7 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
                   ) : (
                     <>
                       Send
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="22" y1="2" x2="11" y2="13" />
-                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                      </svg>
+                      <Send size={14} />
                     </>
                   )}
                 </button>
@@ -416,20 +449,29 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
       </div>
 
       {/* Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
-          background: 'rgba(248,113,113,0.12)',
-          border: '1px solid rgba(248,113,113,0.3)',
-          borderRadius: 12, padding: '12px 20px',
-          color: '#f87171', fontSize: 13,
-          fontFamily: "'Inter', sans-serif",
-          backdropFilter: 'blur(12px)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        }}>
-          {toast.message}
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            style={{
+              position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+              background: 'rgba(248,113,113,0.12)',
+              border: '1px solid rgba(248,113,113,0.3)',
+              borderRadius: 12, padding: '12px 20px',
+              color: '#f87171', fontSize: 13,
+              fontFamily: "'Inter', sans-serif",
+              backdropFilter: 'blur(12px)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <AlertCircle size={16} color="#f87171" />
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

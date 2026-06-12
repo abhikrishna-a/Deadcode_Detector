@@ -26,7 +26,10 @@ async function getAuthToken() {
   return token || '';
 }
 
+let responded = false;
 function safeRespond(sendResponse, data) {
+  if (responded) return;
+  responded = true;
   try { sendResponse(data); } catch { /* port already closed */ }
 }
 
@@ -34,6 +37,7 @@ function safeRespond(sendResponse, data) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
+    responded = false;
     try {
       switch (msg.type) {
         case 'ANALYZE_CODE': {
@@ -50,6 +54,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (e) {
       safeRespond(sendResponse, { success: false, error: e.message });
     }
-  })();
+  })().catch(err => console.error('[GhostCode] onMessage unhandled:', err));
   return true;
 });
