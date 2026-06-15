@@ -1,24 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, FileText, Send, Search, ChevronRight, AlertCircle } from 'lucide-react';
+import { MessageSquare, FileText, Send, Search, AlertCircle } from 'lucide-react';
 import { analysisAPI } from '../../../api/analysis';
+import FileTree from '../FileTree';
 
 const sectionStyle = {
   background: '#1c1917',
   border: '1px solid rgba(5,150,105,0.12)',
   borderRadius: 16,
 };
-
-const docRowStyle = (selected) => ({
-  background: selected ? 'rgba(5,150,105,0.08)' : 'transparent',
-  border: selected
-    ? '1px solid rgba(5,150,105,0.35)'
-    : '1px solid rgba(255,255,255,0.06)',
-  borderRadius: 10,
-  padding: '12px 14px',
-  cursor: 'pointer',
-  transition: 'all 0.2s',
-});
 
 const extColor = (lang) => {
   const m = {
@@ -213,48 +203,22 @@ export default function ChatTab({ initialDocumentId, initialFilename }) {
             </div>
           )}
 
-          {!loadingDocs && filteredDocuments.map((doc) => {
-            const isSelected = selectedDoc?.id === doc.id;
-            return (
-              <div
-                key={doc.id}
-                style={docRowStyle(isSelected)}
-                onClick={() => handleSelectDoc(doc)}
-                onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = '#292524';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: extColor(doc.language),
-                    flexShrink: 0,
-                  }} />
-                  <span style={{
-                    fontSize: 13, color: '#e7e5e4', fontFamily: "'JetBrains Mono', monospace",
-                    fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {doc.filename}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16 }}>
-                  <span style={{
-                    fontSize: 10, color: '#78716c', fontFamily: "'Inter', sans-serif",
-                  }}>
-                    {formatDate(doc.created_at)}
-                  </span>
-                  <span style={{
-                    fontSize: 10, color: '#78716c', fontFamily: "'Inter', sans-serif",
-                  }}>
-                    {doc.chunk_count} chunks
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          {!loadingDocs && filteredDocuments.length > 0 && (
+            <FileTree
+              files={filteredDocuments.map(d => ({
+                filename: d.filename,
+                path: d.filename,
+                document_id: d.id,
+                analysis: { summary: { health_score: 50 } },
+              }))}
+              selectedPath={selectedDoc?.filename}
+              onSelectFile={(node) => {
+                const doc = documents.find(d => d.id === node.document_id || d.filename === node.path);
+                if (doc) handleSelectDoc(doc);
+              }}
+              scanFolder=""
+            />
+          )}
         </div>
 
         {/* Chat area */}

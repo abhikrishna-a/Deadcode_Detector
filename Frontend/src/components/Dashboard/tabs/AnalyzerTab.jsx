@@ -66,6 +66,14 @@ export default function AnalyzerTab({ results, onResultsChange, onChatNavigate }
     setView('import');
   };
 
+  const handleResultsUpdate = (docId, newAnalysis) => {
+    setBatchResults(prev => prev.map(r =>
+      r.document_id === docId
+        ? { ...r, analysis: newAnalysis, llm_refining: false }
+        : r
+    ));
+  };
+
   const handleHistoryDelete = async (analysisId) => {
     try {
       await analysisAPI.ragDeleteAnalysis(analysisId);
@@ -182,6 +190,7 @@ export default function AnalyzerTab({ results, onResultsChange, onChatNavigate }
           batchErrors={batchErrors}
           onBackToImport={handleBackToImport}
           onChatNavigate={onChatNavigate}
+          onResultsUpdate={handleResultsUpdate}
         />
       </motion.div>
     );

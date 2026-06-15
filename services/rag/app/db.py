@@ -11,7 +11,7 @@ DATABASE_URL = (
 )
 IS_SQLITE = "sqlite" in DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, pool_size=5, max_overflow=10)
+engine = create_async_engine(DATABASE_URL, pool_size=15, max_overflow=20, pool_timeout=30, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -83,10 +83,12 @@ async def init_db():
                     embedding    vector(384)
                 )
             """))
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx
-                    ON rag_chunks USING hnsw (embedding vector_cosine_ops)
-            """))
+            row = await conn.execute(text("SELECT 1 FROM pg_indexes WHERE indexname = 'rag_chunks_embedding_idx' AND tablename = 'rag_chunks'"))
+            if not row.scalar():
+                await conn.execute(text("""
+                    CREATE INDEX rag_chunks_embedding_idx
+                        ON rag_chunks USING hnsw (embedding vector_cosine_ops)
+                """))
 
 
 async def get_db():

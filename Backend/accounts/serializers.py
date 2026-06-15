@@ -72,9 +72,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         data = super().validate(attrs)
 
-        refresh = self.get_token(self.user)
-        refresh["mfa_verified_for_session"] = False
-
         threading.Thread(
             target=lambda: _send_email_async(
                 subject="GhostCode — New login detected",
@@ -84,12 +81,25 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             daemon=True,
         ).start()
 
+        if self.user.has_mfa_enabled:
+            refresh = self.get_token(self.user)
+            refresh["mfa_verified_for_session"] = False
+            return {
+                "mfa_required": True,
+                "refresh": str(refresh),
+                "pre_auth_token": str(refresh.access_token),
+                "user": UserSerializer(self.user).data,
+                "is_mfa_enabled": True,
+            }
+
+        refresh = self.get_token(self.user)
+        refresh["mfa_verified_for_session"] = True
         return {
-            "mfa_required": True,
+            "mfa_required": False,
             "refresh": str(refresh),
-            "pre_auth_token": str(refresh.access_token),
+            "access": str(refresh.access_token),
             "user": UserSerializer(self.user).data,
-            "is_mfa_enabled": self.user.has_mfa_enabled,
+            "is_mfa_enabled": False,
         }
 
     @classmethod

@@ -173,40 +173,20 @@ export default function DashboardShell({ session, onLogout }) {
           })}
         </nav>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {user && (
-            <>
-              <span style={{ color: '#34d399', fontSize: 12, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
-                {user.username}
-              </span>
-              <span style={{
-                background: 'rgba(5,150,105,0.1)',
-                border: '1px solid rgba(5,150,105,0.2)',
-                borderRadius: 8, padding: '3px 10px',
-                fontSize: 10, color: '#34d399',
-                fontFamily: "'Inter', sans-serif", fontWeight: 500,
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <Shield size={10} />
-                {user.role}
-              </span>
-            </>
-          )}
-          <button
-            onClick={onLogout}
-            style={{
-              background: 'none', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171',
-              borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-              fontFamily: "'Inter', sans-serif", fontWeight: 500, transition: 'all 0.2s',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)'; }}
-          >
-            <LogOut size={12} />
-            Logout
-          </button>
-        </div>
+        <button
+          onClick={onLogout}
+          style={{
+            background: 'none', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171',
+            borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+            fontFamily: "'Inter', sans-serif", fontWeight: 500, transition: 'all 0.2s',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)'; }}
+        >
+          <LogOut size={12} />
+          Logout
+        </button>
       </header>
 
       {/* Content Area */}

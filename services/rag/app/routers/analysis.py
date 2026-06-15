@@ -1,15 +1,17 @@
 import asyncio
+from asyncio import Semaphore
 import hashlib
 import json
 import logging
 from typing import List
 from uuid import UUID
+import uuid as uuid_mod
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db, IS_SQLITE
+from app.db import get_db, IS_SQLITE, AsyncSessionLocal
 from app.auth import get_current_user
 from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
@@ -25,6 +27,94 @@ router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".md"}
+
+_bg_semaphore = Semaphore(3)
+
+
+async def _background_finalize(
+    source: str, filename: str,
+    cross_ref_result: dict, llm_task,
+    user_id: int, scan_folder: str, scan_type: str,
+    document_id: str,
+):
+    async with _bg_semaphore:
+        async with AsyncSessionLocal() as db:
+            try:
+                if llm_task is not None:
+                    final_analysis = await llm_task
+                else:
+                    final_analysis = cross_ref_result
+
+                source_chunks = chunk_code(source, filename)
+                issue_texts = chunk_issues(final_analysis, filename)
+                all_chunk_texts = [c.content for c in source_chunks] + issue_texts
+                all_chunks = source_chunks + [
+                    json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": filename}})
+                    for ic in issue_texts
+                ]
+
+                embeddings = await embed_texts(all_chunk_texts)
+
+                if IS_SQLITE:
+                    await db.execute(
+                        text("DELETE FROM embeddings WHERE document_id = :id"),
+                        {"id": document_id},
+                    )
+                    await db.execute(
+                        text("DELETE FROM rag_chunks WHERE document_id = :id"),
+                        {"id": document_id},
+                    )
+                    await db.execute(
+                        text("UPDATE analyses SET analysis_json = :json WHERE id = :id"),
+                        {"json": json.dumps(final_analysis), "id": document_id},
+                    )
+                    for idx, (chunk, emb) in enumerate(zip(all_chunks, embeddings)):
+                        await db.execute(
+                            text("""
+                                INSERT INTO embeddings (id, analysis_id, chunk_index, chunk_text, embedding, token_count)
+                                VALUES (:id, :aid, :idx, :text, :emb, :tokens)
+                            """),
+                            {
+                                "id": str(uuid_mod.uuid4()), "aid": document_id,
+                                "idx": idx,
+                                "text": chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else json.dumps(chunk),
+                                "emb": json.dumps(emb),
+                                "tokens": len((chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else json.dumps(chunk)).split()),
+                            },
+                        )
+                else:
+                    await db.execute(
+                        text("DELETE FROM rag_chunks WHERE document_id = CAST(:id AS uuid)"),
+                        {"id": document_id},
+                    )
+                    await db.execute(
+                        text("DELETE FROM embeddings WHERE document_id = CAST(:id AS uuid)"),
+                        {"id": document_id},
+                    )
+                    await db.execute(
+                        text("UPDATE rag_documents SET analysis = CAST(:json AS jsonb) WHERE id = CAST(:id AS uuid)"),
+                        {"json": json.dumps(final_analysis), "id": document_id},
+                    )
+                    for idx, (chunk, emb) in enumerate(zip(all_chunks, embeddings)):
+                        content = chunk if isinstance(chunk, str) else (chunk.content if hasattr(chunk, 'content') else json.dumps(chunk))
+                        metadata = {"chunk_type": "issue", "filename": filename} if isinstance(chunk, str) and '"issue"' in chunk else (chunk.metadata if hasattr(chunk, 'metadata') else {})
+                        await db.execute(
+                            text("""
+                                INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
+                                VALUES (CAST(:doc_id AS uuid), :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
+                            """),
+                            {
+                                "doc_id": document_id, "idx": idx,
+                                "content": content,
+                                "metadata": json.dumps(metadata),
+                                "embedding": str(emb),
+                            },
+                        )
+
+                await db.commit()
+                logger.info("Background finalize completed for %s (doc %s)", filename, document_id)
+            except Exception as e:
+                logger.error("Background finalize failed for %s: %s", filename, e, exc_info=True)
 
 
 @router.post("/analyze")
@@ -121,65 +211,100 @@ async def analyze_file(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be valid JSON")
             if not isinstance(analysis_data, dict):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be a JSON object")
-        else:
-            try:
-                analysis_data = await analyze_code_with_grok(source, file.filename, db=db, user_id=user["user_id"])
-            except RuntimeError as e:
-                logger.error("Groq API unavailable: %s", e)
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-            except Exception as e:
-                logger.error("Grok analysis failed: %s", e, exc_info=True)
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Analysis failed: {str(e)}")
 
-        # --- chunking & embedding (skip if store_for_rag is false) ---
-        if store_for_rag:
-            source_chunks = chunk_code(source, file.filename)
-            issue_chunks = chunk_issues(analysis_data, file.filename)
-            all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
-            all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+            # chunk & embed for provided JSON
+            if store_for_rag:
+                source_chunks = chunk_code(source, file.filename)
+                issue_chunks = chunk_issues(analysis_data, file.filename)
+                all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
+                all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+                if not all_chunks:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
+                try:
+                    embeddings = await embed_texts(all_chunk_texts)
+                except Exception as e:
+                    logger.error("Embedding failed: %s", e, exc_info=True)
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
+                if len(embeddings) != len(all_chunks):
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+            else:
+                all_chunks = None
+                embeddings = None
 
-            if not all_chunks:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
-
-            try:
-                embeddings = await embed_texts(all_chunk_texts)
-            except Exception as e:
-                logger.error("Embedding failed: %s", e, exc_info=True)
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
-
-            if len(embeddings) != len(all_chunks):
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
-        else:
-            all_chunks = None
-            embeddings = None
-
-        # --- storage ---
-        try:
             document_id = await store_analysis(
-                db=db,
-                user_id=user["user_id"],
-                filename=file.filename,
-                language=language,
-                source=source,
-                scan_folder=scan_folder,
-                scan_type=scan_type,
-                analysis_json=analysis_data,
-                chunks=all_chunks,
-                embeddings=embeddings,
+                db=db, user_id=user["user_id"], filename=file.filename,
+                language=language, source=source, scan_folder=scan_folder,
+                scan_type=scan_type, analysis_json=analysis_data,
+                chunks=all_chunks, embeddings=embeddings,
             )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error("Database write failed: %s", e, exc_info=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database write failed: {str(e)}")
 
-        auto_analyzed = analysis_json is None or analysis_json.strip() in ("", "null", "{}")
+            return {
+                "document_id": document_id,
+                "chunk_count": len(all_chunks) if all_chunks else 0,
+                "filename": file.filename,
+                "analysis": analysis_data,
+                "auto_analyzed": False,
+                "cached": False,
+                "scan_folder": scan_folder,
+                "scan_type": scan_type,
+            }
+
+        # --- cross-ref first (fast), LLM refines in background ---
+        try:
+            cross_ref_result, llm_task = await _analyze_file_direct(
+                source, file.filename, db=db, user_id=user["user_id"],
+            )
+        except Exception as e:
+            logger.error("Cross-ref analysis failed: %s", e, exc_info=True)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cross-ref analysis failed: {str(e)}")
+
+        # If no LLM needed, store with chunks normally
+        if llm_task is None:
+            if store_for_rag:
+                source_chunks = chunk_code(source, file.filename)
+                issue_chunks = chunk_issues(cross_ref_result, file.filename)
+                all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
+                all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+                if not all_chunks:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
+                try:
+                    embeddings = await embed_texts(all_chunk_texts)
+                except Exception as e:
+                    logger.error("Embedding failed: %s", e, exc_info=True)
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
+                if len(embeddings) != len(all_chunks):
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+            else:
+                all_chunks = None
+                embeddings = None
+
+            document_id = await store_analysis(
+                db=db, user_id=user["user_id"], filename=file.filename,
+                language=language, source=source, scan_folder=scan_folder,
+                scan_type=scan_type, analysis_json=cross_ref_result,
+                chunks=all_chunks, embeddings=embeddings,
+            )
+        else:
+            # LLM pending — store cross-ref result without chunks, launch background finalize
+            document_id = await store_analysis(
+                db=db, user_id=user["user_id"], filename=file.filename,
+                language=language, source=source, scan_folder=scan_folder,
+                scan_type=scan_type, analysis_json=cross_ref_result,
+                chunks=None, embeddings=None,
+            )
+            asyncio.create_task(_background_finalize(
+                source=source, filename=file.filename,
+                cross_ref_result=cross_ref_result, llm_task=llm_task,
+                user_id=user["user_id"], scan_folder=scan_folder,
+                scan_type=scan_type, document_id=document_id,
+            ))
+
         return {
             "document_id": document_id,
-            "chunk_count": len(all_chunks) if all_chunks else 0,
+            "chunk_count": 0 if llm_task is not None else (len(all_chunks) if store_for_rag else 0),
             "filename": file.filename,
-            "analysis": analysis_data,
-            "auto_analyzed": auto_analyzed,
+            "analysis": cross_ref_result,
+            "auto_analyzed": True,
             "cached": False,
             "scan_folder": scan_folder,
             "scan_type": scan_type,

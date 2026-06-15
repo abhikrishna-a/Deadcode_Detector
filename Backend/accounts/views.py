@@ -109,6 +109,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     serializer_class = CustomTokenObtainPairSerializer
 
+    def post(self, request, *args, **kwargs):
+        resp = super().post(request, *args, **kwargs)
+        if resp.status_code == 200:
+            data = resp.data
+            if not data.get('mfa_required') and 'access' in data:
+                _set_access_cookie(resp, data['access'])
+                _set_refresh_cookie(resp, data.get('refresh', ''))
+        return resp
+
 
 class CustomTokenRefreshView(TokenRefreshView):
     """

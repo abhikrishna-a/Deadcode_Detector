@@ -78,15 +78,17 @@ function FolderSummary({ folder, onSelectFile, onClear }) {
   );
 }
 
-export default function ResultsPage({ 
-  batchResults, batchErrors, 
+export default function ResultsPage({
+  batchResults, batchErrors,
   onBackToImport,
-  onChatNavigate 
+  onChatNavigate,
+  onResultsUpdate,
 }) {
   // File selection
   const [selectedFile, setSelectedFile] = useState(null);
   const [detailResult, setDetailResult] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [refiningDocs, setRefiningDocs] = useState({});
 
   const handleHistoryClick = async (item) => {
     try {
@@ -159,6 +161,33 @@ export default function ResultsPage({
     if (!file) return;
     handleFileSelect(file);
   };
+
+  // Poll for LLM refinement updates
+  useEffect(() => {
+    const target = selectedFile || batchResults?.[0];
+    if (!target?.llm_refining || !target?.document_id) return;
+    const docId = target.document_id;
+    setRefiningDocs(prev => ({ ...prev, [docId]: true }));
+    const interval = setInterval(async () => {
+      try {
+        const doc = await analysisAPI.ragGetAnalysis(docId);
+        if (!doc?.analysis) return;
+        const issues = doc.analysis.issues || [];
+        const hasIssues = issues.length > 0;
+        const hasMetrics = doc.analysis.metrics?.total_lines > 0;
+        if (hasIssues || hasMetrics) {
+          if (onResultsUpdate) {
+            onResultsUpdate(docId, doc.analysis);
+          }
+          setRefiningDocs(prev => ({ ...prev, [docId]: false }));
+          clearInterval(interval);
+        }
+      } catch {
+        /* retry on next tick */
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [selectedFile?.document_id, batchResults]);
 
   // Folder selection
   const [selectedFolder, setSelectedFolder] = useState(null);
@@ -276,6 +305,7 @@ export default function ResultsPage({
             <ResultsPanel
               results={currentResult}
               onClear={() => { setSelectedFile(null); setDetailResult(null); }}
+              llmRefining={refiningDocs[selectedFile?.document_id || batchResults?.[0]?.document_id] === true}
             />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#57534e' }}>

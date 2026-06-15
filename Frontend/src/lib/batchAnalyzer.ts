@@ -26,6 +26,7 @@ export interface FileResult {
   document_id: string | null;
   analysis: any;
   cached?: boolean;
+  llm_refining?: boolean;
   _source_content?: string;
   scan_folder?: string;
   scan_type?: 'single' | 'folder' | 'repo';
@@ -169,6 +170,7 @@ export async function analyzeOneFile(
     document_id: data.document_id ?? null,
     analysis: data.analysis ?? data,
     cached: data.cached ?? false,
+    llm_refining: (data.chunk_count === 0 && !!data.document_id) ?? false,
     scan_folder: options.scanFolder || '',
     scan_type: options.scanType || 'single',
   };

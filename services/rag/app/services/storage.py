@@ -13,6 +13,24 @@ from app.db import IS_SQLITE, cosine_similarity
 logger = logging.getLogger("ghostcode-rag.storage")
 
 
+def _chunk_content(chunk):
+    if isinstance(chunk, str):
+        return chunk
+    if hasattr(chunk, 'content'):
+        return chunk.content
+    if isinstance(chunk, dict):
+        return chunk.get('content', '')
+    return ''
+
+
+def _chunk_metadata(chunk):
+    if hasattr(chunk, 'metadata'):
+        return chunk.metadata
+    if isinstance(chunk, dict):
+        return chunk.get('metadata', {})
+    return {}
+
+
 async def store_analysis(
     db: AsyncSession,
     user_id: int,
@@ -46,18 +64,23 @@ async def store_analysis(
             },
         )
         if chunks and embeddings:
-            for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-                await db.execute(
-                    text("""
-                        INSERT INTO embeddings (id, analysis_id, chunk_index, chunk_text, embedding, token_count)
-                        VALUES (:id, :aid, :idx, :text, :emb, :tokens)
-                    """),
-                    {
-                        "id": str(uuid.uuid4()), "aid": analysis_id,
-                        "idx": idx, "text": chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', ''),
-                        "emb": json.dumps(emb), "tokens": len((chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else chunk.get('content', '')).split()),
-                    },
-                )
+            rows = [
+                {
+                    "id": str(uuid.uuid4()), "aid": analysis_id,
+                    "idx": idx,
+                    "text": _chunk_content(chunk),
+                    "emb": json.dumps(emb),
+                    "tokens": len(_chunk_content(chunk).split()),
+                }
+                for idx, (chunk, emb) in enumerate(zip(chunks, embeddings))
+            ]
+            await db.execute(
+                text("""
+                    INSERT INTO embeddings (id, analysis_id, chunk_index, chunk_text, embedding, token_count)
+                    VALUES (:id, :aid, :idx, :text, :emb, :tokens)
+                """),
+                rows,
+            )
         await db.commit()
         return analysis_id
     else:
@@ -77,26 +100,22 @@ async def store_analysis(
         document_id = result.scalar_one()
 
         if chunks and embeddings:
-            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                metadata = {}
-                if hasattr(chunk, 'metadata'):
-                    metadata = chunk.metadata
-                elif isinstance(chunk, dict):
-                    metadata = chunk.get('metadata', {})
-                content = chunk.content if hasattr(chunk, 'content') else (chunk if isinstance(chunk, str) else chunk.get('content', ''))
-
-                await db.execute(
-                    text("""
-                        INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
-                        VALUES (:doc_id, :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
-                    """),
-                    {
-                        "doc_id": document_id, "idx": i,
-                        "content": content,
-                        "metadata": json.dumps(metadata),
-                        "embedding": str(embedding),
-                    },
-                )
+            rows = [
+                {
+                    "doc_id": document_id, "idx": i,
+                    "content": _chunk_content(chunk),
+                    "metadata": json.dumps(_chunk_metadata(chunk)),
+                    "embedding": str(embedding),
+                }
+                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+            ]
+            await db.execute(
+                text("""
+                    INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
+                    VALUES (:doc_id, :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
+                """),
+                rows,
+            )
 
         await db.commit()
         return str(document_id)
@@ -349,10 +368,6 @@ async def cleanup_stale_documents(
     user_id: int,
     active_filenames: list[str],
 ) -> int:
-    """
-    Delete all analysis documents for this user whose filename is NOT
-    in the active_filenames list. Returns count of deleted documents.
-    """
     deleted = 0
     if IS_SQLITE:
         rows = (await db.execute(

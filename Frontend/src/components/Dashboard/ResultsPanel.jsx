@@ -72,7 +72,7 @@ function normalizeSummary(summary = {}) {
   };
 }
 
-export default function ResultsPanel({ results, onClear }) {
+export default function ResultsPanel({ results, onClear, llmRefining }) {
   const [filter, setFilter] = useState('all');
   const [expandedIdx, setExpandedIdx] = useState(null);
 
@@ -164,6 +164,12 @@ export default function ResultsPanel({ results, onClear }) {
           <p style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
             Results for <span style={{ color: '#34d399' }}>{filename}</span>
             {cached && <span style={{ color: '#4ade80', marginLeft: 8, fontSize: 10 }}>(cached)</span>}
+            {llmRefining && (
+              <span style={{ color: '#fbbf24', marginLeft: 8, fontSize: 10 }}>
+                <span style={{ display: 'inline-block', animation: 'spin 1.5s linear infinite', marginRight: 4, fontSize: 8 }}>⟳</span>
+                AI refinement in progress…
+              </span>
+            )}
           </p>
         </div>
         <button

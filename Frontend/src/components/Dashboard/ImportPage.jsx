@@ -270,6 +270,7 @@ export default function ImportPage({ onAnalysisComplete, onError }) {
         analysis: result.analysis,
         cached: result.cached,
         scan_type: 'single',
+        llm_refining: result.chunk_count === 0 && !!result.document_id,
       };
       onAnalysisComplete([fileResult], []);
     } catch (err) {

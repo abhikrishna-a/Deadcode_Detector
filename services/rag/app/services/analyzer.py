@@ -1,4 +1,6 @@
 import asyncio
+from asyncio import timeout as async_timeout
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.grok_client import call_groq_json
 from app.services.prompts import get_analysis_prompt, get_analysis_system_prompt
@@ -12,8 +14,8 @@ DEAD_CODE_CATEGORIES = [
     "bare_except", "marker", "empty_function", "py2_print",
 ]
 
-MAX_TOKENS = 6000
-OVERLAP_LINES = 10
+MAX_TOKENS = 12000
+OVERLAP_LINES = 3
 
 
 def _approx_tokens(text: str) -> int:
@@ -194,7 +196,10 @@ async def _analyze_single_chunk(content: str, filename: str) -> dict:
     prompt = get_analysis_prompt(content, filename, language)
     system = get_analysis_system_prompt()
     try:
-        result, usage = await call_groq_json(prompt=prompt, system=system)
+        async with async_timeout(90):
+            result, usage = await call_groq_json(prompt=prompt, system=system)
+    except asyncio.TimeoutError:
+        return _fallback_result(content, "LLM request timed out after 90s")
     except Exception as exc:
         return _fallback_result(content, str(exc))
     if usage:
@@ -276,24 +281,40 @@ def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
     }
 
 
-async def analyze_file(source: str, filename: str, db: AsyncSession | None = None, user_id: int | None = None) -> dict:
+async def analyze_file(
+    source: str, filename: str,
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+) -> tuple[dict, Optional[asyncio.Task]]:
     """
-    Analyze a source file. Uses RAG cross-reference as a pre-pass:
-    each symbol is checked against previously analyzed files.
-    Known-dead symbols return instantly; the LLM only processes
-    remaining code. Results are merged.
+    Analyze a source file.
+    Returns (result, llm_task) where:
+      - result is always the cross-reference analysis result
+      - llm_task is None when all symbols are unreferenced (no LLM needed),
+        otherwise a background task running the full LLM analysis.
     """
-    rag_result = None
+    result = {
+        "summary": {"total_issues": 0, "severity_counts": {}, "categories": {},
+                     "overall_health": "clean", "health_score": 100},
+        "issues": [], "metrics": {}, "refactor_hints": [],
+    }
+
     if db is not None and user_id is not None:
         symbols = extract_symbols(source, filename)
         if symbols:
             unreferenced = await check_references(db, user_id, symbols, source)
+            result = build_result(unreferenced, source, filename)
             if len(unreferenced) == len(symbols):
-                return build_result(unreferenced, source, filename)
-            if unreferenced:
-                # Partial RAG hit — build result for known-dead symbols
-                rag_result = build_result(unreferenced, source, filename)
+                return result, None
 
+    # Some symbols may be referenced (or no RAG data available) —
+    # launch the full LLM analysis in a background task
+    llm_task = asyncio.create_task(_run_llm_analysis(source, filename, result))
+    return result, llm_task
+
+
+async def _run_llm_analysis(source: str, filename: str, rag_result: dict) -> dict:
+    """Run the full LLM analysis pipeline, optionally merging with RAG results."""
     if not _needs_chunking(source):
         llm_result = await _analyze_single_chunk(source, filename)
     else:
@@ -310,10 +331,7 @@ async def analyze_file(source: str, filename: str, db: AsyncSession | None = Non
         chunk_results = list(zip(chunk_analyses, chunks))
         llm_result = _merge_chunk_results(chunk_results, source)
 
-    if rag_result:
-        result = _merge_rag_with_llm(rag_result, llm_result)
-    else:
-        result = llm_result
+    result = _merge_rag_with_llm(rag_result, llm_result)
 
     total = len(result.get("issues", []))
     health = max(0, 100 - (total * 15)) if total > 0 else 100
@@ -333,4 +351,5 @@ async def analyze_file(source: str, filename: str, db: AsyncSession | None = Non
 
 
 # Backwards-compatible alias (used by rag/routers/analysis.py)
+# Note: callers must now handle the (result, llm_task) tuple.
 analyze_code_with_grok = analyze_file

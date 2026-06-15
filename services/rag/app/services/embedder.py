@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 
 _backend = os.getenv("EMBEDDING_BACKEND", "local").lower()
 _st_model = None
-BATCH_SIZE = 50
+BATCH_SIZE = 100
 
 
 def _get_st_model():
@@ -17,7 +17,6 @@ def _get_st_model():
 
 
 def _embed_sync(texts: List[str]) -> List[List[float]]:
-    """Synchronous fastembed call — runs in a thread pool executor."""
     model = _get_st_model()
     all_embeddings = []
     for i in range(0, len(texts), BATCH_SIZE):
@@ -25,6 +24,10 @@ def _embed_sync(texts: List[str]) -> List[List[float]]:
         embeddings = list(model.embed(batch))
         all_embeddings.extend([e.tolist() for e in embeddings])
     return all_embeddings
+
+
+def warmup_embeddings():
+    _get_st_model()
 
 
 async def embed_texts(texts: List[str]) -> List[List[float]]:
@@ -38,6 +41,5 @@ async def embed_texts(texts: List[str]) -> List[List[float]]:
         )
         return [item.embedding for item in resp.data]
 
-    # Local fastembed — run in thread pool so it does not block the event loop
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _embed_sync, texts)

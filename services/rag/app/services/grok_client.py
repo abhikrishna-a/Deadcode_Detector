@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -67,7 +68,7 @@ def get_gemini_client() -> AsyncOpenAI:
 
 
 async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, dict | None]:
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     messages = []
@@ -82,12 +83,15 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
     for attempt in range(max_attempts):
         try:
             client = groq_key_manager.get_client()
-            response = await client.chat.completions.create(
-                model=groq_model,
-                messages=messages,
-                temperature=0.1,
-                max_tokens=8192,
-                response_format={"type": "json_object"},
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=groq_model,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=8192,
+                    response_format={"type": "json_object"},
+                ),
+                timeout=60,
             )
             last_error = None
             break
@@ -121,11 +125,14 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
     if gemini_key_manager.has_keys:
         try:
             client = gemini_key_manager.get_client()
-            response = await client.chat.completions.create(
-                model=gemini_model,
-                messages=messages,
-                temperature=0.1,
-                max_tokens=8192,
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=gemini_model,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=8192,
+                ),
+                timeout=60,
             )
             usage = None
             if hasattr(response, 'usage') and response.usage:
@@ -146,3 +153,6 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
     raise RuntimeError(
         f"Groq API call failed after {max_attempts} key(s): {last_error}"
     )
+
+
+
