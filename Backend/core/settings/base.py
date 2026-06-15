@@ -23,8 +23,11 @@ CORS_ALLOW_CREDENTIALS = env('CORS_ALLOW_CREDENTIALS')
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
 
+DATA_UPLOAD_MAX_NUMBER_FILES = 5000
+
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -33,6 +36,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'rest_framework',
+    'channels',
     'accounts',
 ]
 
@@ -70,6 +74,17 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+
+ASGI_APPLICATION = 'core.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [env('REDIS_URL', default='redis://localhost:6379')],
+        },
+    },
+}
 
 # 3. Configure Django Rest Framework to use SimpleJWT tokens globally
 REST_FRAMEWORK = {
@@ -129,3 +144,13 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@ghostcode.dev')
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://localhost:6379/1')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 180
+
+RAG_ANALYZE_URL = env('RAG_ANALYZE_URL', default='http://localhost:8004/rag/analyze')

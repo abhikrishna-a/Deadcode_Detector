@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { Issue } from '../types';
 
 interface CodeViewerProps {
@@ -7,7 +7,7 @@ interface CodeViewerProps {
   filename: string;
 }
 
-export default function CodeViewer({ source, issues, filename }: CodeViewerProps) {
+const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeViewerProps) {
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
 
   // Group issues by line number for fast gutter checks
@@ -28,7 +28,7 @@ export default function CodeViewer({ source, issues, filename }: CodeViewerProps
 
   const lines = useMemo(() => {
     if (!source) {
-      return ['# Standard procedural file placeholder', 'import os', 'import sys', ''];
+      return ['// No source content available'];
     }
     const list = source.split('\n');
     if (list.length > 0 && list[list.length - 1] === '') {
@@ -125,4 +125,6 @@ export default function CodeViewer({ source, issues, filename }: CodeViewerProps
       </div>
     </div>
   );
-}
+});
+
+export default CodeViewer;

@@ -3,6 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LayoutDashboard, FileSearch, MessageCircle, Shield, LogOut, Terminal, Clock, Settings } from 'lucide-react';
 import { User, AnalysisResult } from '../types';
 
+const NAV_ITEMS = [
+  { id: 'overview', label: 'Monitor', icon: LayoutDashboard },
+  { id: 'analyzer', label: 'Scanner Workspace', icon: FileSearch },
+  { id: 'history', label: 'History', icon: Clock },
+  { id: 'chat', label: 'AI Inspector', icon: MessageCircle },
+];
+
 interface DashboardShellProps {
   user: User;
   onLogout: () => void;
@@ -12,14 +19,6 @@ interface DashboardShellProps {
 export default function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
   const [activeTab, setActiveTab] = useState<string>('overview');
 
-  const navItems = [
-    { id: 'overview', label: 'Monitor', icon: LayoutDashboard },
-    { id: 'analyzer', label: 'Scanner Workspace', icon: FileSearch },
-    { id: 'history', label: 'History', icon: Clock },
-    { id: 'chat', label: 'AI Inspector', icon: MessageCircle },
-  ];
-
-  // Admin permission barrier check
   const showAdminTab = user.role === 'admin';
 
   return (
@@ -42,7 +41,7 @@ export default function DashboardShell({ user, onLogout, children }: DashboardSh
 
         {/* Dynamic navigation links list */}
         <nav className="hidden md:flex items-center gap-1.5">
-          {navItems.map((item) => {
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isSelected = activeTab === item.id;
             return (

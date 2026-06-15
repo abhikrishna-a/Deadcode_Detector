@@ -4,8 +4,6 @@ import type {
   RegisterResponse,
   LoginRequest,
   LoginResponse,
-  RefreshTokenRequest,
-  RefreshTokenResponse,
   MFAVerifyLoginRequest,
   MFAVerifyLoginResponse,
   MFASetupResponse,
@@ -13,12 +11,6 @@ import type {
   MFAActivateResponse,
   User,
 } from './types';
-
-interface SessionCheckResponse {
-  isAuthenticated: boolean;
-  user?: User;
-  access?: string;
-}
 
 export const authAPI = {
   register: async (data: RegisterRequest): Promise<RegisterResponse> => {
@@ -28,11 +20,6 @@ export const authAPI = {
 
   login: async (data: LoginRequest): Promise<LoginResponse> => {
     const response = await apiClient.post('/api/auth/token/', data);
-    return response.data;
-  },
-
-  refreshToken: async (data: RefreshTokenRequest): Promise<RefreshTokenResponse> => {
-    const response = await apiClient.post('/api/auth/token/refresh/', data);
     return response.data;
   },
 
@@ -58,11 +45,6 @@ export const authAPI = {
     return response.data;
   },
 
-  getCurrentUser: async (): Promise<User> => {
-    const response = await apiClient.get('/api/auth/user/');
-    return response.data;
-  },
-
   getAdminUsers: async (): Promise<User[]> => {
     const response = await apiClient.get('/api/auth/admin/users/');
     return response.data;
@@ -81,14 +63,5 @@ export const authAPI = {
   confirmPasswordReset: async (token: string, new_password: string): Promise<{ message: string }> => {
     const response = await apiClient.post('/api/auth/password-reset/confirm/', { token, new_password });
     return response.data;
-  },
-
-  checkSession: async (): Promise<SessionCheckResponse> => {
-    const response = await apiClient.get('/api/auth/session/');
-    return response.data;
-  },
-
-  logout: async (): Promise<void> => {
-    await apiClient.post('/api/auth/logout/');
   },
 };

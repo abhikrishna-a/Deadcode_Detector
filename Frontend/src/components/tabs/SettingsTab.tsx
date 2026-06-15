@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { User as UserIcon, Shield, KeyRound, Mail, Copy, Check, Loader2, Smartphone } from 'lucide-react';
 import { User } from '../../api/types';

@@ -1,40 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FileCheck, FolderTree } from 'lucide-react';
+import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree } from 'lucide-react';
 import { AnalysisResult } from '../../types';
-
-interface TreeNodeData {
-  name: string;
-  isDir: boolean;
-  children: TreeNodeData[];
-  file?: AnalysisResult;
-}
-
-function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
-  const root: TreeNodeData[] = [];
-
-  for (const file of files) {
-    const parts = file.filename.replace(/\\/g, '/').split('/');
-    let current = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-
-      if (isLast) {
-        current.push({ name: part, isDir: false, children: [], file });
-      } else {
-        let dir = current.find(n => n.name === part && n.isDir);
-        if (!dir) {
-          dir = { name: part, isDir: true, children: [], file: undefined };
-          current.push(dir);
-        }
-        current = dir.children;
-      }
-    }
-  }
-  return root;
-}
+import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 
 function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number; onClick: (res: AnalysisResult) => void }) {
   const [expanded, setExpanded] = useState(depth < 2);

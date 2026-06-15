@@ -1,22 +1,10 @@
-import { apiClient } from './client';
+import { apiClient, getAccessToken } from './client';
 import type {
-  AnalysisRequest,
-  AnalysisResponse,
-  AnalysisStatusResponse,
-  AnalysisResult,
-  FileNode,
   GitManifest,
   GitFileContents,
 } from './types';
 
 const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/rag';
-
-function getAuthToken(): string {
-  return document.cookie
-    .split('; ')
-    .find(r => r.startsWith('ghostcode_access='))
-    ?.split('=')[1] || '';
-}
 
 async function readErrorDetail(response: Response, fallback: string): Promise<string> {
   const text = await response.text().catch(() => '');
@@ -30,48 +18,8 @@ async function readErrorDetail(response: Response, fallback: string): Promise<st
 }
 
 export const analysisAPI = {
-  startAnalysis: async (formData: FormData): Promise<AnalysisResponse> => {
-    const response = await apiClient.post('/api/analysis/', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response.data;
-  },
-
-  getAnalysisStatus: async (analysisId: string): Promise<AnalysisStatusResponse> => {
-    const response = await apiClient.get(`/api/analysis/${analysisId}/status/`);
-    return response.data;
-  },
-
-  getAnalysisResults: async (analysisId: string): Promise<AnalysisResult> => {
-    const response = await apiClient.get(`/api/analysis/${analysisId}/results/`);
-    return response.data;
-  },
-
-  getFileTree: async (analysisId: string): Promise<FileNode[]> => {
-    const response = await apiClient.get(`/api/analysis/${analysisId}/files/`);
-    return response.data;
-  },
-
-  getFileContent: async (analysisId: string, filePath: string): Promise<string> => {
-    const response = await apiClient.get(`/api/analysis/${analysisId}/files/content/`, {
-      params: { path: filePath }
-    });
-    return response.data;
-  },
-
-  getAnalysisHistory: async (limit: number = 10): Promise<AnalysisResponse[]> => {
-    const response = await apiClient.get(`/api/analysis/`, {
-      params: { limit }
-    });
-    return response.data;
-  },
-
-  deleteAnalysis: async (analysisId: string): Promise<void> => {
-    await apiClient.delete(`/api/analysis/${analysisId}/`);
-  },
-
   // Unified analysis: sends file to RAG service which runs Groq analysis + stores in vector DB
-  analyzeFile: async (file: File, scanFolder: string = ''): Promise<{
+  analyzeFile: async (file: File, scanFolder: string = '', scanType: string = 'single'): Promise<{
     filename: string;
     document_id: string;
     chunk_count: number;
@@ -101,9 +49,10 @@ export const analysisAPI = {
     scan_folder?: string;
     scan_type?: string;
   }> => {
-    const token = await getAuthToken();
+    const token = await getAccessToken();
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('scan_type', scanType);
     if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`${RAG_BASE}/analyze`, {
       method: 'POST',
@@ -134,83 +83,6 @@ export const analysisAPI = {
     };
   },
 
-  // RAG: Upload file to vector store + auto-analyze with Grok
-  ragAnalyze: async (file: File): Promise<{
-    document_id: string;
-    chunk_count: number;
-    filename: string;
-    analysis: {
-      summary: {
-        total_issues: number;
-        severity_counts: Record<string, number>;
-        categories: Record<string, number>;
-        overall_health: string;
-        health_score?: number;
-      };
-      issues: Array<{
-        id: string; category: string; severity: string;
-        line_start: number; line_end: number; name: string | null;
-        description: string; code_snippet: string; suggestion: string;
-        safe_to_remove: boolean; confidence?: number;
-      }>;
-      metrics: {
-        total_lines: number; code_lines?: number; comment_lines?: number;
-        blank_lines?: number; dead_lines_estimate: number;
-        dead_code_percentage: number; complexity_hint?: string;
-      };
-      refactor_hints?: string[];
-    };
-    auto_analyzed: boolean;
-    cached?: boolean;
-  }> => {
-    const token = await getAuthToken();
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(`${RAG_BASE}/analyze`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (response.status === 401) {
-      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before analyzing files.');
-    }
-    if (response.status === 403) {
-      throw new Error('MFA verification is required before using RAG analysis.');
-    }
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `RAG analyze failed (HTTP ${response.status})`);
-      console.error('RAG analyze failed:', { status: response.status, detail });
-      throw new Error(detail);
-    }
-    return response.json();
-  },
-
-  // RAG: List stored documents
-  ragListDocuments: async (): Promise<Array<{
-    id: string;
-    filename: string;
-    language: string;
-    created_at: string;
-    chunk_count: number;
-  }>> => {
-    const token = await getAuthToken();
-    const response = await fetch(`${RAG_BASE}/documents`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (response.status === 401) {
-      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before analyzing files.');
-    }
-    if (response.status === 403) {
-      throw new Error('MFA verification is required before using RAG.');
-    }
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `Failed to list documents (HTTP ${response.status})`);
-      throw new Error(detail);
-    }
-    return response.json();
-  },
-
   // RAG: Paginated history
   ragHistory: async (limit: number = 20, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
@@ -225,7 +97,7 @@ export const analysisAPI = {
     }>;
     total: number;
   }> => {
-    const token = await getAuthToken();
+    const token = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (search) params.set('search', search);
     const response = await fetch(`${RAG_BASE}/history?${params}`, {
@@ -239,29 +111,9 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // RAG: Get single analysis by ID
-  ragGetAnalysis: async (analysisId: string): Promise<{
-    analysis_id: string;
-    filename: string;
-    language: string;
-    analysis: any;
-    cached: boolean;
-  }> => {
-    const token = await getAuthToken();
-    const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `Failed to fetch analysis (HTTP ${response.status})`);
-      throw new Error(detail);
-    }
-    return response.json();
-  },
-
   // RAG: Delete analysis
   ragDeleteAnalysis: async (analysisId: string): Promise<boolean> => {
-    const token = await getAuthToken();
+    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
@@ -274,13 +126,37 @@ export const analysisAPI = {
     return true;
   },
 
+  // Async batch analysis: submits files to Django, returns batch_id immediately.
+  // Backend processes files in background via Celery and sends results over WebSocket.
+  // Falls back to synchronous /rag/analyze if endpoint is unavailable.
+  submitBatchAnalysis: async (files: File[], scanFolder?: string, scanType: string = 'folder'): Promise<{ batch_id: string }> => {
+    const token = await getAccessToken();
+    const formData = new FormData();
+    for (const file of files) {
+      const renamedFile = new File([file], file.webkitRelativePath || file.name, { type: file.type });
+      formData.append('files', renamedFile);
+    }
+    if (scanFolder) formData.append('scan_folder', scanFolder);
+    formData.append('scan_type', scanType);
+    const response = await fetch(`/api/analysis/batch/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Batch submission failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
   // RAG: Chat with streaming response (original)
   ragChat: async function* (
     document_id: string,
     question: string,
     history: { role: string; content: string }[] = []
   ): AsyncGenerator<string> {
-    const token = await getAuthToken();
+    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/chat`, {
       method: 'POST',
       headers: {
@@ -327,10 +203,10 @@ export const analysisAPI = {
     }
   },
 
-  // Git: clone a repo and return file manifest
+  // Git: clone a repo and return file manifest (synchronous)
   gitClone: async (repoUrl: string, branch: string, token?: string): Promise<GitManifest> => {
-    const token_ = await getAuthToken();
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/git/clone/`, {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/git/clone/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -345,10 +221,47 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Git: submit clone as async Celery task, returns task_id immediately.
+  // Frontend can poll /api/git/clone/{task_id}/status/ or receive WebSocket update.
+  submitGitClone: async (repoUrl: string, branch: string): Promise<{ task_id: string }> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/git/clone/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token_}`,
+      },
+      body: JSON.stringify({ repo_url: repoUrl, branch }),
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Git clone submission failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  // Git: poll Celery task status for async clone
+  getGitCloneStatus: async (taskId: string): Promise<{
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    result?: GitManifest;
+    error?: string;
+  }> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/git/clone/${taskId}/status/`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Git clone status failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
   // Git: fetch file contents for a subset of paths
   gitFetchFiles: async (sessionId: string, paths: string[]): Promise<GitFileContents> => {
-    const token_ = await getAuthToken();
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/git/files/`, {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/git/files/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -363,56 +276,4 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // RAG: Non-streaming JSON chat (cross-analysis search)
-  ragChatJson: async (
-    message: string,
-    analysis_id?: string | null,
-  ): Promise<{
-    answer: string;
-    sources: Array<{
-      chunk_text: string;
-      filename: string;
-      analysis_id: string;
-      score: number;
-    }>;
-  }> => {
-    const token = await getAuthToken();
-    const response = await fetch(`${RAG_BASE}/chat-json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ message, analysis_id }),
-    });
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `RAG chat-json failed (HTTP ${response.status})`);
-      throw new Error(detail);
-    }
-    return response.json();
-  },
-
-  async ragDiagnose(context: {
-    total_files: number;
-    completed: number;
-    failed: number;
-    total_tokens: number;
-    stop_reason: string;
-    file_results?: { filename: string; health_score: number; issues: number }[];
-  }): Promise<{ diagnosis: string; root_cause: string; suggestion: string }> {
-    const token = await getAuthToken();
-    const response = await fetch(`${RAG_BASE}/diagnose`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(context),
-    });
-    if (!response.ok) {
-      const detail = await readErrorDetail(response, `Diagnosis failed (HTTP ${response.status})`);
-      throw new Error(detail);
-    }
-    return response.json();
-  },
 };

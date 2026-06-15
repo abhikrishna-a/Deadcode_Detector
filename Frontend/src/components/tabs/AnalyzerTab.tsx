@@ -2,15 +2,20 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Upload, FileCode, Folder, GitBranch, Play, StopCircle,
-  CheckCircle2, AlertOctagon, RefreshCw, BarChart,
-  HelpCircle, ChevronRight, ArrowRight, BookOpen, Loader2
+  CheckCircle2, AlertOctagon, BarChart,
+  HelpCircle, ChevronRight, ArrowRight, BookOpen
 } from 'lucide-react';
 import { AnalysisResult, Issue } from '../../types';
+import { GitManifest } from '../../api/types';
 import { analysisAPI } from '../../api/analysis';
+import { useAnalysisSocket } from '../../hooks/useAnalysisSocket';
+import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
 const SUPPORTED_EXTENSIONS = new Set(['.py', '.js', '.ts', '.tsx', '.jsx']);
+const SKIP_DIR_PATTERNS = ['/node_modules/', '/.git/', '/__pycache__/', '/dist/', '/build/', '/.venv/', '/venv/', '/static_root/', '/migrations/'];
+const MAX_FILE_BYTES = 200 * 1024;
 
 interface AnalyzerTabProps {
   key?: string;
@@ -57,36 +62,6 @@ function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
     scan_folder: raw.scan_folder || '',
     scan_type: raw.scan_type || 'single',
   };
-}
-
-interface TreeNodeData {
-  name: string;
-  isDir: boolean;
-  children: TreeNodeData[];
-  file?: AnalysisResult;
-}
-
-function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
-  const root: TreeNodeData[] = [];
-  for (const file of files) {
-    const parts = file.filename.replace(/\\/g, '/').split('/');
-    let current = root;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      if (isLast) {
-        current.push({ name: part, isDir: false, children: [], file });
-      } else {
-        let dir = current.find(n => n.name === part && n.isDir);
-        if (!dir) {
-          dir = { name: part, isDir: true, children: [], file: undefined };
-          current.push(dir);
-        }
-        current = dir.children;
-      }
-    }
-  }
-  return root;
 }
 
 interface TreeNodeProps {
@@ -195,6 +170,8 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
   const [issueFilter, setIssueFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const connectionActiveRef = useRef(false);
+  const analysisSocket = useAnalysisSocket();
 
   useEffect(() => {
     if (batchActive) {
@@ -255,6 +232,8 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     setBatchActive(false);
   };
 
+  const POLL_INTERVAL = 2000;
+
   const analyzeGitRepo = async () => {
     if (!gitUrl) return;
     setGitModalOpen(false);
@@ -267,38 +246,87 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     setBatchReportsList([]);
     setBatchErrorsList([]);
 
+    let manifest: GitManifest | null = null;
+
     try {
-      const manifest = await analysisAPI.gitClone(gitUrl, gitBranch);
-      setFilesTotalCount(manifest.files.length);
-      setActiveFileName('');
-
-      for (let i = 0; i < manifest.files.length; i++) {
-        const file = manifest.files[i];
-        if (abortRef.current?.signal.aborted) break;
-        setActiveFileName(file.path);
-        setProgressFiles(prev => [file.path, ...prev.slice(0, 10)]);
-
-        try {
-          const contents = await analysisAPI.gitFetchFiles(manifest.session_id, [file.path]);
-          const contentFile = contents.files[0];
-          if (contentFile) {
-            const fakeFile = new File([contentFile.content], file.path);
-            const result = await analysisAPI.analyzeFile(fakeFile, manifest.repo_name);
-            const report = mapToAnalysisResult(result, file.path);
-            report._source_content = contentFile.content;
-            onAddResult(report);
-            setBatchReportsList(prev => [...prev, report]);
-          }
-          setScannedDoneCount(prev => prev + 1);
-        } catch (err: any) {
-          setBatchErrorsList(prev => [...prev, { path: file.path, error: err.message }]);
-          setScannedFailCount(prev => prev + 1);
-        }
-      }
+      manifest = await analysisAPI.gitClone(gitUrl, gitBranch);
     } catch (err: any) {
       setBatchErrorsList(prev => [{ path: gitUrl, error: err.message }]);
       setScannedFailCount(1);
+      setBatchActive(false);
+      setActiveFileName('');
+      return;
     }
+
+    if (!manifest || abortRef.current?.signal.aborted) {
+      setBatchActive(false);
+      setActiveFileName('');
+      return;
+    }
+
+    setFilesTotalCount(manifest.files.length);
+    setActiveFileName('Fetching files...');
+
+    // Fetch all file contents in parallel (batches of 10)
+    const FETCH_BATCH = 10;
+    const ANALYZE_CONCURRENCY = 5;
+    const allPaths = manifest.files.map(f => f.path);
+    const fileContents: Record<string, string> = {};
+
+    const batches: string[][] = [];
+    for (let i = 0; i < allPaths.length; i += FETCH_BATCH) {
+      batches.push(allPaths.slice(i, i + FETCH_BATCH));
+    }
+
+    await Promise.all(batches.map(async (chunk) => {
+      try {
+        const contents = await analysisAPI.gitFetchFiles(manifest.session_id, chunk);
+        for (const f of contents.files) {
+          fileContents[f.path] = f.content;
+        }
+      } catch {
+        // individual batch failure handled by analysis phase
+      }
+    }));
+
+    setActiveFileName('Analyzing...');
+
+    // Analyze files in parallel with concurrency pool
+    const reports: AnalysisResult[] = [];
+    const errors: Array<{path: string; error: string}> = [];
+    const queue = [...manifest.files];
+
+    const worker = async () => {
+      while (queue.length > 0 && !abortRef.current?.signal.aborted) {
+        const file = queue.shift()!;
+        setActiveFileName(file.path);
+        setProgressFiles(prev => [file.path, ...prev.slice(0, 10)]);
+
+        const content = fileContents[file.path];
+        if (!content) {
+          errors.push({ path: file.path, error: 'Failed to fetch file content' });
+          setScannedDoneCount(prev => prev + 1);
+          continue;
+        }
+
+        try {
+          const fakeFile = new File([content], file.path);
+          const result = await analysisAPI.analyzeFile(fakeFile, manifest.repo_name, 'repo');
+          const report = mapToAnalysisResult(result, file.path);
+          report._source_content = content;
+          onAddResult(report);
+          reports.push(report);
+        } catch (err: any) {
+          errors.push({ path: file.path, error: err.message });
+        }
+        setScannedDoneCount(prev => prev + 1);
+      }
+    };
+
+    await Promise.all(Array.from({ length: ANALYZE_CONCURRENCY }, () => worker()));
+
+    setBatchReportsList(reports);
+    setBatchErrorsList(errors);
     setBatchActive(false);
     setActiveFileName('');
   };
@@ -319,9 +347,14 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
       if (allFiles.length === 0) return;
 
       const files = allFiles.filter(f => {
+        const path = f.webkitRelativePath || f.name;
+        if (SKIP_DIR_PATTERNS.some(p => path.includes(p))) return false;
+        if (f.size > MAX_FILE_BYTES) return false;
         const ext = '.' + f.name.split('.').pop()?.toLowerCase();
         return SUPPORTED_EXTENSIONS.has(ext);
       });
+
+      const folderName = files[0].webkitRelativePath?.split('/')[0] || `folder_${Date.now()}`;
 
       setView('batch_progress');
       setBatchActive(true);
@@ -332,32 +365,77 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
       setBatchReportsList([]);
       setBatchErrorsList([]);
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (abortRef.current?.signal.aborted) break;
-        setActiveFileName(file.webkitRelativePath || file.name);
-        setProgressFiles(prev => [(file.webkitRelativePath || file.name), ...prev.slice(0, 10)]);
+      try {
+        const { batch_id } = await analysisAPI.submitBatchAnalysis(files, folderName);
+        connectionActiveRef.current = true;
 
-        try {
-          const result = await analysisAPI.analyzeFile(file);
-          const report = mapToAnalysisResult(result, file.webkitRelativePath || file.name);
-          report._source_content = await file.text();
-          onAddResult(report);
-          setBatchReportsList(prev => [...prev, report]);
-          setScannedDoneCount(prev => prev + 1);
-        } catch (err: any) {
-          setBatchErrorsList(prev => [...prev, { path: file.webkitRelativePath || file.name, error: err.message }]);
-          setScannedFailCount(prev => prev + 1);
+        analysisSocket.connect(batch_id, {
+          onProgress: (_done, total, currentFile) => {
+            setFilesTotalCount(total);
+            setActiveFileName(currentFile);
+            setProgressFiles(prev => [currentFile, ...prev.slice(0, 10)]);
+          },
+          onFileComplete: (msg) => {
+            const report = mapToAnalysisResult(msg.analysis, msg.filename);
+            report._source_content = msg.source_content || '';
+            onAddResult(report);
+            setBatchReportsList(prev => {
+              if (prev.some(r => r.filename === msg.filename)) return prev;
+              return [...prev, report];
+            });
+            setScannedDoneCount(prev => prev + 1);
+          },
+          onFileError: (filename, error) => {
+            setBatchErrorsList(prev => [...prev, { path: filename, error }]);
+            setScannedFailCount(prev => prev + 1);
+          },
+          onBatchComplete: () => {
+            setBatchActive(false);
+            setActiveFileName('');
+            connectionActiveRef.current = false;
+          },
+          onError: (error) => {
+            console.error('Analysis WebSocket error:', error);
+          },
+          onClose: () => {
+            setBatchActive(false);
+            setActiveFileName('');
+            connectionActiveRef.current = false;
+          },
+        });
+      } catch {
+        // Fallback: synchronous sequential analysis if async endpoint unavailable
+        connectionActiveRef.current = true;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (abortRef.current?.signal.aborted) break;
+          setActiveFileName(file.webkitRelativePath || file.name);
+          setProgressFiles(prev => [(file.webkitRelativePath || file.name), ...prev.slice(0, 10)]);
+
+          try {
+            const result = await analysisAPI.analyzeFile(file, '', 'folder');
+            const report = mapToAnalysisResult(result, file.webkitRelativePath || file.name);
+            report._source_content = await file.text();
+            onAddResult(report);
+            setBatchReportsList(prev => [...prev, report]);
+            setScannedDoneCount(prev => prev + 1);
+          } catch (err: any) {
+            setBatchErrorsList(prev => [...prev, { path: file.webkitRelativePath || file.name, error: err.message }]);
+            setScannedFailCount(prev => prev + 1);
+          }
         }
+        setBatchActive(false);
+        setActiveFileName('');
+        connectionActiveRef.current = false;
       }
-      setBatchActive(false);
-      setActiveFileName('');
     };
     input.click();
   };
 
   const cancelBatchProcess = () => {
     abortRef.current?.abort();
+    analysisSocket.disconnect();
+    connectionActiveRef.current = false;
     setBatchActive(false);
   };
 

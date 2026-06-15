@@ -32,14 +32,6 @@ export interface LoginResponse {
   };
 }
 
-export interface RefreshTokenRequest {
-  refresh: string;
-}
-
-export interface RefreshTokenResponse {
-  access: string;
-}
-
 export interface MFAVerifyLoginRequest {
   token: string;
 }
@@ -84,96 +76,6 @@ export interface User {
   email: string;
   role: string;
   is_mfa_enabled: boolean;
-}
-
-// Scanner types (placeholders - will be implemented when backend scanner is built)
-export interface AnalysisRequest {
-  // These will be defined when scanner endpoints are built
-  files: File[];
-  config: {
-    detect_unused_functions: boolean;
-    detect_unused_imports: boolean;
-    detect_unreachable_classes: boolean;
-    detect_dead_variables: boolean;
-    include_test_files: boolean;
-    strict_mode: boolean;
-    min_confidence: number;
-  };
-}
-
-export interface AnalysisResponse {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  created_at: string;
-  // Will add more fields when scanner is implemented
-}
-
-export interface AnalysisStatusResponse {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress: number; // 0-100
-  current_file?: string;
-  logs?: string[];
-}
-
-export interface AnalysisResult {
-  id: string;
-  filename: string;
-  issues: Issue[];
-  summary: {
-    total_issues: number;
-    unused_functions: number;
-    dead_imports: number;
-    unreachable_classes: number;
-    stale_variables: number;
-  };
-}
-
-export interface Issue {
-  type: 'unused_function' | 'dead_import' | 'unreachable_class' | 'stale_variable' | 'unreachable_block';
-  name: string;
-  file: string;
-  line: number;
-  column?: number;
-  description: string;
-  confidence: number; // 0-100
-  references: Reference[];
-}
-
-export interface Reference {
-  file: string;
-  line: number;
-  column?: number;
-}
-
-export interface DashboardStats {
-  total_analyses: number;
-  dead_code_found: number;
-  files_scanned: number;
-  lines_saved: number;
-  // trend data
-  weekly_change?: {
-    analyses: number;
-    dead_code: number;
-    files: number;
-    lines: number;
-  };
-}
-
-export interface PasswordResetRequest { email: string; }
-export interface PasswordResetConfirmRequest { token: string; new_password: string; }
-export interface PasswordResetResponse { message: string; }
-
-// File tree types
-export interface FileNode {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: FileNode[];
-  issue_count: number;
-  has_dead_code: boolean;
-  is_clean: boolean;
-  has_warnings: boolean;
 }
 
 // Git / batch types

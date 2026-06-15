@@ -5,6 +5,9 @@ import subprocess
 import tempfile
 import uuid
 
+from asgiref.sync import async_to_sync
+from celery import group as celery_group
+from channels.layers import get_channel_layer
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +16,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .permissions import IsMFAVerified
+from .tasks import analyze_single_file, notify_batch_complete
 
 logger = logging.getLogger(__name__)
 
@@ -241,3 +245,63 @@ class GitFileFetchView(APIView):
                 logger.warning('Failed to read %s: %s', full_path, e)
 
         return Response({'files': files_result})
+
+
+class BatchAnalysisView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsMFAVerified]
+
+    def post(self, request):
+        uploaded = request.FILES.getlist('files')
+        if not uploaded:
+            return Response({'error': 'No files provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        scan_folder = request.data.get('scan_folder', '')
+        scan_type = request.data.get('scan_type', 'folder')
+        batch_id = str(uuid.uuid4())
+        total = len(uploaded)
+        channel_layer = get_channel_layer()
+        group = f'analysis_{batch_id}'
+
+        # Notify progress start
+        async_to_sync(channel_layer.group_send)(group, {
+            'type': 'analysis_progress',
+            'done': 0,
+            'total': total,
+            'current_file': uploaded[0].name,
+        })
+
+        # Pass user's JWT token to Celery tasks for RAG auth
+        auth_header = request.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
+
+        # Fire Celery tasks for each file
+        task_group = celery_group(
+            analyze_single_file.s(
+                f.name, f.read().decode('utf-8', errors='replace'), batch_id, scan_folder, token, scan_type
+            )
+            for f in uploaded
+        )
+        # When all tasks complete, notify batch_complete
+        callback = notify_batch_complete.s(batch_id, total)
+        (task_group | callback).apply_async()
+
+        return Response({'batch_id': batch_id}, status=status.HTTP_201_CREATED)
+
+
+class GitCloneStatusView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsMFAVerified]
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+
+        result = AsyncResult(task_id)
+        payload = {'status': result.status.lower()}
+
+        if result.successful():
+            payload['result'] = result.result
+        elif result.failed():
+            payload['error'] = str(result.result)
+
+        return Response(payload)

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Lock, Mail, User as UserIcon, Keyboard, Info, Smartphone } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, Info } from 'lucide-react';
 import { authAPI } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 
@@ -25,10 +25,18 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
 
   const showError = (msg: string) => {
     setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(''), 4000);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setErrorMsg(''), 4000);
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -139,11 +147,6 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
       showError(msg);
     }
     setLoading(false);
-  };
-
-  const autofillSimulatedCode = () => {
-    const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setMfaCode(randomCode);
   };
 
   return (
@@ -394,16 +397,6 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
                 className="w-full py-2.5 text-center font-mono font-bold tracking-[0.4em] text-sm text-cyan-400 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:tracking-normal placeholder:text-zinc-600"
               />
 
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={autofillSimulatedCode}
-                  className="flex-1 py-1.5 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono rounded-lg hover:bg-cyan-400/5 transition-all cursor-pointer flex items-center justify-center gap-1"
-                >
-                  <Keyboard size={12} /> Auto-Generate
-                </button>
-              </div>
-
               <button
                 type="submit"
                 disabled={loading || mfaCode.length !== 6}
@@ -432,16 +425,6 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
                 onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
                 className="w-full py-2.5 text-center font-mono font-bold tracking-[0.4em] text-sm text-cyan-400 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:tracking-normal placeholder:text-zinc-600"
               />
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={autofillSimulatedCode}
-                  className="flex-1 py-1.5 border border-cyan-500/20 text-cyan-400 text-[10px] font-mono rounded-lg hover:bg-cyan-400/5 transition-all cursor-pointer flex items-center justify-center gap-1"
-                >
-                  <Keyboard size={12} /> Simulated Code
-                </button>
-              </div>
 
               <button
                 type="submit"

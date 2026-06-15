@@ -20,10 +20,16 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        ws: true,
       },
       '/rag': {
         target: 'http://localhost:8004',
         changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

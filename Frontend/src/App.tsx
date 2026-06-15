@@ -107,63 +107,65 @@ export default function App() {
             >
               {(activeTab, onNavigate) => (
                 <div className="flex-1 flex flex-col justify-start min-h-0">
-                  <AnimatePresence mode="wait">
-                    {activeTab === 'overview' && (
-                      <OverviewTab
-                        key="overview"
-                        history={history}
-                        onViewResult={() => onNavigate('analyzer')}
-                      />
-                    )}
+                  {activeTab !== 'analyzer' && (
+                    <AnimatePresence mode="wait">
+                      {activeTab === 'overview' && (
+                        <OverviewTab
+                          key="overview"
+                          history={history}
+                          onViewResult={() => onNavigate('analyzer')}
+                        />
+                      )}
 
-                    {activeTab === 'analyzer' && (
-                      <AnalyzerTab
-                        key="analyzer"
-                        history={history}
-                        onAddResult={addHistoryReport}
-                        onNavigateToChat={(docId, filename) => {
-                          setChatTarget({ docId, filename });
-                          onNavigate('chat');
-                        }}
-                      />
-                    )}
+                      {activeTab === 'chat' && (
+                        <ChatTab
+                          key="chat"
+                          history={history}
+                          initialDocId={chatTarget?.docId}
+                          initialFilename={chatTarget?.filename}
+                        />
+                      )}
 
-                    {activeTab === 'chat' && (
-                      <ChatTab
-                        key="chat"
-                        history={history}
-                        initialDocId={chatTarget?.docId}
-                        initialFilename={chatTarget?.filename}
-                      />
-                    )}
+                      {activeTab === 'history' && (
+                        <HistoryTab
+                          key="history"
+                          onNavigateToChat={(docId, filename) => {
+                            setChatTarget({ docId, filename });
+                            onNavigate('chat');
+                          }}
+                          onShowToast={showToast}
+                        />
+                      )}
 
-                    {activeTab === 'history' && (
-                      <HistoryTab
-                        key="history"
-                        onNavigateToChat={(docId, filename) => {
-                          setChatTarget({ docId, filename });
-                          onNavigate('chat');
-                        }}
-                        onShowToast={showToast}
-                      />
-                    )}
+                      {activeTab === 'settings' && (
+                        <SettingsTab
+                          key="settings"
+                          currentUser={currentUser}
+                          onShowToast={showToast}
+                        />
+                      )}
 
-                    {activeTab === 'settings' && (
-                      <SettingsTab
-                        key="settings"
-                        currentUser={currentUser}
-                        onShowToast={showToast}
-                      />
-                    )}
+                      {activeTab === 'admin' && currentUser.role === 'admin' && (
+                        <AdminTab
+                          key="admin"
+                          currentUser={currentUser}
+                          onShowToast={showToast}
+                        />
+                      )}
+                    </AnimatePresence>
+                  )}
 
-                    {activeTab === 'admin' && currentUser.role === 'admin' && (
-                      <AdminTab
-                        key="admin"
-                        currentUser={currentUser}
-                        onShowToast={showToast}
-                      />
-                    )}
-                  </AnimatePresence>
+                  <div style={{ display: activeTab === 'analyzer' ? '' : 'none' }}>
+                    <AnalyzerTab
+                      key="analyzer"
+                      history={history}
+                      onAddResult={addHistoryReport}
+                      onNavigateToChat={(docId, filename) => {
+                        setChatTarget({ docId, filename });
+                        onNavigate('chat');
+                      }}
+                    />
+                  </div>
                 </div>
               )}
             </DashboardShell>

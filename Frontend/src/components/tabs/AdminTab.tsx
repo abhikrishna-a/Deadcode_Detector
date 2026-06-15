@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Search, Shield, ShieldCheck, Mail, Info, Loader2 } from 'lucide-react';
 import { User } from '../../api/types';

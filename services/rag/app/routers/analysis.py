@@ -26,6 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
+MAX_LLM_BYTES = 30 * 1024
 SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".md"}
 
 _bg_semaphore = Semaphore(3)
@@ -85,10 +86,6 @@ async def _background_finalize(
                 else:
                     await db.execute(
                         text("DELETE FROM rag_chunks WHERE document_id = CAST(:id AS uuid)"),
-                        {"id": document_id},
-                    )
-                    await db.execute(
-                        text("DELETE FROM embeddings WHERE document_id = CAST(:id AS uuid)"),
                         {"id": document_id},
                     )
                     await db.execute(
@@ -257,6 +254,10 @@ async def analyze_file(
         except Exception as e:
             logger.error("Cross-ref analysis failed: %s", e, exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cross-ref analysis failed: {str(e)}")
+
+        # Skip LLM refinement for large files to avoid provider 413 errors
+        if len(source) > MAX_LLM_BYTES:
+            llm_task = None
 
         # If no LLM needed, store with chunks normally
         if llm_task is None:

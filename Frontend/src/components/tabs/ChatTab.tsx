@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight } from 'lucide-react';
+import { MessageSquare, Send, FileCode, Search, Terminal, Folder, FolderOpen, ChevronRight, AlertOctagon } from 'lucide-react';
 import { AnalysisResult, ChatMessage } from '../../types';
 import { analysisAPI } from '../../api/analysis';
+import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 
 interface ChatTabProps {
   key?: string;
@@ -65,13 +66,89 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       if (!groups[key]) groups[key] = [];
       groups[key].push(doc);
     });
-    return Object.entries(groups);
+    return Object.entries(groups).map(([folderName, docs]) => ({
+      folderName,
+      docs,
+      tree: buildFileTree(docs),
+    }));
   }, [filteredDocs]);
 
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
 
   const toggleFolder = (key: string) => {
     setExpandedFolders(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleTreePath = (path: string) => {
+    setExpandedTreePaths(prev => ({ ...prev, [path]: !prev[path] }));
+  };
+
+  const renderTreeNode = (node: TreeNodeData, depth: number, parentPath: string) => {
+    const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+
+    if (!node.isDir) {
+      const isSelected = selectedDoc?.document_id === node.file?.document_id;
+      const nameOnly = node.name;
+      return (
+        <div
+          key={fullPath}
+          onClick={() => node.file && setSelectedDoc(node.file)}
+          className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-all ${
+            isSelected
+              ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20'
+              : 'hover:bg-white/[0.015] text-zinc-400 hover:text-zinc-200'
+          }`}
+          style={{ paddingLeft: `${12 + depth * 12}px` }}
+        >
+          {node.file?.error ? (
+            <AlertOctagon size={10} className="text-rose-400 flex-shrink-0" />
+          ) : (
+            <FileCode size={10} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
+          )}
+          <div className="min-w-0">
+            <span className="font-mono text-[10px] truncate block">{nameOnly}</span>
+            {!node.file?.error && (
+              <span className="text-[7px] font-mono text-zinc-600">
+                {node.file?.issues?.length || 0} issues • {node.file?.summary?.health_score || 0}%
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    const isExpanded = !!expandedTreePaths[fullPath];
+    return (
+      <div key={fullPath}>
+        <div
+          onClick={() => toggleTreePath(fullPath)}
+          className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
+          style={{ paddingLeft: `${8 + depth * 12}px` }}
+        >
+          <ChevronRight
+            size={10}
+            className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+          />
+          <Folder size={12} className="text-purple-400 flex-shrink-0" />
+          <span className="font-mono text-[10px] text-zinc-500 truncate group-hover:text-zinc-300 transition-colors">
+            {node.name}/
+          </span>
+        </div>
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              {node.children.map(child => renderTreeNode(child, depth + 1, fullPath))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
   };
 
   const triggerStreamingResponse = async (userPrompt: string) => {
@@ -159,7 +236,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
               No documents active
             </div>
           ) : (
-            treeGroups.map(([folderName, docs]) => {
+            treeGroups.map(({ folderName, docs, tree }) => {
               const isExpanded = !!expandedFolders[folderName];
               return (
                 <div key={folderName}>
@@ -171,7 +248,10 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
                       size={10}
                       className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
                     />
-                    <Folder size={12} className="text-purple-400 flex-shrink-0" />
+                    {isExpanded
+                      ? <FolderOpen size={12} className="text-cyan-400 flex-shrink-0" />
+                      : <Folder size={12} className="text-purple-400 flex-shrink-0" />
+                    }
                     <span className="font-mono text-[10px] text-zinc-500 truncate group-hover:text-zinc-300 transition-colors">
                       {folderName === '(root)' ? 'Root' : folderName}/
                     </span>
@@ -184,31 +264,9 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden ml-3 border-l border-white/[0.03] pl-2"
+                        className="overflow-hidden ml-3 border-l border-white/[0.03]"
                       >
-                        {docs.map((doc, idx) => {
-                          const isSelected = selectedDoc?.document_id === doc.document_id;
-                          const nameOnly = doc.filename.split('/').pop() || 'file';
-                          return (
-                            <div
-                              key={idx}
-                              onClick={() => setSelectedDoc(doc)}
-                              className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-all ${
-                                isSelected
-                                  ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20'
-                                  : 'hover:bg-white/[0.015] text-zinc-400 hover:text-zinc-200'
-                              }`}
-                            >
-                              <FileCode size={10} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
-                              <div className="min-w-0">
-                                <span className="font-mono text-[10px] truncate block">{nameOnly}</span>
-                                <span className="text-[7px] font-mono text-zinc-600">
-                                  {doc.issues?.length || 0} issues • {doc.summary?.health_score || 0}%
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {tree.map(node => renderTreeNode(node, 0, ''))}
                       </motion.div>
                     )}
                   </AnimatePresence>

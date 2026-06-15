@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-function getAccessToken(): string {
+export function getAccessToken(): string {
   return document.cookie
     .split('; ')
     .find(r => r.startsWith('ghostcode_access='))

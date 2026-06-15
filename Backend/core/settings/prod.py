@@ -4,10 +4,10 @@ from .base import *
 DEBUG = False
 
 # Strict host mapping dynamically pulled from .env
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['api.yourdomain.com'])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost'])
 
 # Explicitly limit CORS requests to your static React application
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['https://yourdomain.com'])
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:5173'])
 
 # Secure Production Database Parsing
 # Looks for DATABASE_URL in .env (e.g., postgres://user:password@host:port/dbname)
