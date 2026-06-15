@@ -14,7 +14,11 @@ import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
 const SUPPORTED_EXTENSIONS = new Set(['.py', '.js', '.ts', '.tsx', '.jsx']);
-const SKIP_DIR_PATTERNS = ['/node_modules/', '/.git/', '/__pycache__/', '/dist/', '/build/', '/.venv/', '/venv/', '/static_root/', '/migrations/'];
+const SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv', 'static_root', 'migrations']);
+
+function shouldSkipPath(path: string): boolean {
+  return path.replace(/\\/g, '/').split('/').some(part => SKIP_DIRS.has(part));
+}
 const MAX_FILE_BYTES = 200 * 1024;
 
 interface AnalyzerTabProps {
@@ -167,11 +171,13 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
   const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [currentFolderName, setCurrentFolderName] = useState<string>('');
   const [issueFilter, setIssueFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const connectionActiveRef = useRef(false);
   const analysisSocket = useAnalysisSocket();
+  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (batchActive) {
@@ -348,13 +354,15 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
 
       const files = allFiles.filter(f => {
         const path = f.webkitRelativePath || f.name;
-        if (SKIP_DIR_PATTERNS.some(p => path.includes(p))) return false;
+        if (shouldSkipPath(path)) return false;
         if (f.size > MAX_FILE_BYTES) return false;
         const ext = '.' + f.name.split('.').pop()?.toLowerCase();
         return SUPPORTED_EXTENSIONS.has(ext);
       });
 
-      const folderName = files[0].webkitRelativePath?.split('/')[0] || `folder_${Date.now()}`;
+      // webkitRelativePath is relative to selected folder (no folder name in path)
+      const folderName = `Folder ${new Date().toISOString().slice(0, 10)}`;
+      setCurrentFolderName(folderName);
 
       setView('batch_progress');
       setBatchActive(true);
@@ -369,40 +377,51 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
         const { batch_id } = await analysisAPI.submitBatchAnalysis(files, folderName);
         connectionActiveRef.current = true;
 
-        analysisSocket.connect(batch_id, {
-          onProgress: (_done, total, currentFile) => {
-            setFilesTotalCount(total);
-            setActiveFileName(currentFile);
-            setProgressFiles(prev => [currentFile, ...prev.slice(0, 10)]);
-          },
-          onFileComplete: (msg) => {
-            const report = mapToAnalysisResult(msg.analysis, msg.filename);
-            report._source_content = msg.source_content || '';
-            onAddResult(report);
-            setBatchReportsList(prev => {
-              if (prev.some(r => r.filename === msg.filename)) return prev;
-              return [...prev, report];
-            });
-            setScannedDoneCount(prev => prev + 1);
-          },
-          onFileError: (filename, error) => {
-            setBatchErrorsList(prev => [...prev, { path: filename, error }]);
-            setScannedFailCount(prev => prev + 1);
-          },
-          onBatchComplete: () => {
-            setBatchActive(false);
-            setActiveFileName('');
-            connectionActiveRef.current = false;
-          },
-          onError: (error) => {
-            console.error('Analysis WebSocket error:', error);
-          },
-          onClose: () => {
-            setBatchActive(false);
-            setActiveFileName('');
-            connectionActiveRef.current = false;
-          },
-        });
+        // Poll for batch results (avoids channels_redis BZPOPMIN with Redis 3.0)
+        const seenFiles = new Set<string>();
+        const poll = async () => {
+          try {
+            const data = await analysisAPI.pollBatchResults(batch_id);
+            if (abortRef.current?.signal.aborted) return;
+            setFilesTotalCount(data.total);
+
+            for (const f of data.files || []) {
+              if (seenFiles.has(f.filename)) continue;
+              seenFiles.add(f.filename);
+
+              if (f.status === 'completed' && f.analysis) {
+                setActiveFileName(f.filename);
+                setProgressFiles(prev => [f.filename, ...prev.slice(0, 10)]);
+                const report = mapToAnalysisResult(f, f.filename);
+                report._source_content = f.source_content || '';
+                onAddResult(report);
+                setBatchReportsList(prev => {
+                  if (prev.some(r => r.filename === f.filename)) return prev;
+                  return [...prev, report];
+                });
+                setScannedDoneCount(prev => prev + 1);
+              } else if (f.status === 'error') {
+                setBatchErrorsList(prev => [...prev, { path: f.filename, error: f.error || 'Unknown error' }]);
+                setScannedFailCount(prev => prev + 1);
+              }
+            }
+
+            if (data.is_complete) {
+              setBatchActive(false);
+              setActiveFileName('');
+              connectionActiveRef.current = false;
+              if (pollRef.current !== null) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+            }
+          } catch (err) {
+            console.error('Poll error:', err);
+          }
+        };
+
+        poll();
+        pollRef.current = window.setInterval(poll, 1500);
       } catch {
         // Fallback: synchronous sequential analysis if async endpoint unavailable
         connectionActiveRef.current = true;
@@ -413,7 +432,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
           setProgressFiles(prev => [(file.webkitRelativePath || file.name), ...prev.slice(0, 10)]);
 
           try {
-            const result = await analysisAPI.analyzeFile(file, '', 'folder');
+            const result = await analysisAPI.analyzeFile(file, folderName, 'folder');
             const report = mapToAnalysisResult(result, file.webkitRelativePath || file.name);
             report._source_content = await file.text();
             onAddResult(report);
@@ -437,6 +456,10 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     analysisSocket.disconnect();
     connectionActiveRef.current = false;
     setBatchActive(false);
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
   };
 
   const treeRoot = useMemo(() => {
@@ -455,16 +478,17 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     }
     const nodes = buildFileTree(items);
     const hasLooseFiles = nodes.some(n => !n.isDir);
+    const rootName = currentFolderName || 'Root';
     if (hasLooseFiles) {
       return [{
-        name: 'Root',
+        name: rootName,
         isDir: true,
         children: nodes,
         file: undefined,
       } as TreeNodeData];
     }
     return nodes;
-  }, [batchReportsList, batchErrorsList]);
+  }, [batchReportsList, batchErrorsList, currentFolderName]);
 
   const toggleFolder = (path: string) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
@@ -540,6 +564,9 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
               Import from GitHub
             </button>
           </div>
+          <p className="text-[10px] text-zinc-600 font-mono text-center -mt-2">
+            The folder picker shows folders only — all files inside will be scanned
+          </p>
 
           <div className="p-4 border border-cyan-400/10 bg-cyan-450/5 rounded-2xl flex gap-3 text-left">
             <HelpCircle size={15} className="text-cyan-400 flex-shrink-0 mt-0.5" />

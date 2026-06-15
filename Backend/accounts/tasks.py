@@ -1,12 +1,10 @@
 import json
 import logging
 import os
-import uuid
 
 import requests
-from asgiref.sync import async_to_sync
 from celery import shared_task
-from channels.layers import get_channel_layer
+from celery.signals import task_failure
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -20,15 +18,45 @@ def _rag_url() -> str:
     return getattr(settings, 'RAG_ANALYZE_URL', 'http://localhost:8004/rag/analyze')
 
 
+def _batch_redis():
+    """Return a Redis client using the same URL as the Channels layer."""
+    import redis as _r
+    return _r.from_url(settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0])
+
+
+def _track_file_complete(batch_id: str, filename: str) -> None:
+    """
+    Record a file as completed via Redis SET (idempotent across retries).
+    Triggers notify_batch_complete when all files in the batch are done.
+    """
+    r = _batch_redis()
+    key = f'batch_done_{batch_id}'
+    r.sadd(key, filename)
+    r.expire(key, 3600)
+    done = r.scard(key)
+    total = int(r.get(f'batch_total_{batch_id}') or 0)
+    if total > 0 and done >= total:
+        flag = f'batch_done_flag_{batch_id}'
+        claimed = r.setnx(flag, 1)
+        r.expire(flag, 300)
+        if claimed:
+            notify_batch_complete.delay(batch_id, total)
+
+
+def _store_result(batch_id: str, filename: str, data: dict) -> None:
+    """Store a file's analysis result in Redis (key-value, works with Redis 3.0+)."""
+    r = _batch_redis()
+    key = f'batch_result:{batch_id}'
+    r.hset(key, filename, json.dumps(data))
+    r.expire(key, 3600)
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)
 def analyze_single_file(self, filename: str, content: str, batch_id: str, scan_folder: str = '', token: str = '', scan_type: str = 'single'):
     """
-    Celery task: sends file to RAG FastAPI for analysis, then pushes result
-    via Django Channels WebSocket.
+    Celery task: sends file to RAG FastAPI for analysis, then stores the result
+    in Redis for the frontend to poll (avoids channels_redis BZPOPMIN issue with Redis 3.0).
     """
-    channel_layer = get_channel_layer()
-    group = _group_name(batch_id)
-
     try:
         files = {'file': (filename, content.encode('utf-8'), 'text/x-python')}
         data = {'scan_type': scan_type}
@@ -43,38 +71,54 @@ def analyze_single_file(self, filename: str, content: str, batch_id: str, scan_f
         resp.raise_for_status()
         result = resp.json()
 
-        async_to_sync(channel_layer.group_send)(group, {
-            'type': 'analysis_file_complete',
-            'filename': filename,
+        _store_result(batch_id, filename, {
+            'status': 'completed',
             'document_id': result.get('document_id', ''),
             'analysis': result.get('analysis', {}),
+            'scan_folder': scan_folder,
             'source_content': content,
         })
 
+        _track_file_complete(batch_id, filename)
         return {'filename': filename, 'status': 'completed'}
 
     except Exception as exc:
         logger.exception('Analysis failed for %s', filename)
 
-        async_to_sync(channel_layer.group_send)(group, {
-            'type': 'analysis_file_error',
-            'filename': filename,
-            'error': str(exc),
-        })
+        try:
+            _store_result(batch_id, filename, {
+                'status': 'error',
+                'error': str(exc),
+                'scan_folder': scan_folder,
+            })
+        except Exception:
+            pass
 
         raise self.retry(exc=exc)
 
 
+@task_failure.connect(sender=analyze_single_file)
+def handle_analysis_failure(sender=None, task_id=None, exception=None, args=None, **kwargs):
+    """Track files that permanently fail (retries exhausted) so the batch can complete."""
+    if args and len(args) >= 3:
+        filename, _, batch_id = args[0], args[1], args[2]
+        try:
+            _store_result(batch_id, filename, {
+                'status': 'error',
+                'error': f'Analysis failed after retries: {exception}',
+            })
+        except Exception:
+            pass
+        try:
+            _track_file_complete(batch_id, filename)
+        except Exception:
+            pass
+
+
 @shared_task
 def notify_batch_complete(batch_id: str, total: int):
-    """Sends batch_complete signal via Channels after all files are processed."""
-    channel_layer = get_channel_layer()
-    group = _group_name(batch_id)
-
-    async_to_sync(channel_layer.group_send)(group, {
-        'type': 'analysis_batch_complete',
-    })
-    logger.info('Batch %s complete: %d files', batch_id, total)
+    """No-op: batch completion detected via frontend polling (HTTP), not WebSocket."""
+    logger.info('Batch %s complete: %d files (polling will detect)', batch_id, total)
 
 
 @shared_task

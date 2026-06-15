@@ -5,9 +5,7 @@ import subprocess
 import tempfile
 import uuid
 
-from asgiref.sync import async_to_sync
 from celery import group as celery_group
-from channels.layers import get_channel_layer
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -16,9 +14,16 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .permissions import IsMFAVerified
-from .tasks import analyze_single_file, notify_batch_complete
+from .tasks import analyze_single_file
 
 logger = logging.getLogger(__name__)
+
+
+def _batch_redis():
+    """Return a Redis client using the same URL as the Channels layer."""
+    from django.conf import settings
+    import redis as _r
+    return _r.from_url(settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0])
 
 ALLOWED_EXTENSIONS = {'.py', '.js', '.jsx', '.ts', '.tsx', '.txt', '.md'}
 SKIP_DIRS = {'node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv'}
@@ -260,33 +265,58 @@ class BatchAnalysisView(APIView):
         scan_type = request.data.get('scan_type', 'folder')
         batch_id = str(uuid.uuid4())
         total = len(uploaded)
-        channel_layer = get_channel_layer()
-        group = f'analysis_{batch_id}'
 
-        # Notify progress start
-        async_to_sync(channel_layer.group_send)(group, {
-            'type': 'analysis_progress',
-            'done': 0,
-            'total': total,
-            'current_file': uploaded[0].name,
-        })
+        # Store batch total in Redis for completion tracking
+        # (Avoid Celery chords — they don't work with --pool=solo on Windows)
+        _redis = _batch_redis()
+        _redis.setex(f'batch_total_{batch_id}', 3600, total)
 
         # Pass user's JWT token to Celery tasks for RAG auth
         auth_header = request.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
 
-        # Fire Celery tasks for each file
-        task_group = celery_group(
+        # Fire tasks as a plain group (no chord — solo pool doesn't support chords)
+        celery_group(
             analyze_single_file.s(
                 f.name, f.read().decode('utf-8', errors='replace'), batch_id, scan_folder, token, scan_type
             )
             for f in uploaded
-        )
-        # When all tasks complete, notify batch_complete
-        callback = notify_batch_complete.s(batch_id, total)
-        (task_group | callback).apply_async()
+        ).apply_async()
 
         return Response({'batch_id': batch_id}, status=status.HTTP_201_CREATED)
+
+
+class BatchResultsView(APIView):
+    """Frontend polls this endpoint to get batch analysis results (avoids WebSocket channel layer)."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsMFAVerified]
+
+    def get(self, request, batch_id):
+        _redis = _batch_redis()
+        results_key = f'batch_result:{batch_id}'
+        total_key = f'batch_total_{batch_id}'
+        done_key = f'batch_done_{batch_id}'
+
+        total = int(_redis.get(total_key) or 0)
+        done = _redis.scard(done_key) if total > 0 else 0
+
+        raw = _redis.hgetall(results_key) if total > 0 else {}
+        files = []
+        for filename_bytes, data_bytes in raw.items():
+            try:
+                entry = json.loads(data_bytes)
+                entry['filename'] = filename_bytes.decode('utf-8')
+                files.append(entry)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+
+        return Response({
+            'total': total,
+            'done': done,
+            'files': files,
+            'is_complete': total > 0 and done >= total,
+        })
 
 
 class GitCloneStatusView(APIView):

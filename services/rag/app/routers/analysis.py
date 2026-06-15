@@ -255,8 +255,8 @@ async def analyze_file(
             logger.error("Cross-ref analysis failed: %s", e, exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cross-ref analysis failed: {str(e)}")
 
-        # Skip LLM refinement for large files to avoid provider 413 errors
-        if len(source) > MAX_LLM_BYTES:
+        # Skip LLM refinement for large files or batch/folder scans (speed)
+        if len(source) > MAX_LLM_BYTES or scan_type in ('folder', 'repo'):
             llm_task = None
 
         # If no LLM needed, store with chunks normally

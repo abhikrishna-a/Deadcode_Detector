@@ -150,6 +150,31 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Poll batch analysis results (replaces WebSocket for Redis 3.0 compatibility)
+  pollBatchResults: async (batchId: string): Promise<{
+    total: number;
+    done: number;
+    files: Array<{
+      status: string;
+      filename: string;
+      document_id?: string;
+      analysis?: any;
+      source_content?: string;
+      error?: string;
+    }>;
+    is_complete: boolean;
+  }> => {
+    const token = await getAccessToken();
+    const response = await fetch(`/api/analysis/batch/${batchId}/results/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Poll failed (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
   // RAG: Chat with streaming response (original)
   ragChat: async function* (
     document_id: string,
