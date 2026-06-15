@@ -10,6 +10,8 @@ import { analysisAPI } from '../../api/analysis';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
+const SUPPORTED_EXTENSIONS = new Set(['.py', '.js', '.ts', '.tsx', '.jsx']);
+
 interface AnalyzerTabProps {
   key?: string;
   history: AnalysisResult[];
@@ -57,6 +59,120 @@ function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
   };
 }
 
+interface TreeNodeData {
+  name: string;
+  isDir: boolean;
+  children: TreeNodeData[];
+  file?: AnalysisResult;
+}
+
+function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
+  const root: TreeNodeData[] = [];
+  for (const file of files) {
+    const parts = file.filename.replace(/\\/g, '/').split('/');
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      if (isLast) {
+        current.push({ name: part, isDir: false, children: [], file });
+      } else {
+        let dir = current.find(n => n.name === part && n.isDir);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], file: undefined };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  return root;
+}
+
+interface TreeNodeProps {
+  node: TreeNodeData;
+  depth: number;
+  parentPath: string;
+  expandedFolders: Record<string, boolean>;
+  onToggle: (path: string) => void;
+  selectedFile: AnalysisResult | null;
+  onSelectFile: (file: AnalysisResult) => void;
+}
+
+function TreeNode({
+  node, depth, parentPath, expandedFolders, onToggle, selectedFile, onSelectFile
+}: TreeNodeProps) {
+  const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+
+  if (!node.isDir) {
+    if (node.file?.error) {
+      return (
+        <div className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg text-xs cursor-default text-rose-400/70">
+          <AlertOctagon size={11} className="text-rose-400 flex-shrink-0" />
+          <span className="font-mono truncate">{node.name}</span>
+        </div>
+      );
+    }
+    const isSelected = selectedFile?.filename === node.file?.filename;
+    return (
+      <div
+        onClick={() => node.file && onSelectFile(node.file)}
+        className={`flex items-center gap-1.5 py-1.5 px-2 rounded-lg text-xs cursor-pointer transition-all ${
+          isSelected
+            ? 'bg-cyan-400/10 text-cyan-300 font-medium border border-cyan-400/20'
+            : 'text-zinc-500 hover:bg-white/[0.01] hover:text-zinc-300'
+        }`}
+      >
+        <FileCode size={11} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
+        <span className="font-mono truncate">{node.name}</span>
+      </div>
+    );
+  }
+
+  const isExpanded = !!expandedFolders[fullPath] || depth < 1;
+
+  return (
+    <div>
+      <div
+        onClick={() => onToggle(fullPath)}
+        className="flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
+      >
+        <ChevronRight
+          size={10}
+          className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+        />
+        <Folder size={12} className="text-purple-400 flex-shrink-0" />
+        <span className="font-mono text-[11px] text-zinc-400 truncate group-hover:text-zinc-200 transition-colors">
+          {node.name}/
+        </span>
+      </div>
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden ml-3 border-l border-white/[0.03] pl-2 space-y-0.5"
+          >
+            {node.children.map((child, i) => (
+              <TreeNode
+                key={i}
+                node={child}
+                depth={depth + 1}
+                parentPath={fullPath}
+                expandedFolders={expandedFolders}
+                onToggle={onToggle}
+                selectedFile={selectedFile}
+                onSelectFile={onSelectFile}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: AnalyzerTabProps) {
   const [view, setView] = useState<'upload' | 'batch_progress' | 'workspace'>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +191,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
   const [batchErrorsList, setBatchErrorsList] = useState<Array<{ path: string; error: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [issueFilter, setIssueFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -198,8 +315,13 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     input.type = 'file';
     input.webkitdirectory = true;
     input.onchange = async (e) => {
-      const files = Array.from((e.target as HTMLInputElement).files || []);
-      if (files.length === 0) return;
+      const allFiles = Array.from((e.target as HTMLInputElement).files || []);
+      if (allFiles.length === 0) return;
+
+      const files = allFiles.filter(f => {
+        const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+        return SUPPORTED_EXTENSIONS.has(ext);
+      });
 
       setView('batch_progress');
       setBatchActive(true);
@@ -239,16 +361,36 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
     setBatchActive(false);
   };
 
-  const treeNodes = useMemo(() => {
-    const folders: Record<string, AnalysisResult[]> = {};
-    batchReportsList.forEach(r => {
-      const parts = r.filename.replace(/\\/g, '/').split('/');
-      const parentDir = parts.length > 1 ? parts.slice(0, -1).join('/') : '(root)';
-      if (!folders[parentDir]) folders[parentDir] = [];
-      folders[parentDir].push(r);
-    });
-    return folders;
-  }, [batchReportsList]);
+  const treeRoot = useMemo(() => {
+    const items = [...batchReportsList];
+    for (const err of batchErrorsList) {
+      if (items.some(item => item.filename === err.path)) continue;
+      items.push({
+        document_id: '',
+        filename: err.path,
+        summary: { total_issues: 0, severity_counts: { high: 0, medium: 0, low: 0 }, categories: {}, overall_health: 'clean', health_score: 0 },
+        issues: [],
+        metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
+        scan_type: 'folder',
+        error: err.error,
+      } as AnalysisResult);
+    }
+    const nodes = buildFileTree(items);
+    const hasLooseFiles = nodes.some(n => !n.isDir);
+    if (hasLooseFiles) {
+      return [{
+        name: 'Root',
+        isDir: true,
+        children: nodes,
+        file: undefined,
+      } as TreeNodeData];
+    }
+    return nodes;
+  }, [batchReportsList, batchErrorsList]);
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
+  };
 
   const visibleIssues = useMemo(() => {
     if (!selectedFile) return [];
@@ -430,35 +572,25 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
               </button>
             </div>
 
-            <div className="space-y-2">
-              {(Object.entries(treeNodes) as [string, AnalysisResult[]][]).map(([dirName, dirFiles]) => (
-                <div key={dirName} className="space-y-1">
-                  <div
-                    onClick={() => { setSelectedFolder(selectedFolder === dirName ? null : dirName); setSelectedFile(null); }}
-                    className="flex items-center gap-1.5 py-1.5 px-2 hover:bg-white/[0.015] rounded-lg cursor-pointer text-zinc-400 hover:text-neutral-200 transition-all text-xs font-medium"
-                  >
-                    <Folder size={13} className="text-purple-400" />
-                    <span className="font-mono truncate">{dirName}/</span>
-                  </div>
-                  <div className="pl-3 border-l border-white/[0.02] space-y-0.5">
-                    {dirFiles.map((reportFile, subIdx) => {
-                      const isSelected = selectedFile?.filename === reportFile.filename;
-                      return (
-                        <div
-                          key={subIdx}
-                          onClick={() => { setSelectedFile(reportFile); setSelectedFolder(null); }}
-                          className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs cursor-pointer font-sans transition-all ${
-                            isSelected ? 'bg-cyan-400/10 text-cyan-300 font-medium border border-cyan-400/20' : 'text-zinc-500 hover:bg-white/[0.01] hover:text-zinc-300'
-                          }`}
-                        >
-                          <FileCode size={12} className={isSelected ? 'text-cyan-400 animate-pulse' : 'text-zinc-650'} />
-                          <span className="font-mono truncate">{reportFile.filename.split('/').pop()}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+            <div className="space-y-0.5">
+              {treeRoot.length === 0 ? (
+                <div className="text-center py-8 text-neutral-600 font-mono text-[10px]">
+                  No files scanned yet
                 </div>
-              ))}
+              ) : (
+                treeRoot.map((node, i) => (
+                  <TreeNode
+                    key={i}
+                    node={node}
+                    depth={0}
+                    parentPath=""
+                    expandedFolders={expandedFolders}
+                    onToggle={toggleFolder}
+                    selectedFile={selectedFile}
+                    onSelectFile={(file) => { setSelectedFile(file); setSelectedFolder(null); }}
+                  />
+                ))
+              )}
             </div>
           </div>
 
