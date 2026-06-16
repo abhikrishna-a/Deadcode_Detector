@@ -83,6 +83,52 @@ export const analysisAPI = {
     };
   },
 
+  // RAG: Get single analysis by ID
+  ragGetAnalysis: async (analysisId: string): Promise<{
+    analysis_id: string;
+    filename: string;
+    language: string;
+    analysis: any;
+    cached: boolean;
+  }> => {
+    const token = await getAccessToken();
+    const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Failed to fetch analysis (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  // RAG: Get all analyses for a scan folder
+  ragGetAnalysesByFolder: async (scanFolder: string): Promise<{
+    scan_folder: string;
+    items: Array<{
+      analysis_id: string;
+      filename: string;
+      language: string;
+      analysis: any;
+      health_score: number;
+      total_issues: number;
+      created_at: string;
+    }>;
+    count: number;
+  }> => {
+    const token = await getAccessToken();
+    const response = await fetch(`${RAG_BASE}/analyses/by-folder/${encodeURIComponent(scanFolder)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Failed to fetch folder analyses (HTTP ${response.status})`);
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
   // RAG: Paginated history
   ragHistory: async (limit: number = 20, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
@@ -132,9 +178,12 @@ export const analysisAPI = {
   submitBatchAnalysis: async (files: File[], scanFolder?: string, scanType: string = 'folder'): Promise<{ batch_id: string }> => {
     const token = await getAccessToken();
     const formData = new FormData();
+    const paths: string[] = [];
     for (const file of files) {
-      const renamedFile = new File([file], file.webkitRelativePath || file.name, { type: file.type });
-      formData.append('files', renamedFile);
+      const relPath = file.webkitRelativePath || file.name;
+      paths.push(relPath);
+      formData.append('paths', relPath);
+      formData.append('files', file);
     }
     if (scanFolder) formData.append('scan_folder', scanFolder);
     formData.append('scan_type', scanType);

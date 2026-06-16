@@ -311,6 +311,51 @@ async def get_document(
         }
 
 
+async def get_documents_by_scan_folder(
+    db: AsyncSession,
+    user_id: int,
+    scan_folder: str,
+) -> list[dict]:
+    if IS_SQLITE:
+        rows = (await db.execute(
+            text("""
+                SELECT id, filename, language, analysis_json, health_score, total_issues, created_at
+                FROM analyses
+                WHERE user_id = :uid AND scan_folder = :folder
+                ORDER BY filename
+            """),
+            {"uid": user_id, "folder": scan_folder},
+        )).fetchall()
+        return [
+            {
+                "analysis_id": r[0], "filename": r[1], "language": r[2],
+                "analysis": json.loads(r[3]) if isinstance(r[3], str) else r[3],
+                "health_score": r[4], "total_issues": r[5], "created_at": r[6],
+            }
+            for r in rows
+        ]
+    else:
+        rows = (await db.execute(
+            text("""
+                SELECT id, filename, language, analysis, created_at,
+                       COALESCE((analysis->'summary'->>'health_score')::int, 0) AS health_score,
+                       COALESCE((analysis->'summary'->>'total_issues')::int, 0) AS total_issues
+                FROM rag_documents
+                WHERE user_id = :uid AND scan_folder = :folder
+                ORDER BY filename
+            """),
+            {"uid": user_id, "folder": scan_folder},
+        )).fetchall()
+        return [
+            {
+                "analysis_id": str(r[0]), "filename": r[1], "language": r[2],
+                "analysis": r[3], "created_at": r[4].isoformat(),
+                "health_score": r[5], "total_issues": r[6],
+            }
+            for r in rows
+        ]
+
+
 async def check_hash(
     db: AsyncSession,
     user_id: int,

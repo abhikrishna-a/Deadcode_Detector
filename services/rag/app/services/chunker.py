@@ -18,6 +18,17 @@ def detect_language(filename: str) -> str:
     mapping = {
         "py": "python", "js": "javascript", "jsx": "javascript",
         "ts": "typescript", "tsx": "typescript", "txt": "text", "md": "markdown",
+        "mjs": "javascript", "cjs": "javascript",
+        "mts": "typescript", "cts": "typescript",
+        "css": "css", "html": "html", "htm": "html",
+        "json": "json", "xml": "xml",
+        "vue": "vue", "svelte": "svelte",
+        "scss": "scss", "less": "less",
+        "rb": "ruby", "go": "go", "rs": "rust", "java": "java", "php": "php",
+        "swift": "swift", "kt": "kotlin",
+        "yaml": "yaml", "yml": "yaml", "toml": "toml",
+        "sh": "shell", "bash": "shell", "zsh": "shell",
+        "sql": "sql",
     }
     return mapping.get(ext, "text")
 

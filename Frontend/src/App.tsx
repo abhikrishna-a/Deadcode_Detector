@@ -22,6 +22,7 @@ export default function App() {
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [chatTarget, setChatTarget] = useState<{ docId: string; filename: string } | null>(null);
+  const [viewTarget, setViewTarget] = useState<{ analysisId: string; filename: string; scanFolder?: string } | null>(null);
 
   useEffect(() => {
     if (screen === 'dashboard' && !user) {
@@ -46,6 +47,7 @@ export default function App() {
     await logout();
     setScreen('landing');
     setChatTarget(null);
+    setViewTarget(null);
     showToast('Session disconnected successfully.', 'info');
   };
 
@@ -55,6 +57,11 @@ export default function App() {
       if (exists) return prev;
       return [report, ...prev];
     });
+  }, []);
+
+  const handleNavigateToWorkspace = useCallback((analysisId: string, filename: string, scanFolder?: string, onNavigate?: (tab: string) => void) => {
+    setViewTarget({ analysisId, filename, scanFolder });
+    onNavigate?.('analyzer');
   }, []);
 
   const currentUser = user || undefined;
@@ -133,6 +140,9 @@ export default function App() {
                             setChatTarget({ docId, filename });
                             onNavigate('chat');
                           }}
+                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                          }}
                           onShowToast={showToast}
                         />
                       )}
@@ -164,6 +174,8 @@ export default function App() {
                         setChatTarget({ docId, filename });
                         onNavigate('chat');
                       }}
+                      viewTarget={viewTarget}
+                      onClearViewTarget={() => setViewTarget(null)}
                     />
                   </div>
                 </div>

@@ -21,7 +21,11 @@ def _rag_url() -> str:
 def _batch_redis():
     """Return a Redis client using the same URL as the Channels layer."""
     import redis as _r
-    return _r.from_url(settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0])
+    return _r.from_url(
+        settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0],
+        socket_timeout=5,
+        socket_connect_timeout=5,
+    )
 
 
 def _track_file_complete(batch_id: str, filename: str) -> None:
@@ -51,68 +55,80 @@ def _store_result(batch_id: str, filename: str, data: dict) -> None:
     r.expire(key, 3600)
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=5)
-def analyze_single_file(self, filename: str, content: str, batch_id: str, scan_folder: str = '', token: str = '', scan_type: str = 'single'):
+@shared_task(bind=True, max_retries=1, default_retry_delay=10)
+def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str = '', token: str = '', scan_type: str = 'folder'):
     """
-    Celery task: sends file to RAG FastAPI for analysis, then stores the result
-    in Redis for the frontend to poll (avoids channels_redis BZPOPMIN issue with Redis 3.0).
+    Celery task: sends ALL folder files to RAG /batch-analyze at once.
+    Pure in-memory cross-referencing across files — no per-file DB queries, no LLM.
+    Stores each result in Redis for the frontend to poll.
     """
     try:
-        files = {'file': (filename, content.encode('utf-8'), 'text/x-python')}
-        data = {'scan_type': scan_type}
-        if scan_folder:
-            data['scan_folder'] = scan_folder
+        rag_url = _rag_url().replace('/rag/analyze', '/batch-analyze')
+        payload = {
+            'files': [{'name': n, 'content': c} for n, c in files_data],
+            'scan_folder': scan_folder,
+            'scan_type': scan_type,
+        }
+        headers = {'Authorization': f'Bearer {token}'} if token else {}
 
-        headers = {}
-        if token:
-            headers['Authorization'] = f'Bearer {token}'
-
-        resp = requests.post(_rag_url(), files=files, data=data, headers=headers, timeout=120)
+        resp = requests.post(rag_url, json=payload, headers=headers, timeout=300)
         resp.raise_for_status()
         result = resp.json()
 
-        _store_result(batch_id, filename, {
-            'status': 'completed',
-            'document_id': result.get('document_id', ''),
-            'analysis': result.get('analysis', {}),
-            'scan_folder': scan_folder,
-            'source_content': content,
-        })
+        results_list = result.get('results', [])
+        content_map = {fn: content for fn, content in files_data}
+        processed = set()
 
-        _track_file_complete(batch_id, filename)
-        return {'filename': filename, 'status': 'completed'}
+        for fr in results_list:
+            fn = fr['filename']
+            processed.add(fn)
+            _store_result(batch_id, fn, {
+                'status': 'completed' if not fr.get('error') else 'error',
+                'document_id': fr.get('document_id', ''),
+                'analysis': fr.get('analysis', {}),
+                'scan_folder': scan_folder,
+                'source_content': content_map.get(fn, ''),
+            })
+            _track_file_complete(batch_id, fn)
+
+        # Track ALL submitted files (using list, not dict keys — handles any dupes)
+        for fn, _ in files_data:
+            if fn not in processed:
+                _store_result(batch_id, fn, {
+                    'status': 'error',
+                    'error': 'Skipped by analysis service (unsupported or empty)',
+                    'scan_folder': scan_folder,
+                })
+                _track_file_complete(batch_id, fn)
+
+        logger.info(
+            'Batch %s: %d/%d files analyzed (RAG), %d skipped',
+            batch_id, len(processed), len(files_data), len(files_data) - len(processed),
+        )
+        return {'batch_id': batch_id, 'total': len(results_list)}
 
     except Exception as exc:
-        logger.exception('Analysis failed for %s', filename)
-
-        try:
-            _store_result(batch_id, filename, {
-                'status': 'error',
-                'error': str(exc),
-                'scan_folder': scan_folder,
-            })
-        except Exception:
-            pass
-
+        logger.exception('Batch analysis failed for %s', batch_id)
         raise self.retry(exc=exc)
 
 
-@task_failure.connect(sender=analyze_single_file)
-def handle_analysis_failure(sender=None, task_id=None, exception=None, args=None, **kwargs):
-    """Track files that permanently fail (retries exhausted) so the batch can complete."""
+@task_failure.connect(sender=batch_analyze_folder)
+def handle_batch_failure(sender=None, task_id=None, exception=None, args=None, **kwargs):
+    """If the batch task exhausts retries, mark all files as errored so the batch can complete."""
     if args and len(args) >= 3:
-        filename, _, batch_id = args[0], args[1], args[2]
-        try:
-            _store_result(batch_id, filename, {
-                'status': 'error',
-                'error': f'Analysis failed after retries: {exception}',
-            })
-        except Exception:
-            pass
-        try:
-            _track_file_complete(batch_id, filename)
-        except Exception:
-            pass
+        files_data, batch_id = args[0], args[2]
+        for fn, _ in files_data:
+            try:
+                _store_result(batch_id, fn, {
+                    'status': 'error',
+                    'error': f'Batch analysis failed: {exception}',
+                })
+            except Exception:
+                pass
+            try:
+                _track_file_complete(batch_id, fn)
+            except Exception:
+                pass
 
 
 @shared_task

@@ -13,19 +13,33 @@ import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
-const SUPPORTED_EXTENSIONS = new Set(['.py', '.js', '.ts', '.tsx', '.jsx']);
+const SUPPORTED_EXTENSIONS = new Set([
+  '.py', '.js', '.ts', '.tsx', '.jsx',
+  '.css', '.html', '.htm',
+  '.json', '.xml',
+  '.vue', '.svelte',
+  '.scss', '.less',
+  '.rb', '.go', '.rs', '.java', '.php', '.swift', '.kt',
+  '.yaml', '.yml', '.toml',
+  '.sh', '.bash', '.zsh',
+  '.sql',
+  '.md', '.txt',
+  '.mjs', '.cjs', '.mts', '.cts',
+]);
 const SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv', 'static_root', 'migrations']);
 
 function shouldSkipPath(path: string): boolean {
   return path.replace(/\\/g, '/').split('/').some(part => SKIP_DIRS.has(part));
 }
-const MAX_FILE_BYTES = 200 * 1024;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 interface AnalyzerTabProps {
   key?: string;
   history: AnalysisResult[];
   onAddResult: (res: AnalysisResult) => void;
   onNavigateToChat: (docId: string, filename: string) => void;
+  viewTarget?: { analysisId: string; filename: string; scanFolder?: string } | null;
+  onClearViewTarget?: () => void;
 }
 
 function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
@@ -108,7 +122,7 @@ function TreeNode({
     );
   }
 
-  const isExpanded = !!expandedFolders[fullPath] || depth < 1;
+  const isExpanded = expandedFolders[fullPath] ?? (depth < 1);
 
   return (
     <div>
@@ -152,7 +166,7 @@ function TreeNode({
   );
 }
 
-export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: AnalyzerTabProps) {
+export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, viewTarget, onClearViewTarget }: AnalyzerTabProps) {
   const [view, setView] = useState<'upload' | 'batch_progress' | 'workspace'>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -186,6 +200,37 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
       return () => clearInterval(timer);
     }
   }, [batchActive]);
+
+  useEffect(() => {
+    if (!viewTarget) return;
+    const { analysisId, filename, scanFolder } = viewTarget;
+
+    (async () => {
+      try {
+        if (scanFolder) {
+          const folderData = await analysisAPI.ragGetAnalysesByFolder(scanFolder);
+          const reports: AnalysisResult[] = folderData.items.map(item =>
+            mapToAnalysisResult({ ...item, document_id: item.analysis_id }, item.filename)
+          );
+          setBatchReportsList(reports);
+          setCurrentFolderName(scanFolder);
+          const target = reports.find(r => r.document_id === analysisId);
+          if (target) setSelectedFile(target);
+        } else {
+          const data = await analysisAPI.ragGetAnalysis(analysisId);
+          const report = mapToAnalysisResult({ ...data, document_id: data.analysis_id }, filename);
+          setBatchReportsList([report]);
+          setSelectedFile(report);
+        }
+        setView('workspace');
+        setBatchErrorsList([]);
+      } catch (err: any) {
+        console.error('Failed to load analysis from history:', err);
+      } finally {
+        onClearViewTarget?.();
+      }
+    })();
+  }, [viewTarget]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -360,8 +405,11 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
         return SUPPORTED_EXTENSIONS.has(ext);
       });
 
-      // webkitRelativePath is relative to selected folder (no folder name in path)
-      const folderName = `Folder ${new Date().toISOString().slice(0, 10)}`;
+      // Extract the selected folder name from webkitRelativePath (first segment on Windows)
+      const samplePath = allFiles[0]?.webkitRelativePath || '';
+      const folderName = samplePath.includes('\\') || samplePath.includes('/')
+        ? samplePath.replace(/\\/g, '/').split('/')[0]
+        : `Folder ${new Date().toISOString().slice(0, 10)}`;
       setCurrentFolderName(folderName);
 
       setView('batch_progress');
@@ -666,7 +714,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
       )}
 
       {view === 'workspace' && (
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-4 gap-6 text-left">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5 gap-6 text-left">
           <div className="lg:col-span-1 rounded-3xl glass-card p-5 overflow-y-auto max-h-[640px] space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.03]">
               <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">
@@ -699,7 +747,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat }: 
             </div>
           </div>
 
-          <div className="lg:col-span-3 flex flex-col lg:flex-row gap-6 min-h-0">
+          <div className="lg:col-span-4 flex flex-col lg:flex-row gap-6 min-h-0">
             <div className="flex-1 space-y-6">
               {selectedFolder && (
                 <div className="rounded-3xl glass-card p-6 space-y-4">

@@ -17,7 +17,7 @@ from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
 from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.cross_reference import batch_check_references
-from app.services.storage import store_analysis, get_history, get_document, delete_document, check_hash, cleanup_stale_documents, count_history
+from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
 
 logger = logging.getLogger("ghostcode-rag.analysis")
@@ -27,7 +27,19 @@ router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_LLM_BYTES = 30 * 1024
-SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".md"}
+SUPPORTED_EXTENSIONS = {
+    ".py", ".js", ".ts", ".tsx", ".jsx",
+    ".css", ".html", ".htm",
+    ".json", ".xml",
+    ".vue", ".svelte",
+    ".scss", ".less",
+    ".rb", ".go", ".rs", ".java", ".php", ".swift", ".kt",
+    ".yaml", ".yml", ".toml",
+    ".sh", ".bash", ".zsh",
+    ".sql",
+    ".md", ".txt",
+    ".mjs", ".cjs", ".mts", ".cts",
+}
 
 _bg_semaphore = Semaphore(3)
 
@@ -560,6 +572,20 @@ async def rag_get_analysis(
         "language": doc["language"],
         "analysis": doc["analysis"],
         "cached": True,
+    }
+
+
+@router.get("/analyses/by-folder/{scan_folder:path}")
+async def rag_get_analyses_by_folder(
+    scan_folder: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    docs = await get_documents_by_scan_folder(db, user["user_id"], scan_folder)
+    return {
+        "scan_folder": scan_folder,
+        "items": docs,
+        "count": len(docs),
     }
 
 

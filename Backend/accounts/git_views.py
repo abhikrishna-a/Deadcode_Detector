@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 import uuid
 
-from celery import group as celery_group
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -14,7 +13,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .permissions import IsMFAVerified
-from .tasks import analyze_single_file
+from .tasks import batch_analyze_folder
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +22,25 @@ def _batch_redis():
     """Return a Redis client using the same URL as the Channels layer."""
     from django.conf import settings
     import redis as _r
-    return _r.from_url(settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0])
+    return _r.from_url(
+        settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0],
+        socket_timeout=5,
+        socket_connect_timeout=5,
+    )
 
-ALLOWED_EXTENSIONS = {'.py', '.js', '.jsx', '.ts', '.tsx', '.txt', '.md'}
+ALLOWED_EXTENSIONS = {
+    '.py', '.js', '.ts', '.tsx', '.jsx',
+    '.css', '.html', '.htm',
+    '.json', '.xml',
+    '.vue', '.svelte',
+    '.scss', '.less',
+    '.rb', '.go', '.rs', '.java', '.php', '.swift', '.kt',
+    '.yaml', '.yml', '.toml',
+    '.sh', '.bash', '.zsh',
+    '.sql',
+    '.md', '.txt',
+    '.mjs', '.cjs', '.mts', '.cts',
+}
 SKIP_DIRS = {'node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv'}
 CACHE_TTL = 15 * 60  # 15 minutes
 
@@ -264,24 +279,28 @@ class BatchAnalysisView(APIView):
         scan_folder = request.data.get('scan_folder', '')
         scan_type = request.data.get('scan_type', 'folder')
         batch_id = str(uuid.uuid4())
-        total = len(uploaded)
+
+        # Use explicit paths metadata (sent as individual form fields parallel to files)
+        paths = request.data.getlist('paths')
+        if len(paths) != len(uploaded):
+            logger.warning('Batch %s: paths count (%d) != uploaded count (%d), using f.name fallback',
+                           batch_id, len(paths), len(uploaded))
+            paths = [f.name for f in uploaded]
+
+        files_data = [(paths[i], f.read().decode('utf-8', errors='replace'))
+                      for i, f in enumerate(uploaded)]
+        total = len(files_data)
 
         # Store batch total in Redis for completion tracking
-        # (Avoid Celery chords — they don't work with --pool=solo on Windows)
         _redis = _batch_redis()
         _redis.setex(f'batch_total_{batch_id}', 3600, total)
 
-        # Pass user's JWT token to Celery tasks for RAG auth
+        # Pass user's JWT token to Celery task for RAG auth
         auth_header = request.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
 
-        # Fire tasks as a plain group (no chord — solo pool doesn't support chords)
-        celery_group(
-            analyze_single_file.s(
-                f.name, f.read().decode('utf-8', errors='replace'), batch_id, scan_folder, token, scan_type
-            )
-            for f in uploaded
-        ).apply_async()
+        # Fire a single batch task (much faster than per-file tasks — in-memory cross-ref, no LLM)
+        batch_analyze_folder.delay(files_data, batch_id, scan_folder, token, scan_type)
 
         return Response({'batch_id': batch_id}, status=status.HTTP_201_CREATED)
 

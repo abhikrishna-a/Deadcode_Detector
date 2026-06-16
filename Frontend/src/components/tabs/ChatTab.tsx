@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, FileCode, Search, Terminal, Folder, FolderOpen, ChevronRight, AlertOctagon } from 'lucide-react';
+import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight, AlertOctagon } from 'lucide-react';
 import { AnalysisResult, ChatMessage } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
@@ -59,26 +59,22 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
     return history.filter(h => h.filename.toLowerCase().includes(q));
   }, [history, searchQuery]);
 
-  const treeGroups = useMemo(() => {
+  const unifiedTree = useMemo(() => {
     const groups: Record<string, AnalysisResult[]> = {};
     filteredDocs.forEach(doc => {
-      const key = doc.scan_folder || '(root)';
+      const key = doc.scan_folder || '__single__';
       if (!groups[key]) groups[key] = [];
       groups[key].push(doc);
     });
     return Object.entries(groups).map(([folderName, docs]) => ({
-      folderName,
-      docs,
-      tree: buildFileTree(docs),
+      name: folderName === '__single__' ? 'Single Files' : folderName,
+      isDir: true,
+      children: buildFileTree(docs),
+      file: undefined,
     }));
   }, [filteredDocs]);
 
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
-
-  const toggleFolder = (key: string) => {
-    setExpandedFolders(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   const toggleTreePath = (path: string) => {
     setExpandedTreePaths(prev => ({ ...prev, [path]: !prev[path] }));
@@ -118,7 +114,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       );
     }
 
-    const isExpanded = !!expandedTreePaths[fullPath];
+    const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
     return (
       <div key={fullPath}>
         <div
@@ -236,43 +232,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
               No documents active
             </div>
           ) : (
-            treeGroups.map(({ folderName, docs, tree }) => {
-              const isExpanded = !!expandedFolders[folderName];
-              return (
-                <div key={folderName}>
-                  <div
-                    onClick={() => toggleFolder(folderName)}
-                    className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
-                  >
-                    <ChevronRight
-                      size={10}
-                      className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
-                    />
-                    {isExpanded
-                      ? <FolderOpen size={12} className="text-cyan-400 flex-shrink-0" />
-                      : <Folder size={12} className="text-purple-400 flex-shrink-0" />
-                    }
-                    <span className="font-mono text-[10px] text-zinc-500 truncate group-hover:text-zinc-300 transition-colors">
-                      {folderName === '(root)' ? 'Root' : folderName}/
-                    </span>
-                    <span className="text-[8px] font-mono text-zinc-600 ml-auto">{docs.length}</span>
-                  </div>
-
-                  <AnimatePresence initial={false}>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden ml-3 border-l border-white/[0.03]"
-                      >
-                        {tree.map(node => renderTreeNode(node, 0, ''))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })
+            unifiedTree.map(node => renderTreeNode(node, 0, ''))
           )}
         </div>
       </div>

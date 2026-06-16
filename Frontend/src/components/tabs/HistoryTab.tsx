@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'motion/react';
-import { Search, Clock, FileCode, Loader2, Trash2, Folder, FolderOpen, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Search, Clock, FileCode, Loader2, Trash2, Folder, FolderOpen, ChevronRight, MessageCircle } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 
 interface HistoryTabProps {
   key?: string;
   onNavigateToChat: (docId: string, filename: string) => void;
+  onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -18,6 +19,13 @@ interface HistoryItem {
   created_at: string;
   scan_folder?: string;
   scan_type?: string;
+}
+
+interface HistoryTreeNode {
+  name: string;
+  isDir: boolean;
+  children: HistoryTreeNode[];
+  file?: HistoryItem;
 }
 
 type FilterMode = 'all' | 'file' | 'repo' | 'folder';
@@ -36,6 +44,29 @@ const healthColor = (score: number) => {
   if (score >= 60) return 'text-amber-400';
   return 'text-rose-400';
 };
+
+function buildHistoryTree(files: HistoryItem[]): HistoryTreeNode[] {
+  const root: HistoryTreeNode[] = [];
+  for (const file of files) {
+    const parts = file.filename.replace(/\\/g, '/').split('/');
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      if (isLast) {
+        current.push({ name: part, isDir: false, children: [], file });
+      } else {
+        let dir = current.find(n => n.name === part && n.isDir);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], file: undefined };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  return root;
+}
 
 function buildTree(items: HistoryItem[]): { name: string; scanType?: string; files: HistoryItem[] }[] {
   const groups = new Map<string, { name: string; scanType?: string; files: HistoryItem[] }>();
@@ -66,13 +97,132 @@ function buildTree(items: HistoryItem[]): { name: string; scanType?: string; fil
   return result;
 }
 
-export default function HistoryTab({ onNavigateToChat, onShowToast }: HistoryTabProps) {
+interface HistoryTreeNodeProps {
+  node: HistoryTreeNode;
+  depth: number;
+  parentPath: string;
+  expandedTreePaths: Record<string, boolean>;
+  onToggle: (path: string) => void;
+  onNavigateToChat: (docId: string, filename: string) => void;
+  onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
+  onDelete: (analysisId: string) => Promise<void>;
+  deleting: string | null;
+  healthColor: (score: number) => string;
+}
+
+function HistoryTreeNode({
+  node, depth, parentPath, expandedTreePaths, onToggle,
+  onNavigateToChat, onNavigateToWorkspace, onDelete, deleting, healthColor,
+}: HistoryTreeNodeProps) {
+  const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+  const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+
+  if (!node.isDir && node.file) {
+    const item = node.file;
+    return (
+      <div
+        className="flex items-center gap-2 px-6 py-2 hover:bg-white/[0.01] transition-colors border-t border-white/[0.02]"
+        style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
+      >
+        <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
+        <button
+          onClick={() => onNavigateToWorkspace(item.analysis_id, item.filename, item.scan_folder)}
+          className="text-xs font-mono text-zinc-300 hover:text-cyan-400 truncate max-w-[160px] text-left cursor-pointer transition-colors"
+          title={item.filename}
+        >
+          {node.name}
+        </button>
+        <span className={`text-[10px] font-mono ${healthColor(item.health_score)}`}>
+          {item.health_score}%
+        </span>
+        <span className={`text-[10px] font-mono ${item.total_issues > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+          {item.total_issues > 0 ? `${item.total_issues} issues` : 'Clean'}
+        </span>
+        <span className="text-[8px] font-mono text-zinc-700 ml-auto hidden sm:inline">
+          {new Date(item.created_at).toLocaleDateString()}
+        </span>
+        <button
+          onClick={() => onNavigateToChat(item.analysis_id, item.filename)}
+          className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer"
+          title="Chat about this file"
+        >
+          <MessageCircle size={10} />
+        </button>
+        <button
+          onClick={() => onDelete(item.analysis_id)}
+          disabled={deleting === item.analysis_id}
+          className="p-1 rounded text-zinc-600 hover:text-rose-400 hover:bg-rose-500/5 transition-colors cursor-pointer disabled:opacity-40"
+          title="Delete analysis"
+        >
+          {deleting === item.analysis_id ? (
+            <Loader2 size={10} className="animate-spin" />
+          ) : (
+            <Trash2 size={10} />
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => onToggle(fullPath)}
+        className="flex items-center gap-1.5 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
+        style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
+      >
+        <ChevronRight
+          size={10}
+          className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+        />
+        {isExpanded ? (
+          <FolderOpen size={12} className="text-purple-400 flex-shrink-0" />
+        ) : (
+          <Folder size={12} className="text-purple-400 flex-shrink-0" />
+        )}
+        <span className="text-xs font-mono text-zinc-400 truncate">{node.name}/</span>
+        <span className="text-[9px] font-mono text-zinc-600">({node.children.length})</span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden ml-[3.5rem] border-l border-white/[0.03]"
+          >
+            {node.children.map(child => (
+              <HistoryTreeNode
+                key={child.file?.analysis_id || child.name}
+                node={child}
+                depth={depth + 1}
+                parentPath={fullPath}
+                expandedTreePaths={expandedTreePaths}
+                onToggle={onToggle}
+                onNavigateToChat={onNavigateToChat}
+                onNavigateToWorkspace={onNavigateToWorkspace}
+                onDelete={onDelete}
+                deleting={deleting}
+                healthColor={healthColor}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, onShowToast }: HistoryTabProps) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['Single Files']));
+  const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
 
   const loadHistory = async (currentSearch: string) => {
     setLoading(true);
@@ -117,6 +267,10 @@ export default function HistoryTab({ onNavigateToChat, onShowToast }: HistoryTab
     });
   };
 
+  const toggleTreePath = (path: string) => {
+    setExpandedTreePaths(prev => ({ ...prev, [path]: !prev[path] }));
+  };
+
   const filtered = useMemo(() => {
     let result = items;
     if (filter === 'file') result = result.filter(i => !i.scan_folder && (i.scan_type || 'single') === 'single');
@@ -125,7 +279,10 @@ export default function HistoryTab({ onNavigateToChat, onShowToast }: HistoryTab
     return result;
   }, [items, filter]);
 
-  const tree = useMemo(() => buildTree(filtered), [filtered]);
+  const tree = useMemo(() => {
+    const groups = buildTree(filtered);
+    return groups.map(g => ({ ...g, tree: buildHistoryTree(g.files) }));
+  }, [filtered]);
 
   return (
     <motion.div
@@ -188,15 +345,7 @@ export default function HistoryTab({ onNavigateToChat, onShowToast }: HistoryTab
         }}
         className="rounded-2xl overflow-hidden backdrop-blur-md"
       >
-        <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b border-white/[0.04] text-[10px] font-mono tracking-wider text-neutral-500 uppercase font-semibold">
-          <div className="col-span-4">Name</div>
-          <div className="col-span-2">Language</div>
-          <div className="col-span-2">Health</div>
-          <div className="col-span-2">Issues</div>
-          <div className="col-span-2 text-right">Actions</div>
-        </div>
-
-        <div className="divide-y divide-white/[0.02]">
+        <div>
           {loading ? (
             <div className="flex items-center justify-center py-16 text-neutral-500 gap-2">
               <Loader2 size={16} className="animate-spin text-cyan-400" />
@@ -215,84 +364,40 @@ export default function HistoryTab({ onNavigateToChat, onShowToast }: HistoryTab
               <div key={group.name}>
                 <button
                   onClick={() => toggleFolder(group.name)}
-                  className="w-full grid grid-cols-12 gap-4 px-6 py-3 items-center hover:bg-white/[0.01] transition-colors text-left cursor-pointer"
+                  className="flex items-center gap-2 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
                 >
-                  <div className="col-span-4 flex items-center gap-2">
-                    <ChevronRight
-                      size={12}
-                      className={`text-zinc-500 transition-transform ${expandedFolders.has(group.name) ? 'rotate-90' : ''}`}
-                    />
-                    {expandedFolders.has(group.name) ? (
-                      <FolderOpen size={14} className="text-cyan-400 flex-shrink-0" />
-                    ) : (
-                      <Folder size={14} className="text-cyan-400 flex-shrink-0" />
-                    )}
-                    <span className="text-xs font-mono text-zinc-200 font-semibold">{group.name}</span>
-                    <span className="text-[9px] font-mono text-zinc-600">({group.files.length})</span>
-                  </div>
-                  <div className="col-span-2">
-                    {group.scanType && (
-                      <span className="text-[9px] font-mono uppercase text-zinc-600 bg-white/[0.02] px-2 py-0.5 rounded border border-white/[0.04]">
-                        {group.scanType}
-                      </span>
-                    )}
-                  </div>
-                  <div className="col-span-6" />
+                  <ChevronRight
+                    size={12}
+                    className={`text-zinc-500 transition-transform flex-shrink-0 ${expandedFolders.has(group.name) ? 'rotate-90' : ''}`}
+                  />
+                  {expandedFolders.has(group.name) ? (
+                    <FolderOpen size={14} className="text-cyan-400 flex-shrink-0" />
+                  ) : (
+                    <Folder size={14} className="text-cyan-400 flex-shrink-0" />
+                  )}
+                  <span className="text-xs font-mono text-zinc-200 font-semibold">{group.name}</span>
+                  <span className="text-[9px] font-mono text-zinc-600">({group.files.length})</span>
+                  {group.scanType && (
+                    <span className="text-[9px] font-mono uppercase text-zinc-600 bg-white/[0.02] px-2 py-0.5 rounded border border-white/[0.04] ml-auto">
+                      {group.scanType}
+                    </span>
+                  )}
                 </button>
 
-                {expandedFolders.has(group.name) && group.files.map(item => (
-                  <div
-                    key={item.analysis_id}
-                    className="grid grid-cols-12 gap-4 px-6 py-3.5 items-center hover:bg-white/[0.01] transition-colors border-t border-white/[0.02]"
-                    style={{ paddingLeft: '3.5rem' }}
-                  >
-                    <div className="col-span-4 flex items-center gap-2 min-w-0">
-                      <FileCode size={12} className="text-violet-400/70 flex-shrink-0" />
-                      <button
-                        onClick={() => onNavigateToChat(item.analysis_id, item.filename)}
-                        className="text-xs font-mono text-zinc-200 hover:text-cyan-400 truncate max-w-[220px] text-left cursor-pointer transition-colors"
-                        title={item.filename}
-                      >
-                        {item.filename}
-                      </button>
-                    </div>
-
-                    <div className="col-span-2">
-                      <span className="text-[9px] font-mono text-zinc-500 uppercase bg-white/[0.02] px-1.5 py-0.5 rounded border border-white/[0.04]">
-                        {item.language || 'unknown'}
-                      </span>
-                    </div>
-
-                    <div className="col-span-2">
-                      <span className={`text-[11px] font-mono font-bold ${healthColor(item.health_score)}`}>
-                        {item.health_score}%
-                      </span>
-                    </div>
-
-                    <div className="col-span-2">
-                      <span className={`text-[11px] font-mono ${item.total_issues > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {item.total_issues > 0 ? `${item.total_issues} found` : 'Clean'}
-                      </span>
-                    </div>
-
-                    <div className="col-span-2 text-right flex items-center justify-end gap-2">
-                      <span className="text-[8px] font-mono text-zinc-600 hidden sm:inline">
-                        {new Date(item.created_at).toLocaleDateString()}
-                      </span>
-                      <button
-                        onClick={() => handleDelete(item.analysis_id)}
-                        disabled={deleting === item.analysis_id}
-                        className="p-1.5 rounded-lg text-zinc-600 hover:text-rose-400 hover:bg-rose-500/5 transition-colors cursor-pointer disabled:opacity-40"
-                        title="Delete analysis"
-                      >
-                        {deleting === item.analysis_id ? (
-                          <Loader2 size={10} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={10} />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                {expandedFolders.has(group.name) && group.tree.map(node => (
+                  <HistoryTreeNode
+                    key={node.file?.analysis_id || node.name}
+                    node={node}
+                    depth={0}
+                    parentPath=""
+                    expandedTreePaths={expandedTreePaths}
+                    onToggle={toggleTreePath}
+                    onNavigateToChat={onNavigateToChat}
+                    onNavigateToWorkspace={onNavigateToWorkspace}
+                    onDelete={handleDelete}
+                    deleting={deleting}
+                    healthColor={healthColor}
+                  />
                 ))}
               </div>
             ))
