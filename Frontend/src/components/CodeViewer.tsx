@@ -46,7 +46,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeVi
         border: '1px solid rgba(255, 255, 255, 0.035)',
         boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.02)'
       }}
-      className="rounded-xl overflow-hidden font-mono text-xs flex flex-col max-h-[460px]"
+      className="rounded-xl overflow-hidden font-mono text-xs flex flex-col min-h-0 flex-1"
     >
       {/* Code Header Tab bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.03] bg-zinc-950/40">

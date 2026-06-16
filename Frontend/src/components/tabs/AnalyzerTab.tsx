@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Upload, FileCode, Folder, GitBranch, Play, StopCircle,
   CheckCircle2, AlertOctagon, BarChart,
-  HelpCircle, ChevronRight, ArrowRight, BookOpen
+  HelpCircle, ChevronRight, ArrowRight, BookOpen,
+  MessageCircle
 } from 'lucide-react';
 import { AnalysisResult, Issue } from '../../types';
 import { GitManifest } from '../../api/types';
@@ -12,6 +13,7 @@ import { useAnalysisSocket } from '../../hooks/useAnalysisSocket';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
+
 
 const SUPPORTED_EXTENSIONS = new Set([
   '.py', '.js', '.ts', '.tsx', '.jsx',
@@ -40,6 +42,7 @@ interface AnalyzerTabProps {
   onNavigateToChat: (docId: string, filename: string) => void;
   viewTarget?: { analysisId: string; filename: string; scanFolder?: string } | null;
   onClearViewTarget?: () => void;
+  isActive?: boolean;
 }
 
 function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
@@ -54,6 +57,7 @@ function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
     description: i.description || '',
     code_snippet: i.code_snippet || '',
     suggestion: i.suggestion || '',
+    severity: i.severity || 'low',
     confidence: i.confidence ?? 0.9,
     safe_to_remove: i.safe_to_remove ?? true,
   }));
@@ -87,13 +91,14 @@ interface TreeNodeProps {
   depth: number;
   parentPath: string;
   expandedFolders: Record<string, boolean>;
-  onToggle: (path: string) => void;
+  onToggle: (path: string, depth: number) => void;
   selectedFile: AnalysisResult | null;
   onSelectFile: (file: AnalysisResult) => void;
+  onNavigateToChat?: (docId: string, filename: string) => void;
 }
 
 function TreeNode({
-  node, depth, parentPath, expandedFolders, onToggle, selectedFile, onSelectFile
+  node, depth, parentPath, expandedFolders, onToggle, selectedFile, onSelectFile, onNavigateToChat
 }: TreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
 
@@ -107,6 +112,7 @@ function TreeNode({
       );
     }
     const isSelected = selectedFile?.filename === node.file?.filename;
+    const issueCount = node.file?.summary?.total_issues ?? 0;
     return (
       <div
         onClick={() => node.file && onSelectFile(node.file)}
@@ -117,17 +123,27 @@ function TreeNode({
         }`}
       >
         <FileCode size={11} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
-        <span className="font-mono truncate">{node.name}</span>
+        <span className="font-mono truncate flex-1 min-w-0">{node.name}</span>
+        {issueCount > 0 && (
+          <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full leading-none ${
+            isSelected
+              ? 'bg-cyan-400/15 text-cyan-300'
+              : 'bg-amber-400/10 text-amber-300'
+          }`}>
+            {issueCount}
+          </span>
+        )}
       </div>
     );
   }
 
-  const isExpanded = expandedFolders[fullPath] ?? (depth < 1);
+  const isExpanded = expandedFolders[fullPath] ?? (depth < 2);
+  const dirIssueCount = node.totalIssues ?? 0;
 
   return (
     <div>
       <div
-        onClick={() => onToggle(fullPath)}
+        onClick={() => onToggle(fullPath, depth)}
         className="flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
       >
         <ChevronRight
@@ -138,6 +154,11 @@ function TreeNode({
         <span className="font-mono text-[11px] text-zinc-400 truncate group-hover:text-zinc-200 transition-colors">
           {node.name}/
         </span>
+        {dirIssueCount > 0 && (
+          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-full leading-none bg-amber-400/10 text-amber-300 flex-shrink-0 ml-auto">
+            {dirIssueCount}
+          </span>
+        )}
       </div>
       <AnimatePresence initial={false}>
         {isExpanded && (
@@ -157,6 +178,7 @@ function TreeNode({
                 onToggle={onToggle}
                 selectedFile={selectedFile}
                 onSelectFile={onSelectFile}
+                onNavigateToChat={onNavigateToChat}
               />
             ))}
           </motion.div>
@@ -166,8 +188,9 @@ function TreeNode({
   );
 }
 
-export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, viewTarget, onClearViewTarget }: AnalyzerTabProps) {
+export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, viewTarget, onClearViewTarget, isActive = true }: AnalyzerTabProps) {
   const [view, setView] = useState<'upload' | 'batch_progress' | 'workspace'>('upload');
+  const [historyMode, setHistoryMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [gitModalOpen, setGitModalOpen] = useState(false);
@@ -202,7 +225,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
   }, [batchActive]);
 
   useEffect(() => {
-    if (!viewTarget) return;
+    if (!viewTarget || !isActive) return;
     const { analysisId, filename, scanFolder } = viewTarget;
 
     (async () => {
@@ -214,8 +237,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
           );
           setBatchReportsList(reports);
           setCurrentFolderName(scanFolder);
-          const target = reports.find(r => r.document_id === analysisId);
-          if (target) setSelectedFile(target);
+          setSelectedFolder(scanFolder);
         } else {
           const data = await analysisAPI.ragGetAnalysis(analysisId);
           const report = mapToAnalysisResult({ ...data, document_id: data.analysis_id }, filename);
@@ -223,6 +245,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
           setSelectedFile(report);
         }
         setView('workspace');
+        setHistoryMode(true);
         setBatchErrorsList([]);
       } catch (err: any) {
         console.error('Failed to load analysis from history:', err);
@@ -230,7 +253,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
         onClearViewTarget?.();
       }
     })();
-  }, [viewTarget]);
+  }, [viewTarget, isActive]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -276,6 +299,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       setActiveFileName('');
       setSelectedFile(report);
       setView('workspace');
+      setHistoryMode(false);
     } catch (err: any) {
       setBatchErrorsList(prev => [...prev, { path: file.name, error: err.message }]);
       setScannedFailCount(1);
@@ -301,6 +325,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
 
     try {
       manifest = await analysisAPI.gitClone(gitUrl, gitBranch);
+      if (manifest) setCurrentFolderName(manifest.repo_name);
     } catch (err: any) {
       setBatchErrorsList(prev => [{ path: gitUrl, error: err.message }]);
       setScannedFailCount(1);
@@ -318,68 +343,110 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
     setFilesTotalCount(manifest.files.length);
     setActiveFileName('Fetching files...');
 
-    // Fetch all file contents in parallel (batches of 10)
-    const FETCH_BATCH = 10;
-    const ANALYZE_CONCURRENCY = 5;
+    // Fetch ALL file contents in parallel (no sequential batching)
+    const FETCH_BATCH = 1000;
     const allPaths = manifest.files.map(f => f.path);
     const fileContents: Record<string, string> = {};
 
-    const batches: string[][] = [];
+    const fetchPromises: Promise<void>[] = [];
     for (let i = 0; i < allPaths.length; i += FETCH_BATCH) {
-      batches.push(allPaths.slice(i, i + FETCH_BATCH));
+      const chunk = allPaths.slice(i, i + FETCH_BATCH);
+      fetchPromises.push((async () => {
+        try {
+          const contents = await analysisAPI.gitFetchFiles(manifest.session_id, chunk);
+          for (const f of contents.files) {
+            fileContents[f.path] = f.content;
+          }
+        } catch (err) {
+          console.error('Fetch batch failed:', err);
+        }
+      })());
     }
 
-    await Promise.all(batches.map(async (chunk) => {
-      try {
-        const contents = await analysisAPI.gitFetchFiles(manifest.session_id, chunk);
-        for (const f of contents.files) {
-          fileContents[f.path] = f.content;
+    await Promise.all(fetchPromises);
+
+    setActiveFileName('Submitting for batch analysis...');
+
+    // Create File objects from fetched contents
+    const files = manifest.files
+      .filter(f => f.path in fileContents && fileContents[f.path])
+      .map(f => new File([fileContents[f.path]], f.path));
+
+    try {
+      const { batch_id } = await analysisAPI.submitBatchAnalysis(files, manifest.repo_name, 'repo');
+      connectionActiveRef.current = true;
+
+      // Poll for batch results (same pattern as handleOpenFolder)
+      const seenFiles = new Set<string>();
+      const poll = async () => {
+        try {
+          const data = await analysisAPI.pollBatchResults(batch_id);
+          if (abortRef.current?.signal.aborted) return;
+          setFilesTotalCount(data.total);
+
+          for (const f of data.files || []) {
+            if (seenFiles.has(f.filename)) continue;
+            seenFiles.add(f.filename);
+
+            if (f.status === 'completed' && f.analysis) {
+              setActiveFileName(f.filename);
+              setProgressFiles(prev => [f.filename, ...prev.slice(0, 10)]);
+              const report = mapToAnalysisResult(f, f.filename);
+              report._source_content = f.source_content || fileContents[f.filename] || '';
+              onAddResult(report);
+              setBatchReportsList(prev => {
+                if (prev.some(r => r.filename === f.filename)) return prev;
+                return [...prev, report];
+              });
+              setScannedDoneCount(prev => prev + 1);
+            } else if (f.status === 'error') {
+              setBatchErrorsList(prev => [...prev, { path: f.filename, error: f.error || 'Unknown error' }]);
+              setScannedFailCount(prev => prev + 1);
+            }
+          }
+
+          if (data.is_complete) {
+            setBatchActive(false);
+            setActiveFileName('');
+            connectionActiveRef.current = false;
+            if (pollRef.current !== null) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          }
+        } catch (err) {
+          console.error('Poll error:', err);
         }
-      } catch {
-        // individual batch failure handled by analysis phase
-      }
-    }));
+      };
 
-    setActiveFileName('Analyzing...');
-
-    // Analyze files in parallel with concurrency pool
-    const reports: AnalysisResult[] = [];
-    const errors: Array<{path: string; error: string}> = [];
-    const queue = [...manifest.files];
-
-    const worker = async () => {
-      while (queue.length > 0 && !abortRef.current?.signal.aborted) {
-        const file = queue.shift()!;
+      poll();
+      pollRef.current = window.setInterval(poll, 1500);
+    } catch {
+      // Fallback: sequential analysis
+      connectionActiveRef.current = true;
+      for (const file of manifest.files) {
+        const content = fileContents[file.path];
+        if (!content) continue;
+        if (abortRef.current?.signal.aborted) break;
         setActiveFileName(file.path);
         setProgressFiles(prev => [file.path, ...prev.slice(0, 10)]);
-
-        const content = fileContents[file.path];
-        if (!content) {
-          errors.push({ path: file.path, error: 'Failed to fetch file content' });
-          setScannedDoneCount(prev => prev + 1);
-          continue;
-        }
-
         try {
           const fakeFile = new File([content], file.path);
           const result = await analysisAPI.analyzeFile(fakeFile, manifest.repo_name, 'repo');
           const report = mapToAnalysisResult(result, file.path);
           report._source_content = content;
           onAddResult(report);
-          reports.push(report);
+          setBatchReportsList(prev => [...prev, report]);
+          setScannedDoneCount(prev => prev + 1);
         } catch (err: any) {
-          errors.push({ path: file.path, error: err.message });
+          setBatchErrorsList(prev => [...prev, { path: file.path, error: err.message }]);
+          setScannedFailCount(prev => prev + 1);
         }
-        setScannedDoneCount(prev => prev + 1);
       }
-    };
-
-    await Promise.all(Array.from({ length: ANALYZE_CONCURRENCY }, () => worker()));
-
-    setBatchReportsList(reports);
-    setBatchErrorsList(errors);
-    setBatchActive(false);
-    setActiveFileName('');
+      setBatchActive(false);
+      setActiveFileName('');
+      connectionActiveRef.current = false;
+    }
   };
 
   const handleOpenWorkspace = () => {
@@ -387,6 +454,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
     if (valid.length > 0) setSelectedFile(valid[0]);
     setSelectedFolder(null);
     setView('workspace');
+    setHistoryMode(false);
   };
 
   const handleOpenFolder = async () => {
@@ -524,34 +592,102 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
         error: err.error,
       } as AnalysisResult);
     }
-    const nodes = buildFileTree(items);
-    const hasLooseFiles = nodes.some(n => !n.isDir);
-    const rootName = currentFolderName || 'Root';
-    if (hasLooseFiles) {
-      return [{
-        name: rootName,
-        isDir: true,
-        children: nodes,
-        file: undefined,
-      } as TreeNodeData];
-    }
-    return nodes;
+    const prefix = currentFolderName ? (currentFolderName.split('/').pop() || currentFolderName) + '/' : '';
+    const processed = prefix
+      ? items.map(item => ({
+          ...item,
+          filename: item.filename.startsWith(prefix)
+            ? item.filename.slice(prefix.length)
+            : item.filename,
+        }))
+      : items;
+    return buildFileTree(processed);
   }, [batchReportsList, batchErrorsList, currentFolderName]);
 
-  const toggleFolder = (path: string) => {
-    setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
+  const toggleFolder = (path: string, depth: number = 0) => {
+    setExpandedFolders(prev => ({
+      ...prev,
+      [path]: prev[path] === undefined ? !(depth < 2) : !prev[path],
+    }));
   };
 
-  const visibleIssues = useMemo(() => {
-    if (!selectedFile) return [];
-    const issuesList = selectedFile.issues || [];
-    if (issueFilter === 'all') return issuesList;
-    return issuesList.filter(i => {
-      const sev = i.type === 'unused_function' || i.type === 'unreachable_code' ? 'high'
-        : i.type === 'unused_variable' ? 'medium' : 'low';
-      return sev === issueFilter;
+  const RESULTS_CATEGORIES = [
+    { key: 'unused_import', label: 'Unused Imports', color: '#8b5cf6' },
+    { key: 'unused_function', label: 'Unused Functions', color: '#ec4899' },
+    { key: 'unused_variable', label: 'Unused Variables', color: '#3b82f6' },
+    { key: 'unreachable_code', label: 'Unreachable Logic', color: '#f43f5e' },
+    { key: 'commented_code', label: 'Commented Snippets', color: '#10b981' },
+  ];
+
+  const folderAggregate = useMemo(() => {
+    if (!batchReportsList.length || !selectedFolder) return null;
+    const allIssues = batchReportsList.flatMap(f => f.issues || []);
+    const totalLines = batchReportsList.reduce((s, f) => s + (f.metrics?.total_lines || 0), 0);
+    const totalIssues = allIssues.length;
+    const healthScore = totalIssues === 0 ? 100 : Math.max(0, Math.round(100 - totalIssues * 5));
+    const severityCounts = { high: 0, medium: 0, low: 0 };
+    allIssues.forEach(i => {
+      if (i.severity === 'high') severityCounts.high++;
+      else if (i.severity === 'medium') severityCounts.medium++;
+      else if (i.severity === 'low') severityCounts.low++;
     });
-  }, [selectedFile, issueFilter]);
+    return { allIssues, totalLines, totalIssues, healthScore, severityCounts };
+  }, [batchReportsList, selectedFolder]);
+
+  const visibleIssues = useMemo(() => {
+    const issuesList = selectedFile
+      ? (selectedFile.issues || [])
+      : (selectedFolder ? (folderAggregate?.allIssues || []) : []);
+    if (issueFilter === 'all') return issuesList;
+    return issuesList.filter(i => i.severity === issueFilter);
+  }, [selectedFile, selectedFolder, folderAggregate, issueFilter]);
+
+  const donutData = useMemo(() => {
+    const issues = (historyMode && selectedFolder && folderAggregate)
+      ? folderAggregate.allIssues
+      : (selectedFile?.issues || []);
+    if (!issues.length) return [];
+    const counts: Record<string, number> = {};
+    issues.forEach(i => {
+      const key = i.type || 'commented_code';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return RESULTS_CATEGORIES.map(cat => ({
+      ...cat,
+      count: counts[cat.key] || 0,
+    })).filter(d => d.count > 0);
+  }, [selectedFile, selectedFolder, folderAggregate, historyMode]);
+
+  const donutSegments = useMemo(() => {
+    const total = donutData.reduce((s, d) => s + d.count, 0) || 1;
+    let cumulative = 0;
+    return donutData.map(d => {
+      const percent = d.count / total;
+      const start = cumulative;
+      cumulative += percent;
+      return { ...d, percent, startPercent: start };
+    });
+  }, [donutData]);
+
+  const displayMetrics = useMemo(() => {
+    if (historyMode && selectedFolder && folderAggregate) {
+      return {
+        total_lines: folderAggregate.totalLines,
+        complexity_hint: folderAggregate.totalIssues > 5 ? 'high' : folderAggregate.totalIssues > 0 ? 'medium' : 'low',
+      };
+    }
+    return selectedFile?.metrics;
+  }, [historyMode, selectedFolder, folderAggregate, selectedFile]);
+
+  const displaySummary = useMemo(() => {
+    if (historyMode && selectedFolder && folderAggregate) {
+      return {
+        total_issues: folderAggregate.totalIssues,
+        health_score: folderAggregate.healthScore,
+      };
+    }
+    return selectedFile?.summary;
+  }, [historyMode, selectedFolder, folderAggregate, selectedFile]);
 
   return (
     <motion.div
@@ -559,10 +695,30 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -15 }}
       transition={{ duration: 0.3 }}
-      className="space-y-6 flex-1 flex flex-col justify-start"
+      className="space-y-4 flex-1 flex flex-col justify-start"
     >
+      <div className="flex items-center gap-1 pb-2 border-b border-white/[0.03]">
+        <button
+          onClick={() => { setView('upload'); setHistoryMode(false); }}
+          className={`px-3 py-1.5 text-[11px] font-mono font-bold rounded-lg transition-all cursor-pointer ${
+            view === 'upload' ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20' : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          Initiate Scan
+        </button>
+        <div className="w-px h-4 bg-white/[0.06] mx-1" />
+        <button
+          onClick={() => setView('workspace')}
+          className={`px-3 py-1.5 text-[11px] font-mono font-bold rounded-lg transition-all cursor-pointer ${
+            view !== 'upload' ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20' : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          Workspace
+        </button>
+      </div>
+
       {view === 'upload' && (
-        <div className="max-w-xl mx-auto w-full space-y-6 py-10">
+        <div className="max-w-xl mx-auto w-full space-y-6 py-6">
           <div className="text-center space-y-2">
             <h2 className="font-display font-bold text-xl text-neutral-100 tracking-tight">
               Initiate Code Static Scan
@@ -720,9 +876,6 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
               <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">
                 Scanned Files
               </span>
-              <button onClick={() => setView('upload')} className="text-[10px] font-mono text-zinc-550 hover:text-cyan-400 transition-colors cursor-pointer">
-                + New Scan
-              </button>
             </div>
 
             <div className="space-y-0.5">
@@ -741,6 +894,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                     onToggle={toggleFolder}
                     selectedFile={selectedFile}
                     onSelectFile={(file) => { setSelectedFile(file); setSelectedFolder(null); }}
+                    onNavigateToChat={onNavigateToChat}
                   />
                 ))
               )}
@@ -750,38 +904,223 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
           <div className="lg:col-span-4 flex flex-col lg:flex-row gap-6 min-h-0">
             <div className="flex-1 space-y-6">
               {selectedFolder && (
-                <div className="rounded-3xl glass-card p-6 space-y-4">
+                <div className="space-y-6">
                   <div className="flex items-center gap-2 text-cyan-400">
                     <Folder size={18} />
                     <h3 className="font-display font-medium text-sm tracking-tight text-white uppercase font-mono">{selectedFolder}/ Overview</h3>
                   </div>
-                  <p className="text-neutral-400 text-xs font-sans">Select individual files in the explorer tree to review code issues.</p>
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { val: batchReportsList.length, label: 'FILES', color: 'text-neutral-200' },
+                      { val: folderAggregate?.totalIssues ?? 0, label: 'ISSUES', color: (folderAggregate?.totalIssues ?? 0) > 0 ? 'text-rose-450' : 'text-emerald-400' },
+                      { val: (folderAggregate?.totalIssues ?? 0) > 5 ? 'high' : (folderAggregate?.totalIssues ?? 0) > 0 ? 'medium' : 'low', label: 'COMPLEXITY', color: 'text-amber-200' },
+                      { val: `${folderAggregate?.healthScore ?? 100}%`, label: 'HEALTH', color: 'text-cyan-400' }
+                    ].map((card, idx) => (
+                      <div key={idx} className="py-2.5 px-3 rounded-2xl text-left shadow-sm glass-card min-w-0 overflow-hidden">
+                        <span className="text-[9px] font-mono tracking-widest text-zinc-500 uppercase block font-bold">{card.label}</span>
+                        <span className={`text-sm font-display font-extrabold mt-1 block uppercase ${card.color}`}>{card.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-6 items-start">
+                    <div className="flex-1 p-4 rounded-3xl glass-card">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="w-1 h-4 bg-cyan-400 rounded-full" />
+                        <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">Issue Breakdown</span>
+                        {donutData.length > 0 && (
+                          <span className="text-[10px] font-mono text-zinc-500 ml-auto">
+                            {donutData.reduce((s, d) => s + d.count, 0)} total
+                          </span>
+                        )}
+                      </div>
+                      {donutSegments.length > 0 ? (
+                        <div className="flex flex-col md:flex-row items-center gap-6">
+                          <div className="relative flex-shrink-0">
+                            <svg width="140" height="140" viewBox="0 0 180 180">
+                              <circle cx="90" cy="90" r="72" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="18" />
+                              {donutSegments.map((seg, i) => {
+                                const circumference = 2 * Math.PI * 72;
+                                const dashLen = seg.percent * circumference;
+                                const dashGap = circumference - dashLen;
+                                const offset = -seg.startPercent * circumference;
+                                return (
+                                  <motion.circle
+                                    key={i}
+                                    cx="90" cy="90" r="72"
+                                    fill="none"
+                                    stroke={seg.color}
+                                    strokeWidth="18"
+                                    strokeDasharray={`${dashLen} ${dashGap}`}
+                                    strokeDashoffset={offset}
+                                    transform="rotate(-90 90 90)"
+                                    strokeLinecap="round"
+                                    initial={{ strokeDasharray: `0 ${circumference}` }}
+                                    animate={{ strokeDasharray: `${dashLen} ${dashGap}` }}
+                                    transition={{ duration: 0.8, delay: i * 0.1, ease: 'easeOut' }}
+                                  />
+                                );
+                              })}
+                              <circle cx="90" cy="90" r="52" fill="#060608" />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-lg font-display font-bold text-zinc-100">
+                                {donutData.reduce((s, d) => s + d.count, 0)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="space-y-2 flex-1 w-full">
+                            {donutSegments.map((seg, i) => (
+                              <motion.div
+                                key={i}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ duration: 0.4, delay: i * 0.08 }}
+                                className="flex items-center justify-between py-1"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: seg.color }} />
+                                  <span className="text-[11px] text-zinc-300 font-mono">{seg.label}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-[11px]">
+                                  <span className="font-mono text-zinc-400">{seg.count}</span>
+                                  <span className="text-[10px] font-mono text-zinc-600 w-8 text-right">
+                                    {Math.round(seg.percent * 100)}%
+                                  </span>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-6 text-zinc-500">
+                          <CheckCircle2 size={22} className="text-emerald-400 mb-2" />
+                          <p className="text-[10px] font-mono">No issues found</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {selectedFile && (
+              {batchReportsList.length === 1 && selectedFile && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     {[
                       { val: selectedFile.metrics?.total_lines || 0, label: 'TOTAL LINES', color: 'text-neutral-200' },
                       { val: selectedFile.summary?.total_issues || 0, label: 'ISSUES', color: (selectedFile.summary?.total_issues || 0) > 0 ? 'text-rose-450' : 'text-emerald-400' },
                       { val: selectedFile.metrics?.complexity_hint || 'low', label: 'COMPLEXITY', color: 'text-amber-200' },
                       { val: `${selectedFile.summary?.health_score || 0}%`, label: 'HEALTH', color: 'text-cyan-400' }
                     ].map((card, idx) => (
-                      <div key={idx} className="py-3.5 px-4 rounded-2xl text-left shadow-sm glass-card">
+                      <div key={idx} className="py-2.5 px-3 rounded-2xl text-left shadow-sm glass-card min-w-0 overflow-hidden">
                         <span className="text-[9px] font-mono tracking-widest text-zinc-500 uppercase block font-bold">{card.label}</span>
-                        <span className={`text-base font-display font-extrabold mt-1 block uppercase ${card.color}`}>{card.val}</span>
+                        <span className={`text-sm font-display font-extrabold mt-1 block uppercase ${card.color}`}>{card.val}</span>
                       </div>
                     ))}
                   </div>
 
-                  <CodeViewer
-                    source={selectedFile._source_content || ''}
-                    issues={selectedFile.issues || []}
-                    filename={selectedFile.filename}
-                  />
+                  <div className="flex items-center gap-3 py-2 px-1">
+                    <FileCode size={14} className="text-violet-400/70 flex-shrink-0" />
+                    <span className="text-sm font-mono text-zinc-200 truncate flex-1">
+                      {selectedFile.filename}
+                    </span>
+                    {selectedFile.document_id && (
+                      <button
+                        onClick={() => onNavigateToChat(selectedFile.document_id, selectedFile.filename)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-semibold rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 hover:bg-cyan-400/20 hover:text-white transition-all cursor-pointer"
+                      >
+                        <MessageCircle size={11} />
+                        Chat
+                      </button>
+                    )}
+                  </div>
 
-                  {selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
+                  {historyMode ? (
+                    <div className="flex gap-6 items-start">
+                      <div className="flex-1 p-4 rounded-3xl glass-card">
+                        <div className="flex items-center gap-2.5 mb-4">
+                          <div className="w-1 h-4 bg-cyan-400 rounded-full" />
+                          <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">Issue Breakdown</span>
+                          {donutData.length > 0 && (
+                            <span className="text-[10px] font-mono text-zinc-500 ml-auto">
+                              {donutData.reduce((s, d) => s + d.count, 0)} total
+                            </span>
+                          )}
+                        </div>
+                        {donutSegments.length > 0 ? (
+                          <div className="flex flex-col md:flex-row items-center gap-6">
+                            <div className="relative flex-shrink-0">
+                              <svg width="140" height="140" viewBox="0 0 180 180">
+                                <circle cx="90" cy="90" r="72" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="18" />
+                                {donutSegments.map((seg, i) => {
+                                  const circumference = 2 * Math.PI * 72;
+                                  const dashLen = seg.percent * circumference;
+                                  const dashGap = circumference - dashLen;
+                                  const offset = -seg.startPercent * circumference;
+                                  return (
+                                    <motion.circle
+                                      key={i}
+                                      cx="90" cy="90" r="72"
+                                      fill="none"
+                                      stroke={seg.color}
+                                      strokeWidth="18"
+                                      strokeDasharray={`${dashLen} ${dashGap}`}
+                                      strokeDashoffset={offset}
+                                      transform="rotate(-90 90 90)"
+                                      strokeLinecap="round"
+                                      initial={{ strokeDasharray: `0 ${circumference}` }}
+                                      animate={{ strokeDasharray: `${dashLen} ${dashGap}` }}
+                                      transition={{ duration: 0.8, delay: i * 0.1, ease: 'easeOut' }}
+                                    />
+                                  );
+                                })}
+                                <circle cx="90" cy="90" r="52" fill="#060608" />
+                              </svg>
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-lg font-display font-bold text-zinc-100">
+                                  {donutData.reduce((s, d) => s + d.count, 0)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="space-y-2 flex-1 w-full">
+                              {donutSegments.map((seg, i) => (
+                                <motion.div
+                                  key={i}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ duration: 0.4, delay: i * 0.08 }}
+                                  className="flex items-center justify-between py-1"
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: seg.color }} />
+                                    <span className="text-[11px] text-zinc-300 font-mono">{seg.label}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-[11px]">
+                                    <span className="font-mono text-zinc-400">{seg.count}</span>
+                                    <span className="text-[10px] font-mono text-zinc-600 w-8 text-right">
+                                      {Math.round(seg.percent * 100)}%
+                                    </span>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-6 text-zinc-500">
+                            <CheckCircle2 size={22} className="text-emerald-400 mb-2" />
+                            <p className="text-[10px] font-mono">No issues found</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <CodeViewer
+                      source={selectedFile._source_content || ''}
+                      issues={selectedFile.issues || []}
+                      filename={selectedFile.filename}
+                    />
+                  )}
+
+                  {!historyMode && selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
                     <div className="p-4 border border-violet-500/[0.08] bg-violet-500/[0.01] rounded-xl space-y-1.5 text-left">
                       <div className="flex items-center gap-2 text-violet-400">
                         <BookOpen size={14} />
@@ -803,7 +1142,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
               )}
             </div>
 
-            {selectedFile && (
+            {(selectedFile || selectedFolder) && (
               <div className="w-full lg:w-[280px] p-5 rounded-3xl flex flex-col space-y-4 flex-shrink-0 glass-card">
                 <div className="space-y-3">
                   <span className="text-[10px] font-mono tracking-wider uppercase text-neutral-500 font-bold block">Filter</span>

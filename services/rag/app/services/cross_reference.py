@@ -249,6 +249,10 @@ def batch_check_references(
     Fast in-memory cross-reference across ALL files at once.
     No DB queries, no LLM calls — pure AST + regex.
 
+    Cross-file only: a symbol is unreferenced when it appears in
+    exactly one file and no other batch file references it.
+    Intra-file dead code is detected later by the LLM pass.
+
     Returns: { filename: [unreferenced_symbols], ... }
     """
     # Phase 1: extract symbols from every file

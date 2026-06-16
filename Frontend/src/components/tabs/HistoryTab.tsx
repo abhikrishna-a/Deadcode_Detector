@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Clock, FileCode, Loader2, Trash2, Folder, FolderOpen, ChevronRight, MessageCircle } from 'lucide-react';
+import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 
 interface HistoryTabProps {
@@ -26,6 +26,7 @@ interface HistoryTreeNode {
   isDir: boolean;
   children: HistoryTreeNode[];
   file?: HistoryItem;
+  scanFolder?: string;
 }
 
 type FilterMode = 'all' | 'file' | 'repo' | 'folder';
@@ -45,7 +46,7 @@ const healthColor = (score: number) => {
   return 'text-rose-400';
 };
 
-function buildHistoryTree(files: HistoryItem[]): HistoryTreeNode[] {
+function buildHistoryTree(files: HistoryItem[], defaultScanFolder?: string): HistoryTreeNode[] {
   const root: HistoryTreeNode[] = [];
   for (const file of files) {
     const parts = file.filename.replace(/\\/g, '/').split('/');
@@ -58,7 +59,7 @@ function buildHistoryTree(files: HistoryItem[]): HistoryTreeNode[] {
       } else {
         let dir = current.find(n => n.name === part && n.isDir);
         if (!dir) {
-          dir = { name: part, isDir: true, children: [], file: undefined };
+          dir = { name: part, isDir: true, children: [], file: undefined, scanFolder: defaultScanFolder };
           current.push(dir);
         }
         current = dir.children;
@@ -97,22 +98,28 @@ function buildTree(items: HistoryItem[]): { name: string; scanType?: string; fil
   return result;
 }
 
+function findFirstFile(node: HistoryTreeNode): HistoryItem | undefined {
+  if (node.file) return node.file;
+  for (const child of node.children) {
+    const found = findFirstFile(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 interface HistoryTreeNodeProps {
   node: HistoryTreeNode;
   depth: number;
   parentPath: string;
   expandedTreePaths: Record<string, boolean>;
-  onToggle: (path: string) => void;
-  onNavigateToChat: (docId: string, filename: string) => void;
+  onToggle: (path: string, depth: number) => void;
   onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
-  onDelete: (analysisId: string) => Promise<void>;
-  deleting: string | null;
   healthColor: (score: number) => string;
 }
 
 function HistoryTreeNode({
   node, depth, parentPath, expandedTreePaths, onToggle,
-  onNavigateToChat, onNavigateToWorkspace, onDelete, deleting, healthColor,
+  onNavigateToWorkspace, healthColor,
 }: HistoryTreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
   const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
@@ -141,25 +148,6 @@ function HistoryTreeNode({
         <span className="text-[8px] font-mono text-zinc-700 ml-auto hidden sm:inline">
           {new Date(item.created_at).toLocaleDateString()}
         </span>
-        <button
-          onClick={() => onNavigateToChat(item.analysis_id, item.filename)}
-          className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer"
-          title="Chat about this file"
-        >
-          <MessageCircle size={10} />
-        </button>
-        <button
-          onClick={() => onDelete(item.analysis_id)}
-          disabled={deleting === item.analysis_id}
-          className="p-1 rounded text-zinc-600 hover:text-rose-400 hover:bg-rose-500/5 transition-colors cursor-pointer disabled:opacity-40"
-          title="Delete analysis"
-        >
-          {deleting === item.analysis_id ? (
-            <Loader2 size={10} className="animate-spin" />
-          ) : (
-            <Trash2 size={10} />
-          )}
-        </button>
       </div>
     );
   }
@@ -167,12 +155,16 @@ function HistoryTreeNode({
   return (
     <div>
       <button
-        onClick={() => onToggle(fullPath)}
+        onClick={() => {
+          const first = findFirstFile(node);
+          if (first) onNavigateToWorkspace(first.analysis_id, first.filename, first.scan_folder);
+        }}
         className="flex items-center gap-1.5 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
         style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
       >
         <ChevronRight
           size={10}
+          onClick={(e) => { e.stopPropagation(); onToggle(fullPath, depth); }}
           className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
         />
         {isExpanded ? (
@@ -201,10 +193,7 @@ function HistoryTreeNode({
                 parentPath={fullPath}
                 expandedTreePaths={expandedTreePaths}
                 onToggle={onToggle}
-                onNavigateToChat={onNavigateToChat}
                 onNavigateToWorkspace={onNavigateToWorkspace}
-                onDelete={onDelete}
-                deleting={deleting}
                 healthColor={healthColor}
               />
             ))}
@@ -220,7 +209,6 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['Single Files']));
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
 
@@ -245,19 +233,6 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     loadHistory(search);
   };
 
-  const handleDelete = async (analysisId: string) => {
-    setDeleting(analysisId);
-    try {
-      await analysisAPI.ragDeleteAnalysis(analysisId);
-      setItems(prev => prev.filter(i => i.analysis_id !== analysisId));
-      onShowToast('Analysis deleted successfully', 'success');
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to delete analysis', 'error');
-    } finally {
-      setDeleting(null);
-    }
-  };
-
   const toggleFolder = (name: string) => {
     setExpandedFolders(prev => {
       const next = new Set(prev);
@@ -267,8 +242,11 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     });
   };
 
-  const toggleTreePath = (path: string) => {
-    setExpandedTreePaths(prev => ({ ...prev, [path]: !prev[path] }));
+  const toggleTreePath = (path: string, depth: number = 0) => {
+    setExpandedTreePaths(prev => {
+      if (!(path in prev)) return { ...prev, [path]: !(depth < 1) };
+      return { ...prev, [path]: !prev[path] };
+    });
   };
 
   const filtered = useMemo(() => {
@@ -281,7 +259,11 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
 
   const tree = useMemo(() => {
     const groups = buildTree(filtered);
-    return groups.map(g => ({ ...g, tree: buildHistoryTree(g.files) }));
+    return groups.map(g => ({
+      ...g,
+      scanFolder: g.files[0]?.scan_folder,
+      tree: buildHistoryTree(g.files, g.files[0]?.scan_folder),
+    }));
   }, [filtered]);
 
   return (
@@ -378,10 +360,22 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                   <span className="text-xs font-mono text-zinc-200 font-semibold">{group.name}</span>
                   <span className="text-[9px] font-mono text-zinc-600">({group.files.length})</span>
                   {group.scanType && (
-                    <span className="text-[9px] font-mono uppercase text-zinc-600 bg-white/[0.02] px-2 py-0.5 rounded border border-white/[0.04] ml-auto">
+                    <span className="text-[9px] font-mono uppercase text-zinc-600 bg-white/[0.02] px-2 py-0.5 rounded border border-white/[0.04]">
                       {group.scanType}
                     </span>
                   )}
+                  <span className="ml-auto" />
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const first = group.files[0];
+                      if (first) onNavigateToWorkspace(first.analysis_id, first.filename, first.scan_folder);
+                    }}
+                    className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer"
+                    title="Open in Workspace"
+                  >
+                    <ArrowUpFromLine size={11} />
+                  </span>
                 </button>
 
                 {expandedFolders.has(group.name) && group.tree.map(node => (
@@ -392,10 +386,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                     parentPath=""
                     expandedTreePaths={expandedTreePaths}
                     onToggle={toggleTreePath}
-                    onNavigateToChat={onNavigateToChat}
                     onNavigateToWorkspace={onNavigateToWorkspace}
-                    onDelete={handleDelete}
-                    deleting={deleting}
                     healthColor={healthColor}
                   />
                 ))}

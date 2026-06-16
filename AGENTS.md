@@ -52,3 +52,4 @@ npm run dev
   - B5: WSGI instead of ASGI → `daphne` added as first `INSTALLED_APPS` entry so `runserver` handles WebSocket
   - B6: WebSocket bypasses Vite proxy → `WS_BASE` derived from `location.host` instead of hardcoded `localhost:8000`
   - B7: git import async path broken (expects `task_id`, gets `session_id`) → removed dead async wrapper, always calls `gitClone` directly
+  - B8: batch-analyze finds 0 issues — two-part fix: (a) removed `__db_history__` and `history_text` from token index (historical chunks pollute cross-ref, cause false negatives); (b) added two-phase analysis: Phase 1 = fast token cross-ref, Phase 2 = per-file LLM for files with 0 cross-ref hits, catching intra-file dead code the old single-file flow found.

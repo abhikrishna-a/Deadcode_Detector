@@ -210,9 +210,9 @@ class GitFileFetchView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if len(paths) > 10:
+        if len(paths) > 1000:
             return Response(
-                {'error': 'Maximum 10 paths per request.'},
+                {'error': 'Maximum 1000 paths per request.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

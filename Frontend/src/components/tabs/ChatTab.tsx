@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight, AlertOctagon } from 'lucide-react';
-import { AnalysisResult, ChatMessage } from '../../types';
+import { AnalysisResult, ChatMessage, Issue } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 
@@ -23,16 +23,63 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
 
   // Synchronize initial selections from Overview/Analyzer workspace triggers
   useEffect(() => {
-    if (history.length > 0) {
-      if (initialDocId) {
-        const found = history.find(r => r.document_id === initialDocId);
-        if (found) setSelectedDoc(found);
-      } else if (initialFilename) {
-        const found = history.find(r => r.filename === initialFilename);
-        if (found) setSelectedDoc(found);
-      } else if (!selectedDoc) {
-        setSelectedDoc(history[0]);
+    if (initialDocId) {
+      const found = history.find(r => r.document_id === initialDocId);
+      if (found) {
+        setSelectedDoc(found);
+      } else {
+        (async () => {
+          try {
+            const data = await analysisAPI.ragGetAnalysis(initialDocId);
+            const issues: Issue[] = (data.analysis?.issues || []).map((i: any, idx: number) => ({
+              id: i.id || `GC-${idx}`,
+              type: i.type || i.category || 'unused_import',
+              name: i.name || null,
+              file: data.filename,
+              line: i.line_start || i.line || 1,
+              line_start: i.line_start || i.line || 1,
+              line_end: i.line_end || i.line || 1,
+              description: i.description || '',
+              code_snippet: i.code_snippet || '',
+              suggestion: i.suggestion || '',
+              confidence: i.confidence ?? 0.9,
+              safe_to_remove: i.safe_to_remove ?? true,
+            }));
+            setSelectedDoc({
+              document_id: data.analysis_id,
+              filename: data.filename,
+              summary: {
+                total_issues: issues.length,
+                severity_counts: data.analysis?.summary?.severity_counts || { high: 0, medium: 0, low: 0 },
+                categories: data.analysis?.summary?.categories || {},
+                overall_health: data.analysis?.summary?.overall_health || 'clean',
+                health_score: data.analysis?.summary?.health_score ?? 100,
+              },
+              issues,
+              metrics: data.analysis?.metrics || {
+                total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0,
+                dead_lines_estimate: 0, dead_code_percentage: 0,
+              },
+              refactor_hints: data.analysis?.refactor_hints || [],
+              scan_type: 'single',
+            } as AnalysisResult);
+          } catch {
+            setSelectedDoc({
+              document_id: initialDocId,
+              filename: initialFilename || '',
+              summary: { total_issues: 0, severity_counts: {}, categories: {}, overall_health: 'unknown', health_score: 0 },
+              issues: [],
+              metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
+              scan_type: 'single',
+            } as AnalysisResult);
+          }
+        })();
       }
+    } else if (initialFilename) {
+      const found = history.find(r => r.filename === initialFilename);
+      if (found) setSelectedDoc(found);
+    } else if (history.length > 0 && !selectedDoc) {
+      setSelectedDoc(history[0]);
     }
   }, [initialDocId, initialFilename, history]);
 
@@ -118,7 +165,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
     return (
       <div key={fullPath}>
         <div
-          onClick={() => toggleTreePath(fullPath)}
+          onClick={() => setExpandedTreePaths(prev => ({ ...prev, [fullPath]: !(prev[fullPath] ?? (depth < 1)) }))}
           className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
           style={{ paddingLeft: `${8 + depth * 12}px` }}
         >

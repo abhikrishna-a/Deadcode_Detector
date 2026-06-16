@@ -17,6 +17,7 @@ export interface Issue {
   description: string;
   code_snippet: string;
   suggestion: string;
+  severity: string;
   confidence: number; // 0-100 or 0.0-1.0
   safe_to_remove?: boolean;
 }

@@ -121,6 +121,9 @@ export default function App() {
                           key="overview"
                           history={history}
                           onViewResult={() => onNavigate('analyzer')}
+                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                          }}
                         />
                       )}
 
@@ -176,6 +179,7 @@ export default function App() {
                       }}
                       viewTarget={viewTarget}
                       onClearViewTarget={() => setViewTarget(null)}
+                      isActive={activeTab === 'analyzer'}
                     />
                   </div>
                 </div>

@@ -1,8 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { AnalysisResult } from '../../types';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+
+const FOLDER_COLORS = ['#06b6d4', '#8b5cf6', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#84cc16'];
+
+const CATEGORIES = [
+  { key: 'unused_import', label: 'Unused Imports', color: '#8b5cf6' },
+  { key: 'unused_function', label: 'Unused Functions', color: '#ec4899' },
+  { key: 'unused_variable', label: 'Unused Variables', color: '#3b82f6' },
+  { key: 'unreachable_code', label: 'Unreachable Logic', color: '#f43f5e' },
+  { key: 'commented_code', label: 'Commented Snippets', color: '#10b981' },
+];
 
 function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number; onClick: (res: AnalysisResult) => void }) {
   const [expanded, setExpanded] = useState(depth < 2);
@@ -67,85 +78,67 @@ interface OverviewTabProps {
   user?: any;
   history: AnalysisResult[];
   onViewResult: (res: AnalysisResult) => void;
+  onNavigateToWorkspace?: (analysisId: string, filename: string, scanFolder?: string) => void;
 }
 
-export default function OverviewTab({ history, onViewResult }: OverviewTabProps) {
+export default function OverviewTab({ history, onViewResult, onNavigateToWorkspace }: OverviewTabProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
-  // 1. Calculate realistic aggregate statistics from scan history
   const stats = useMemo(() => {
-    const totalScans = history.length;
-    const totalIssues = history.reduce((sum, r) => sum + (r.summary?.total_issues || 0), 0);
-    const cleanFiles = history.filter(r => (r.summary?.total_issues || 0) === 0).length;
-    const totalLinesChecked = history.reduce((sum, r) => sum + (r.metrics?.total_lines || 0), 0);
-
-    const folderSet = new Set<string>();
-    history.forEach(r => {
-      if (r.scan_folder) {
-        folderSet.add(r.scan_folder);
-      }
-    });
-    const uniqueFolders = folderSet.size || (history.length > 0 ? 1 : 0);
-
-    return {
-      totalScans,
-      totalIssues,
-      cleanFiles,
-      totalLinesChecked,
-      uniqueFolders
-    };
+    const folderScans = new Set(history.filter(r => r.scan_folder).map(r => r.scan_folder));
+    const singleFiles = history.filter(r => !r.scan_folder);
+    const auditRuns = folderScans.size + singleFiles.length;
+    const orphanedTokens = singleFiles.length;
+    const compliantRuns = history.filter(r => r.scan_type === 'folder').length;
+    const statementsScanned = history.filter(r => r.scan_type === 'repo').length;
+    const sourceDirectives = history.reduce((sum, r) => sum + (r.summary?.total_issues || 0), 0);
+    return { auditRuns, orphanedTokens, compliantRuns, statementsScanned, sourceDirectives };
   }, [history]);
 
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      unused_import: 0,
-      unused_function: 0,
-      unused_variable: 0,
-      unreachable_code: 0,
-      commented_code: 0
-    };
-
+  const folderGroups = useMemo(() => {
+    const groups: Record<string, AnalysisResult[]> = {};
     history.forEach(r => {
-      if (r.issues) {
-        r.issues.forEach(i => {
-          const cat = i.type || 'commented_code';
-          if (counts[cat] !== undefined) {
-            counts[cat]++;
-          }
-        });
-      }
+      const key = r.scan_folder || '(Single Files)';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
     });
-
-    return [
-      { label: 'Unused Imports', count: counts.unused_import, color: '#8b5cf6' },
-      { label: 'Unused Functions', count: counts.unused_function, color: '#ec4899' },
-      { label: 'Unused Variables', count: counts.unused_variable, color: '#3b82f6' },
-      { label: 'Unreachable Logic', count: counts.unreachable_code, color: '#f43f5e' },
-      { label: 'Commented Snippets', count: counts.commented_code, color: '#10b981' }
-    ];
+    return groups;
   }, [history]);
 
-  const totalIssuesCount = useMemo(() => categoryCounts.reduce((s, c) => s + c.count, 0), [categoryCounts]);
+  const folderList = useMemo(() => Object.keys(folderGroups), [folderGroups]);
 
-  const donutSegments = useMemo(() => {
-    const total = totalIssuesCount || 1;
-    let cumulative = 0;
-    return categoryCounts.map(cat => {
-      const percent = cat.count / total;
-      const start = cumulative;
-      cumulative += percent;
-      return { ...cat, percent, startPercent: start };
+  const folderColorMap = useMemo(() => {
+    return Object.fromEntries(folderList.map((f, i) => [f, FOLDER_COLORS[i % FOLDER_COLORS.length]]));
+  }, [folderList]);
+
+  const chartData = useMemo(() => {
+    return CATEGORIES.map(cat => {
+      const row: Record<string, any> = { category: cat.label };
+      for (const [folder, files] of Object.entries(folderGroups)) {
+        row[folder] = files.reduce((sum, f) =>
+          sum + (f.issues?.filter(i => (i.type === cat.key || i.category === cat.key)).length || 0), 0
+        );
+      }
+      return row;
     });
-  }, [categoryCounts, totalIssuesCount]);
+  }, [folderGroups]);
 
-  // 3. Organizes reports by directories hierarchically
+  const handleFolderNavigate = useCallback((folderKey: string) => {
+    const files = folderGroups[folderKey];
+    if (!files?.length) return;
+    const file = files[0];
+    if (folderKey === '(Single Files)') {
+      onNavigateToWorkspace?.(file.document_id, file.filename);
+    } else {
+      onNavigateToWorkspace?.(file.document_id, file.filename, file.scan_folder);
+    }
+  }, [folderGroups, onNavigateToWorkspace]);
+
   const groupedScans = useMemo(() => {
     const folders: Record<string, AnalysisResult[]> = {};
     history.forEach(r => {
       const folderKey = r.scan_folder || '(root)';
-      if (!folders[folderKey]) {
-        folders[folderKey] = [];
-      }
+      if (!folders[folderKey]) folders[folderKey] = [];
       folders[folderKey].push(r);
     });
     return folders;
@@ -166,14 +159,14 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
       transition={{ duration: 0.35 }}
       className="space-y-8"
     >
-      {/* Upper Statistics row with customized glass sheets */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
-          { icon: BarChart3, value: stats.totalScans, label: 'Audit Runs', color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
-          { icon: Bug, value: stats.totalIssues, label: 'Orphaned Tokens', color: 'text-purple-300', bg: 'bg-purple-500/10' },
-          { icon: CheckCircle, value: stats.cleanFiles, label: 'Compliant Runs', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { icon: File, value: stats.totalLinesChecked.toLocaleString(), label: 'Statements Scanned', color: 'text-amber-200', bg: 'bg-amber-200/10' },
-          { icon: Folder, value: stats.uniqueFolders, label: 'Source Directives', color: 'text-rose-400', bg: 'bg-rose-400/10' }
+          { icon: BarChart3, value: stats.auditRuns, label: 'Total Analyses', color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
+          { icon: Bug, value: stats.orphanedTokens, label: 'Standalone Files', color: 'text-purple-300', bg: 'bg-purple-500/10' },
+          { icon: CheckCircle, value: stats.compliantRuns, label: 'Folder Analyses', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+          { icon: File, value: stats.statementsScanned.toLocaleString(), label: 'Repo Analyses', color: 'text-amber-200', bg: 'bg-amber-200/10' },
+          { icon: Folder, value: stats.sourceDirectives, label: 'Total Issues', color: 'text-rose-400', bg: 'bg-rose-400/10' }
         ].map((item, idx) => {
           const Icon = item.icon;
           return (
@@ -182,9 +175,7 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
               whileHover={{ scale: 1.02, y: -2 }}
               className="p-5 rounded-3xl flex flex-col text-left group transition-all duration-300 relative overflow-hidden glass-card glass-card-hover justify-between h-36"
             >
-              {/* Inner ambient hovering background glow */}
               <div className="absolute top-0 right-0 w-16 h-16 bg-white/[0.01] group-hover:bg-cyan-500/[0.02] rounded-bl-full transition-all duration-300" />
-              
               <div className={`w-8 h-8 rounded-lg ${item.bg} flex items-center justify-center mb-3 border border-white/[0.02]`}>
                 <Icon size={15} className={item.color} />
               </div>
@@ -201,84 +192,92 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
         })}
       </div>
 
-      {/* Donut chart for Obsolete Code Structural Breakdown */}
+      {/* Line chart: Issues per project folder */}
       <div className="p-6 rounded-3xl glass-card space-y-6">
         <div className="flex items-center gap-2.5">
           <div className="w-1 h-4 bg-cyan-400 rounded-full" />
           <h3 className="font-display font-medium text-sm tracking-tight text-zinc-100">
-            Obsolete Code Structural Breakdown
+            Issues per Project Folder
           </h3>
-          {totalIssuesCount > 0 && (
-            <span className="text-[10px] font-mono text-zinc-500 ml-auto">
-              {totalIssuesCount} total
-            </span>
-          )}
         </div>
 
-        {totalIssuesCount === 0 ? (
+        {folderList.length === 0 ? (
           <div className="text-center py-10 text-neutral-500">
-            <CheckCircle size={28} className="mx-auto text-zinc-600 mb-3" />
-            <p className="text-xs font-sans">No issues detected yet.</p>
-            <p className="text-[11px] text-zinc-600 font-mono mt-1">Run an analysis to see the breakdown.</p>
+            <BarChart3 size={28} className="mx-auto text-zinc-600 mb-3" />
+            <p className="text-xs font-sans">No data to chart yet.</p>
+            <p className="text-[11px] text-zinc-600 font-mono mt-1">Run analyses to see issue distribution.</p>
+          </div>
+        ) : folderList.length === 1 && folderList[0] === '(Single Files)' ? (
+          <div className="text-center py-10 text-neutral-500">
+            <BarChart3 size={28} className="mx-auto text-zinc-600 mb-3" />
+            <p className="text-xs font-sans">No folder scans available.</p>
+            <p className="text-[11px] text-zinc-600 font-mono mt-1">Use the directory scan in workspace to see per-folder charts.</p>
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row items-center gap-8">
-            {/* SVG Donut */}
-            <div className="relative flex-shrink-0">
-              <svg width="180" height="180" viewBox="0 0 180 180">
-                <circle cx="90" cy="90" r="72" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="18" />
-                {donutSegments.map((seg, i) => {
-                  const circumference = 2 * Math.PI * 72;
-                  const dashLen = seg.percent * circumference;
-                  const dashGap = circumference - dashLen;
-                  const offset = -seg.startPercent * circumference;
-                  return (
-                    <motion.circle
-                      key={i}
-                      cx="90" cy="90" r="72"
-                      fill="none"
-                      stroke={seg.color}
-                      strokeWidth="18"
-                      strokeDasharray={`${dashLen} ${dashGap}`}
-                      strokeDashoffset={offset}
-                      transform="rotate(-90 90 90)"
-                      strokeLinecap="round"
-                      initial={{ strokeDasharray: `0 ${circumference}` }}
-                      animate={{ strokeDasharray: `${dashLen} ${dashGap}` }}
-                      transition={{ duration: 0.8, delay: i * 0.1, ease: 'easeOut' }}
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart
+              data={chartData}
+              margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+              <XAxis
+                dataKey="category"
+                tick={{ fontSize: 10, fill: '#a1a1aa' }}
+                axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: '#a1a1aa' }}
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: '#0a0a0f',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: 12,
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: '#e4e4e7', marginBottom: 4 }}
+              />
+              {folderList.map(folder => {
+                if (folder === '(Single Files)') return null;
+                return (
+                    <Line
+                      key={folder}
+                      type="monotone"
+                      dataKey={folder}
+                      stroke={folderColorMap[folder]}
+                      strokeWidth={3}
+                      onClick={() => handleFolderNavigate(folder)}
+                      style={{ cursor: 'pointer' }}
                     />
-                  );
-                })}
-                <circle cx="90" cy="90" r="52" fill="#060608" />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <span className="text-lg font-display font-bold text-zinc-100">{totalIssuesCount}</span>
-              </div>
-            </div>
+                );
+              })}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
 
-            {/* Legend */}
-            <div className="space-y-3 flex-1 w-full">
-              {donutSegments.map((seg, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: i * 0.08 }}
-                  className="flex items-center justify-between py-1.5"
+        {/* Folder legend with click navigation */}
+        {folderList.length > 1 && (
+          <div className="flex flex-wrap gap-3 pt-1">
+            {folderList.map(folder => {
+              if (folder === '(Single Files)') return null;
+              return (
+                <button
+                  key={folder}
+                  onClick={() => handleFolderNavigate(folder)}
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] transition-colors cursor-pointer text-[11px] font-mono text-zinc-300"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: seg.color }} />
-                    <span className="text-xs text-zinc-300 font-medium">{seg.label}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="font-mono text-zinc-400">{seg.count}</span>
-                    <span className="text-[10px] font-mono text-zinc-600 w-10 text-right">
-                      {Math.round(seg.percent * 100)}%
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                  <div
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: folderColorMap[folder] }}
+                  />
+                  <span>{folder}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -308,11 +307,9 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
             {(Object.entries(groupedScans) as [string, AnalysisResult[]][]).map(([folderName, files]) => {
               const isExpanded = !!expandedFolders[folderName];
               const issuesInFolder = files.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
-              // Build sub-tree from filename paths
               const treeNodes = buildFileTree(files);
               return (
                 <div key={folderName}>
-                  {/* Root folder node */}
                   <div
                     onClick={() => toggleFolder(folderName)}
                     className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
@@ -330,7 +327,6 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
                     </span>
                   </div>
 
-                  {/* Tree children */}
                   <AnimatePresence initial={false}>
                     {isExpanded && (
                       <motion.div
@@ -344,7 +340,7 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
                             key={ni}
                             node={node}
                             depth={0}
-                            onClick={onViewResult}
+                            onClick={(res) => onNavigateToWorkspace?.(res.document_id, res.filename, res.scan_folder)}
                           />
                         ))}
                       </motion.div>
@@ -356,7 +352,6 @@ export default function OverviewTab({ history, onViewResult }: OverviewTabProps)
           </div>
         )}
       </div>
-
     </motion.div>
   );
 }

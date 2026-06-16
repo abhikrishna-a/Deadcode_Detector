@@ -363,7 +363,7 @@ async def check_hash(
 ) -> dict | None:
     if IS_SQLITE:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json FROM analyses WHERE user_id = :uid AND file_hash = :hash"),
+            text("SELECT id, filename, language, analysis_json, scan_folder, scan_type FROM analyses WHERE user_id = :uid AND file_hash = :hash"),
             {"uid": user_id, "hash": file_hash},
         )).fetchone()
         if not row:
@@ -373,10 +373,12 @@ async def check_hash(
             "filename": row[1],
             "language": row[2],
             "analysis": json.loads(row[3]),
+            "scan_folder": row[4],
+            "scan_type": row[5],
         }
     else:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"),
+            text("SELECT id, filename, language, analysis, scan_folder, scan_type FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"),
             {"uid": user_id, "hash": file_hash},
         )).fetchone()
         if not row:
@@ -386,6 +388,8 @@ async def check_hash(
             "filename": row[1],
             "language": row[2],
             "analysis": row[3],
+            "scan_folder": row[4],
+            "scan_type": row[5],
         }
 
 

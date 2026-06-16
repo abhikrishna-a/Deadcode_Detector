@@ -15,7 +15,7 @@ from app.db import get_db, IS_SQLITE, AsyncSessionLocal
 from app.auth import get_current_user
 from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
-from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
+from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct, _run_llm_analysis
 from app.services.cross_reference import batch_check_references
 from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
@@ -193,10 +193,22 @@ async def analyze_file(
 
         language = detect_language(file.filename)
 
-        # --- hash-based duplicate removal: delete old analysis in current transaction ---
+        # --- hash-based cache: skip re-analysis if same hash + folder + type ---
         file_hash = hashlib.sha256(source.encode()).hexdigest()
         existing = await check_hash(db, user["user_id"], file_hash)
         if existing and analysis_json is None:
+            if existing.get("scan_folder") == scan_folder and existing.get("scan_type") == scan_type:
+                logger.info("Cache hit for hash %s (file: %s) — returning cached result", file_hash, file.filename)
+                return {
+                    "document_id": existing["analysis_id"],
+                    "chunk_count": 0,
+                    "filename": existing["filename"],
+                    "analysis": existing["analysis"],
+                    "auto_analyzed": True,
+                    "cached": True,
+                    "scan_folder": scan_folder,
+                    "scan_type": scan_type,
+                }
             try:
                 if IS_SQLITE:
                     await db.execute(
@@ -208,7 +220,7 @@ async def analyze_file(
                         text("DELETE FROM rag_documents WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
                         {"id": existing["analysis_id"], "uid": user["user_id"]},
                     )
-                logger.info("Removed existing analysis for hash %s (file: %s)", file_hash, file.filename)
+                logger.info("Removed existing analysis for hash %s (file: %s) — folder/type changed", file_hash, file.filename)
             except Exception as e:
                 logger.warning("Failed to remove old analysis for hash %s: %s", file_hash, e)
 
@@ -336,8 +348,9 @@ async def batch_analyze(
     user: dict = Depends(get_current_user),
 ):
     """
-    Fast batch analysis using AST+grep cross-referencing across ALL files at once.
-    No LLM calls — pure symbol-level dead code detection.
+    Two-phase batch analysis: (1) fast AST+grep cross-ref across ALL files finds
+    cross-file dead code; (2) per-file LLM pass catches intra-file dead code
+    (unused imports, unread variables, etc.) that the cross-ref misses.
     Results are stored to the database with code chunks for RAG-enabled chat.
     """
     start = asyncio.get_event_loop().time()
@@ -352,11 +365,32 @@ async def batch_analyze(
     if not filtered:
         return BatchAnalyzeResponse(results=[], total_time_ms=0)
 
-    # Run sync batch cross-reference in thread pool
+    # Phase 1: fast batch cross-ref (cross-file only, no LLM)
     loop = asyncio.get_event_loop()
     per_file_results = await loop.run_in_executor(None, batch_check_references, filtered)
 
     file_map = {f.name: f.content for f in req.files if f.name}
+
+    # Phase 2: run LLM for files where cross-ref found nothing —
+    # the batch missed these because all symbols were cross-referenced
+    # across files, but there may be intra-file dead code (unused
+    # imports, variables never read within the file, etc.)
+    llm_tasks = {}
+    _llm_sem = Semaphore(5)
+    async def _run_llm_bounded(fn, src, analysis):
+        async with _llm_sem:
+            return await _run_llm_analysis(src, fn, analysis)
+    for filename, analysis in per_file_results.items():
+        source = file_map.get(filename, "")
+        if source.strip() and analysis.get("summary", {}).get("total_issues", 0) == 0:
+            llm_tasks[filename] = asyncio.create_task(
+                _run_llm_bounded(filename, source, analysis)
+            )
+
+    if llm_tasks:
+        llm_results = await asyncio.gather(*llm_tasks.values())
+        for filename, llm_result in zip(llm_tasks.keys(), llm_results):
+            per_file_results[filename] = llm_result
 
     # Collect all chunk texts across all files for batched embedding
     all_chunk_batches = []  # list of (filename, source, analysis, chunks)
