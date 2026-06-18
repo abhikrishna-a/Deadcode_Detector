@@ -31,7 +31,8 @@ async def init_db():
                     analysis_json TEXT NOT NULL,
                     health_score INTEGER NOT NULL DEFAULT 0,
                     total_issues INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT ''
                 )
             """))
             try:
@@ -40,6 +41,10 @@ async def init_db():
                 pass
             try:
                 await conn.execute(_t("ALTER TABLE analyses ADD COLUMN scan_type TEXT NOT NULL DEFAULT 'single'"))
+            except Exception:
+                pass
+            try:
+                await conn.execute(_t("ALTER TABLE analyses ADD COLUMN source TEXT NOT NULL DEFAULT ''"))
             except Exception:
                 pass
             await conn.execute(_t("CREATE INDEX IF NOT EXISTS idx_analyses_user_hash ON analyses(user_id, file_hash)"))
@@ -66,12 +71,14 @@ async def init_db():
                     scan_folder TEXT NOT NULL DEFAULT '',
                     scan_type   TEXT NOT NULL DEFAULT 'single',
                     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    analysis    JSONB
+                    analysis    JSONB,
+                    source      TEXT NOT NULL DEFAULT ''
                 )
             """))
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT ''"))
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_folder TEXT NOT NULL DEFAULT ''"))
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_type TEXT NOT NULL DEFAULT 'single'"))
+            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_docs_user_hash ON rag_documents(user_id, file_hash)"))
             await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS rag_chunks (
