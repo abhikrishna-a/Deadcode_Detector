@@ -52,8 +52,8 @@ async def store_analysis(
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
             text("""
-                INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, analysis_json, health_score, total_issues, created_at)
-                VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :json, :health, :issues, :now)
+                INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, analysis_json, health_score, total_issues, created_at, source)
+                VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :json, :health, :issues, :now, :source)
             """),
             {
                 "id": analysis_id, "uid": user_id, "fn": filename,
@@ -61,6 +61,7 @@ async def store_analysis(
                 "stype": scan_type,
                 "json": json.dumps(analysis_json),
                 "health": health_score, "issues": total_issues, "now": now,
+                "source": source,
             },
         )
         if chunks and embeddings:
@@ -86,8 +87,8 @@ async def store_analysis(
     else:
         result = await db.execute(
             text("""
-                INSERT INTO rag_documents (user_id, filename, language, file_hash, scan_folder, scan_type, analysis)
-                VALUES (:uid, :fn, :lang, :hash, :folder, :stype, CAST(:json AS jsonb))
+                INSERT INTO rag_documents (user_id, filename, language, file_hash, scan_folder, scan_type, analysis, source)
+                VALUES (:uid, :fn, :lang, :hash, :folder, :stype, CAST(:json AS jsonb), :source)
                 RETURNING id
             """),
             {
@@ -95,6 +96,7 @@ async def store_analysis(
                 "hash": file_hash, "folder": scan_folder,
                 "stype": scan_type,
                 "json": json.dumps(analysis_json),
+                "source": source,
             },
         )
         document_id = result.scalar_one()
@@ -280,7 +282,7 @@ async def get_document(
 ) -> dict | None:
     if IS_SQLITE:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json FROM analyses WHERE id = :id AND user_id = :uid"),
+            text("SELECT id, filename, language, analysis_json, source FROM analyses WHERE id = :id AND user_id = :uid"),
             {"id": document_id, "uid": user_id},
         )).fetchone()
         if not row:
@@ -295,10 +297,11 @@ async def get_document(
             "filename": row[1],
             "language": row[2],
             "analysis": analysis,
+            "source": row[4],
         }
     else:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis FROM rag_documents WHERE id = :id AND user_id = :uid"),
+            text("SELECT id, filename, language, analysis, source FROM rag_documents WHERE id = :id AND user_id = :uid"),
             {"id": document_id, "uid": user_id},
         )).fetchone()
         if not row:
@@ -308,6 +311,7 @@ async def get_document(
             "filename": row[1],
             "language": row[2],
             "analysis": row[3],
+            "source": row[4],
         }
 
 
@@ -319,7 +323,7 @@ async def get_documents_by_scan_folder(
     if IS_SQLITE:
         rows = (await db.execute(
             text("""
-                SELECT id, filename, language, analysis_json, health_score, total_issues, created_at
+                SELECT id, filename, language, analysis_json, health_score, total_issues, created_at, source
                 FROM analyses
                 WHERE user_id = :uid AND scan_folder = :folder
                 ORDER BY filename
@@ -331,13 +335,15 @@ async def get_documents_by_scan_folder(
                 "analysis_id": r[0], "filename": r[1], "language": r[2],
                 "analysis": json.loads(r[3]) if isinstance(r[3], str) else r[3],
                 "health_score": r[4], "total_issues": r[5], "created_at": r[6],
+                "source": r[7],
+                "_source_content": r[7],
             }
             for r in rows
         ]
     else:
         rows = (await db.execute(
             text("""
-                SELECT id, filename, language, analysis, created_at,
+                SELECT id, filename, language, analysis, created_at, source,
                        COALESCE((analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((analysis->'summary'->>'total_issues')::int, 0) AS total_issues
                 FROM rag_documents
@@ -350,7 +356,9 @@ async def get_documents_by_scan_folder(
             {
                 "analysis_id": str(r[0]), "filename": r[1], "language": r[2],
                 "analysis": r[3], "created_at": r[4].isoformat(),
-                "health_score": r[5], "total_issues": r[6],
+                "source": r[5],
+                "_source_content": r[5],
+                "health_score": r[6], "total_issues": r[7],
             }
             for r in rows
         ]
@@ -363,7 +371,7 @@ async def check_hash(
 ) -> dict | None:
     if IS_SQLITE:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json, scan_folder, scan_type FROM analyses WHERE user_id = :uid AND file_hash = :hash"),
+            text("SELECT id, filename, language, analysis_json, scan_folder, scan_type, source FROM analyses WHERE user_id = :uid AND file_hash = :hash"),
             {"uid": user_id, "hash": file_hash},
         )).fetchone()
         if not row:
@@ -375,10 +383,11 @@ async def check_hash(
             "analysis": json.loads(row[3]),
             "scan_folder": row[4],
             "scan_type": row[5],
+            "source": row[6],
         }
     else:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis, scan_folder, scan_type FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"),
+            text("SELECT id, filename, language, analysis, scan_folder, scan_type, source FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"),
             {"uid": user_id, "hash": file_hash},
         )).fetchone()
         if not row:
@@ -390,6 +399,7 @@ async def check_hash(
             "analysis": row[3],
             "scan_folder": row[4],
             "scan_type": row[5],
+            "source": row[6],
         }
 
 

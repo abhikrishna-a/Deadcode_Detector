@@ -97,6 +97,9 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
             break
         except APIError as e:
             last_error = e
+            # 413 = payload too large — rotating keys won't help
+            if hasattr(e, 'status_code') and e.status_code == 413:
+                break
             groq_key_manager.rotate()
             if attempt < max_attempts - 1:
                 continue
@@ -121,14 +124,20 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
         except json.JSONDecodeError as exc:
             raise ValueError(f"Groq returned invalid JSON: {exc}\nRaw: {raw[:500]}")
 
-    # Fall back to Gemini
+    # Fall back to Gemini — but skip if Groq said 413 (too large for Gemini too)
     if gemini_key_manager.has_keys:
         try:
             client = gemini_key_manager.get_client()
+            if last_error and hasattr(last_error, 'status_code') and last_error.status_code == 413:
+                shorter = _truncate_prompt(prompt, max_chars=12000)
+                gemini_messages = [{"role": "system", "content": system}] if system else []
+                gemini_messages.append({"role": "user", "content": shorter})
+            else:
+                gemini_messages = messages
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=gemini_model,
-                    messages=messages,
+                    messages=gemini_messages,
                     temperature=0.1,
                     max_tokens=8192,
                 ),
@@ -153,6 +162,24 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
     raise RuntimeError(
         f"Groq API call failed after {max_attempts} key(s): {last_error}"
     )
+
+
+def _truncate_prompt(text: str, max_chars: int = 12000) -> str:
+    """Truncate prompt text if it exceeds max_chars, preserving the numbered-source structure."""
+    if len(text) <= max_chars:
+        return text
+    lines = text.splitlines()
+    truncated = []
+    count = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if count + line_len > max_chars:
+            break
+        truncated.append(line)
+        count += line_len
+    n_removed = len(lines) - len(truncated)
+    truncated.append(f"... [truncated {n_removed} lines, prompt too large]")
+    return "\n".join(truncated)
 
 
 

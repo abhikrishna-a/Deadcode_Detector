@@ -16,10 +16,28 @@ DEAD_CODE_CATEGORIES = [
 
 MAX_TOKENS = 12000
 OVERLAP_LINES = 3
+MAX_LLM_CHARS = 24000  # ~8K tokens — safe for all Groq models
 
 
 def _approx_tokens(text: str) -> int:
     return len(text) // 3
+
+
+def _truncate_content(content: str, max_chars: int = MAX_LLM_CHARS) -> str:
+    if len(content) <= max_chars:
+        return content
+    lines = content.splitlines()
+    truncated_lines = []
+    char_count = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if char_count + line_len > max_chars:
+            break
+        truncated_lines.append(line)
+        char_count += line_len
+    n_removed = len(lines) - len(truncated_lines)
+    truncated_lines.append(f"... [truncated {n_removed} lines]")
+    return "\n".join(truncated_lines)
 
 
 def _needs_chunking(source: str) -> bool:
@@ -85,7 +103,7 @@ def _merge_chunk_results(chunk_results: list, source: str) -> dict:
         cat = issue.get("category", "unknown")
         categories[cat] = categories.get(cat, 0) + 1
 
-    total_lines = len(source.split("\n"))
+    total_lines = len(source.splitlines())
     last_analysis = chunk_results[-1][0]
     metrics = last_analysis.get("metrics", {}).copy()
     metrics["total_lines"] = total_lines
@@ -192,9 +210,14 @@ def _ensure_defaults(result: dict, source: str):
 
 
 async def _analyze_single_chunk(content: str, filename: str) -> dict:
+    content = _truncate_content(content)
     language = detect_language(filename)
     prompt = get_analysis_prompt(content, filename, language)
     system = get_analysis_system_prompt()
+    total_approx = _approx_tokens(system or "") + _approx_tokens(prompt)
+    if total_approx > 30000:
+        content = _truncate_content(content, MAX_LLM_CHARS // 2)
+        prompt = get_analysis_prompt(content, filename, language)
     try:
         async with async_timeout(90):
             result, usage = await call_groq_json(prompt=prompt, system=system)

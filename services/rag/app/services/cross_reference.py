@@ -249,9 +249,11 @@ def batch_check_references(
     Fast in-memory cross-reference across ALL files at once.
     No DB queries, no LLM calls — pure AST + regex.
 
-    Cross-file only: a symbol is unreferenced when it appears in
-    exactly one file and no other batch file references it.
-    Intra-file dead code is detected later by the LLM pass.
+    Cross-file + intra-file detection:
+    - A symbol is unreferenced when it does NOT appear in any other
+      file's tokens AND appears only once (its definition) in its own
+      source. If the name appears >1 time in the same file, it is
+      considered referenced (definition + usage/call/instantiation).
 
     Returns: { filename: [unreferenced_symbols], ... }
     """
@@ -270,7 +272,7 @@ def batch_check_references(
         for token in tokens:
             token_files.setdefault(token, set()).add(idx)
 
-    # Phase 3: check each file's symbols against ALL OTHER files
+    # Phase 3: check each file's symbols cross-file first, then intra-file
     result: dict = {}
     for idx, (filename, source) in enumerate(files):
         syms = file_symbols[filename]
@@ -280,9 +282,18 @@ def batch_check_references(
 
         unreferenced = []
         for name, typ in syms:
+            # Cross-file check: does this name appear as a token in another file?
             sources = token_files.get(name)
             if sources is not None and (sources - {idx}):
-                continue  # Appears in another file → referenced
+                continue
+
+            # Intra-file check: does this name appear more than once in its own
+            # source? The first occurrence is typically the definition; subsequent
+            # ones are usage (calls, instantiation, references).
+            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            if intra_count > 1:
+                continue
+
             unreferenced.append((name, typ))
 
         if unreferenced:
