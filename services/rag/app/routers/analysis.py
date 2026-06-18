@@ -15,7 +15,7 @@ from app.db import get_db, IS_SQLITE, AsyncSessionLocal
 from app.auth import get_current_user
 from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
-from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct, _run_llm_analysis
+from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.cross_reference import batch_check_references
 from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
@@ -371,26 +371,11 @@ async def batch_analyze(
 
     file_map = {f.name: f.content for f in req.files if f.name}
 
-    # Phase 2: run LLM for files where cross-ref found nothing —
-    # the batch missed these because all symbols were cross-referenced
-    # across files, but there may be intra-file dead code (unused
-    # imports, variables never read within the file, etc.)
-    llm_tasks = {}
-    _llm_sem = Semaphore(5)
-    async def _run_llm_bounded(fn, src, analysis):
-        async with _llm_sem:
-            return await _run_llm_analysis(src, fn, analysis)
-    for filename, analysis in per_file_results.items():
-        source = file_map.get(filename, "")
-        if source.strip() and analysis.get("summary", {}).get("total_issues", 0) == 0:
-            llm_tasks[filename] = asyncio.create_task(
-                _run_llm_bounded(filename, source, analysis)
-            )
-
-    if llm_tasks:
-        llm_results = await asyncio.gather(*llm_tasks.values())
-        for filename, llm_result in zip(llm_tasks.keys(), llm_results):
-            per_file_results[filename] = llm_result
+    # Phase 2: RAG-based cross-ref now handles both cross-file and intra-file
+    # detection via AST-based occurrence counting. The LLM phase is removed
+    # because (a) it was a source of 413/429 errors, (b) the intra-file AST
+    # check covers the common false-positive case (symbols defined and used
+    # within the same file), and (c) the user requires RAG-primary analysis.
 
     # Collect all chunk texts across all files for batched embedding
     all_chunk_batches = []  # list of (filename, source, analysis, chunks)
@@ -510,7 +495,7 @@ async def get_document_analysis(
         if IS_SQLITE:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found")
         result = await db.execute(
-            text("SELECT user_id, filename, language, analysis FROM rag_documents WHERE id = CAST(:id AS uuid)"),
+            text("SELECT user_id, filename, language, analysis, source FROM rag_documents WHERE id = CAST(:id AS uuid)"),
             {"id": document_id},
         )
         row = result.fetchone()
@@ -518,13 +503,14 @@ async def get_document_analysis(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
         if row[0] != user["user_id"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-        return {"document_id": document_id, "filename": row[1], "language": row[2], "analysis": row[3]}
+        return {"document_id": document_id, "filename": row[1], "language": row[2], "analysis": row[3], "_source_content": row[4] or ""}
 
     return {
         "document_id": doc["analysis_id"],
         "filename": doc["filename"],
         "language": doc["language"],
         "analysis": doc["analysis"],
+        "_source_content": doc.get("source", ""),
     }
 
 
@@ -605,6 +591,7 @@ async def rag_get_analysis(
         "filename": doc["filename"],
         "language": doc["language"],
         "analysis": doc["analysis"],
+        "source_content": doc.get("source", ""),
         "cached": True,
     }
 
