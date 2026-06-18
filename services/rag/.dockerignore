@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.env
+.env.example
+*.ps1
+test_*.py
+.git
+.gitignore
