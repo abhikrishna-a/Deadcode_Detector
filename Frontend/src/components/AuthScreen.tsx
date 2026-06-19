@@ -18,7 +18,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
   const [mfaCode, setMfaCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [mfaSecret, setMfaSecret] = useState('');
+
   const [mfaQRImage, setMfaQRImage] = useState('');
   const [preAuthToken, setPreAuthToken] = useState('');
   const [forgotEmail, setForgotEmail] = useState('');
@@ -57,7 +57,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
           setPreAuthToken(response.pre_auth_token);
           setMode(response.is_mfa_enabled ? 'mfa_verify' : 'mfa_setup');
         } else {
-          onSuccess();
+          setMode('mfa_setup');
         }
       } else if (mode === 'register') {
         if (!username || !email || !password) {
@@ -73,12 +73,17 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
           setPreAuthToken(loginResponse.pre_auth_token);
           setMode(loginResponse.is_mfa_enabled ? 'mfa_verify' : 'mfa_setup');
         } else {
-          onSuccess();
+          setMode('mfa_setup');
         }
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || 'Authentication failed';
-      showError(msg);
+      if (err?.response) {
+        const status = err?.response?.status || '';
+        const body = JSON.stringify(err?.response?.data || {});
+        showError(`[${status}] ${body}`);
+      } else {
+        showError(err?.message || 'Authentication failed');
+      }
     }
     setLoading(false);
   };
@@ -95,7 +100,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
 
     try {
       if (mode === 'mfa_setup') {
-        await authAPI.activateMFA({ token: mfaCode });
+        await authAPI.activateMFA({ token: mfaCode }, preAuthToken);
         onSuccess();
       } else {
         const response = await authAPI.verifyMFALogin({ token: mfaCode }, preAuthToken);
@@ -103,8 +108,13 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         onSuccess();
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || 'MFA verification failed';
-      showError(msg);
+      if (err?.response) {
+        const status = err?.response?.status || '';
+        const body = JSON.stringify(err?.response?.data || {});
+        showError(`[${status}] ${body}`);
+      } else {
+        showError(err?.message || 'MFA verification failed');
+      }
     }
     setLoading(false);
   };
@@ -112,12 +122,17 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
   const handleMfaSetup = async () => {
     setLoading(true);
     try {
-      const response = await authAPI.setupMFA();
-      setMfaSecret(JSON.parse(atob(response.qr_code_uri.split('?')[1].split('&').find(p => p.startsWith('secret='))?.split('=')[1] || '')).secret || '');
+      const response = await authAPI.setupMFA(preAuthToken);
       setMfaQRImage(response.qr_code_image);
       setMode('mfa_setup');
     } catch (err: any) {
-      showError('Failed to setup MFA. Please try again.');
+      if (err?.response) {
+        const status = err?.response?.status || '';
+        const body = JSON.stringify(err?.response?.data || {});
+        showError(`[${status}] ${body}`);
+      } else {
+        showError(err?.message || 'Failed to generate QR code');
+      }
     }
     setLoading(false);
   };
@@ -133,7 +148,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
       if (mode === 'forgot' && !resetSent) {
         await authAPI.requestPasswordReset(forgotEmail);
         setResetSent(true);
-        showError('Password reset link sent to your email.', 'info');
+        showError('Password reset link sent to your email.');
       } else if (resetToken && newPassword) {
         await authAPI.confirmPasswordReset(resetToken, newPassword);
         showError('Password reset successfully. Please login.', 'info');
@@ -143,8 +158,13 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         setNewPassword('');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || 'Password reset failed';
-      showError(msg);
+      if (err?.response) {
+        const status = err?.response?.status || '';
+        const body = JSON.stringify(err?.response?.data || {});
+        showError(`[${status}] ${body}`);
+      } else {
+        showError(err?.message || 'Password reset failed');
+      }
     }
     setLoading(false);
   };
@@ -379,30 +399,37 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
               </button>
             )}
 
-            {mfaSecret && (
-              <div className="bg-zinc-950/30 border border-white/[0.04] rounded-lg py-2 px-3 text-center">
-                <span className="text-[10px] text-zinc-500 font-mono tracking-widest block uppercase">Secret Key</span>
-                <span className="text-zinc-300 select-all font-mono font-bold text-xs">{mfaSecret}</span>
-              </div>
+            {mfaQRImage && (
+              <>
+                <div className="space-y-3">
+                  <input
+                    required
+                    type="text"
+                    maxLength={6}
+                    placeholder="6-digit code"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                    className="w-full py-2.5 text-center font-mono font-bold tracking-[0.4em] text-sm text-cyan-400 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:tracking-normal placeholder:text-zinc-600"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={loading || mfaCode.length !== 6}
+                    className="w-full py-2.5 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold text-xs rounded-xl hover:opacity-95 transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    {loading ? 'Verifying...' : 'Confirm & Activate'}
+                  </button>
+                </div>
+              </>
             )}
 
-            <div className="space-y-3">
-              <input
-                required
-                type="text"
-                maxLength={6}
-                placeholder="6-digit code"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                className="w-full py-2.5 text-center font-mono font-bold tracking-[0.4em] text-sm text-cyan-400 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:tracking-normal placeholder:text-zinc-600"
-              />
-
+            <div className="pt-4 text-center">
               <button
-                type="submit"
-                disabled={loading || mfaCode.length !== 6}
-                className="w-full py-2.5 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold text-xs rounded-xl hover:opacity-95 transition-all cursor-pointer disabled:opacity-40"
+                type="button"
+                onClick={() => setMode('login')}
+                className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer"
               >
-                {loading ? 'Verifying...' : 'Confirm & Activate'}
+                Back to Sign In
               </button>
             </div>
           </form>

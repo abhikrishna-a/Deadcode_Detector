@@ -15,20 +15,19 @@ import Toast from './components/ui/Toast';
 
 export default function App() {
   const { user, isAuthenticated, isLoading, checkSession, logout } = useAuthStore();
-  const [screen, setScreen] = useState<'landing' | 'auth' | 'dashboard'>(() => {
-    const token = document.cookie.includes('ghostcode_access=');
-    return token ? 'dashboard' : 'landing';
-  });
+  const [screen, setScreen] = useState<'landing' | 'auth' | 'dashboard'>('landing');
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [chatTarget, setChatTarget] = useState<{ docId: string; filename: string } | null>(null);
   const [viewTarget, setViewTarget] = useState<{ analysisId: string; filename: string; scanFolder?: string } | null>(null);
 
   useEffect(() => {
-    if (screen === 'dashboard' && !user) {
-      checkSession();
-    }
-  }, [screen]);
+    checkSession().then(() => {
+      if (useAuthStore.getState().user) {
+        setScreen('dashboard');
+      }
+    });
+  }, []);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
