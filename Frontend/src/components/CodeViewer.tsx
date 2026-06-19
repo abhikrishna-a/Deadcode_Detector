@@ -1,14 +1,26 @@
-import { memo, useState, useMemo } from 'react';
+import { memo, useState, useMemo, useRef, useEffect } from 'react';
 import { Issue } from '../types';
 
 interface CodeViewerProps {
   source: string;
   issues: Issue[];
   filename: string;
+  scrollToLine?: number;
+  onScrolled?: () => void;
 }
 
-const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeViewerProps) {
+const CodeViewer = memo(function CodeViewer({ source, issues, filename, scrollToLine, onScrolled }: CodeViewerProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!scrollToLine || !scrollRef.current) return;
+    const el = scrollRef.current.querySelector('[data-line-number="' + scrollToLine + '"]');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      onScrolled?.();
+    }
+  }, [scrollToLine, onScrolled]);
 
   // Group issues by line number for fast gutter checks
   const lineIssueMap = useMemo(() => {
@@ -46,7 +58,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeVi
         border: '1px solid rgba(255, 255, 255, 0.035)',
         boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.02)'
       }}
-      className="rounded-xl overflow-hidden font-mono text-xs flex flex-col min-h-0 flex-1"
+      className="rounded-xl overflow-hidden font-mono text-base flex flex-col min-h-0 flex-1"
     >
       {/* Code Header Tab bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.03] bg-zinc-950/40">
@@ -58,7 +70,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeVi
       </div>
 
       {/* Code viewport container */}
-      <div className="overflow-y-auto overflow-x-auto flex-1 p-3 space-y-px">
+      <div ref={scrollRef} className="overflow-y-auto flex-1 p-3 space-y-px max-h-[60vh]">
         {lines.map((codeText, index) => {
           const lineNum = index + 1;
           const listIssues = lineIssueMap[lineNum] || [];
@@ -86,19 +98,20 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename }: CodeVi
           return (
             <div
               key={lineNum}
+              data-line-number={lineNum}
               onMouseEnter={() => setHoveredLine(lineNum)}
               onMouseLeave={() => setHoveredLine(null)}
-              className={`flex items-center h-5 w-full transition-all group duration-100 ${lineBg}`}
+              className={`flex items-center h-6 w-full transition-all group duration-100 ${lineBg}`}
             >
               {/* Line Gutter counter */}
               <div 
-                className={`w-9 text-right pr-2.5 select-none font-mono text-[10px] border-r-2 text-neutral-600 ${gutterBorder}`}
+                className={`w-12 text-right pr-3 select-none font-mono text-[10px] border-r-2 text-neutral-600 ${gutterBorder}`}
               >
                 {lineNum}
               </div>
 
               {/* Code content statement */}
-              <div className={`flex-1 pl-3 font-mono whitespace-pre ${textColor}`}>
+              <div className={`flex-1 pl-4 font-mono whitespace-pre-wrap break-words ${textColor}`}>
                 {codeText || ' '}
               </div>
 

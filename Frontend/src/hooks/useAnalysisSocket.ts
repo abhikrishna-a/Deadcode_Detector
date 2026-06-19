@@ -1,22 +1,23 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { createAnalysisSocket, AnalysisSocketCallbacks } from '../api/ws';
+import { createAnalysisSocket, AnalysisSocketCallbacks, ReconnectingWebSocket } from '../api/ws';
 
 export function useAnalysisSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<ReconnectingWebSocket | null>(null);
 
   const connect = useCallback((batchId: string, callbacks: AnalysisSocketCallbacks) => {
-    wsRef.current?.close();
-    wsRef.current = createAnalysisSocket(batchId, {
+    wsRef.current?.disconnect();
+    const result = createAnalysisSocket(batchId, {
       ...callbacks,
       onClose: () => {
         wsRef.current = null;
         callbacks.onClose?.();
       },
     });
+    wsRef.current = result;
   }, []);
 
   const disconnect = useCallback(() => {
-    wsRef.current?.close();
+    wsRef.current?.disconnect();
     wsRef.current = null;
   }, []);
 

@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AnalysisResult } from './types';
 import { useAuthStore } from './store/authStore';
+import { useAnalysisStore } from './store/analysisStore';
+import { analysisAPI } from './api/analysis';
+import type { AnalysisResult } from './types';
 import LandingPage from './components/LandingPage';
 import AuthScreen from './components/AuthScreen';
 import DashboardShell from './components/DashboardShell';
@@ -15,11 +17,13 @@ import Toast from './components/ui/Toast';
 
 export default function App() {
   const { user, isAuthenticated, isLoading, checkSession, logout } = useAuthStore();
+  const history = useAnalysisStore(s => s.history);
+  const chatTarget = useAnalysisStore(s => s.chatTarget);
+  const setViewTarget = useAnalysisStore(s => s.setViewTarget);
+  const setChatTarget = useAnalysisStore(s => s.setChatTarget);
+  const resetWorkspace = useAnalysisStore(s => s.resetWorkspace);
   const [screen, setScreen] = useState<'landing' | 'auth' | 'dashboard'>('landing');
-  const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [chatTarget, setChatTarget] = useState<{ docId: string; filename: string } | null>(null);
-  const [viewTarget, setViewTarget] = useState<{ analysisId: string; filename: string; scanFolder?: string } | null>(null);
 
   useEffect(() => {
     checkSession().then(() => {
@@ -44,24 +48,47 @@ export default function App() {
 
   const handleLogout = async () => {
     await logout();
-    setScreen('landing');
-    setChatTarget(null);
     setViewTarget(null);
+    setChatTarget(null);
+    resetWorkspace();
+    setScreen('landing');
     showToast('Session disconnected successfully.', 'info');
   };
-
-  const addHistoryReport = useCallback((report: AnalysisResult) => {
-    setHistory(prev => {
-      const exists = prev.some(r => r.document_id === report.document_id);
-      if (exists) return prev;
-      return [report, ...prev];
-    });
-  }, []);
 
   const handleNavigateToWorkspace = useCallback((analysisId: string, filename: string, scanFolder?: string, onNavigate?: (tab: string) => void) => {
     setViewTarget({ analysisId, filename, scanFolder });
     onNavigate?.('analyzer');
-  }, []);
+  }, [setViewTarget]);
+
+  // Hydrate history from backend once dashboard is active
+  useEffect(() => {
+    if (screen !== 'dashboard') return;
+    (async () => {
+      try {
+        const { data } = await analysisAPI.ragHistory(50);
+        const store = useAnalysisStore.getState();
+        for (const item of data.items) {
+          store.addHistoryReport({
+            document_id: item.analysis_id,
+            filename: item.filename,
+            summary: {
+              total_issues: item.total_issues || 0,
+              severity_counts: { high: 0, medium: 0, low: 0 },
+              categories: {},
+              overall_health: (item.total_issues || 0) === 0 ? 'clean' : 'needs_attention',
+              health_score: item.health_score ?? 100,
+            },
+            issues: [],
+            metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
+            scan_folder: item.scan_folder,
+            scan_type: item.scan_type || 'single',
+          } as AnalysisResult);
+        }
+      } catch {
+        // Silent — history stays as persisted
+      }
+    })();
+  }, [screen]);
 
   const currentUser = user || undefined;
 
@@ -170,14 +197,10 @@ export default function App() {
                   <div className="flex-1 min-h-0 flex flex-col" style={{ display: activeTab === 'analyzer' ? '' : 'none' }}>
                     <AnalyzerTab
                       key="analyzer"
-                      history={history}
-                      onAddResult={addHistoryReport}
                       onNavigateToChat={(docId, filename) => {
                         setChatTarget({ docId, filename });
                         onNavigate('chat');
                       }}
-                      viewTarget={viewTarget}
-                      onClearViewTarget={() => setViewTarget(null)}
                       isActive={activeTab === 'analyzer'}
                     />
                   </div>

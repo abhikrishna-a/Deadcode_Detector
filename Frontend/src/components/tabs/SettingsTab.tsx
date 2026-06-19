@@ -26,8 +26,8 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
       const result = await authAPI.setupMFA();
       setMfaQr(result.qr_code_image);
       setMfaQrUri(result.qr_code_uri);
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to setup MFA', 'error');
+    } catch {
+      onShowToast('Unable to start MFA setup. Please try again.', 'error');
     } finally {
       setMfaLoading(false);
     }
@@ -42,8 +42,8 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
       setMfaQr(null);
       setMfaQrUri(null);
       setMfaToken('');
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to activate MFA', 'error');
+    } catch {
+      onShowToast('Unable to activate MFA. Check your code and try again.', 'error');
     } finally {
       setMfaActivating(false);
     }
@@ -65,8 +65,8 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
       await authAPI.requestPasswordReset(resetEmail.trim());
       onShowToast('Password reset email sent if account exists', 'success');
       setResetEmail('');
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to send reset email', 'error');
+    } catch {
+      onShowToast('Unable to send reset email. Verify your email address.', 'error');
     } finally {
       setResetSending(false);
     }

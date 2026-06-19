@@ -35,13 +35,17 @@ export const authAPI = {
     return response.data;
   },
 
-  setupMFA: async (): Promise<MFASetupResponse> => {
-    const response = await apiClient.post('/api/auth/mfa/setup/');
+  setupMFA: async (preAuthToken?: string): Promise<MFASetupResponse> => {
+    const response = await apiClient.post('/api/auth/mfa/setup/', null, {
+      headers: preAuthToken ? { Authorization: `Bearer ${preAuthToken}` } : undefined,
+    });
     return response.data;
   },
 
-  activateMFA: async (data: MFAActivateRequest): Promise<MFAActivateResponse> => {
-    const response = await apiClient.post('/api/auth/mfa/activate/', data);
+  activateMFA: async (data: MFAActivateRequest, preAuthToken?: string): Promise<MFAActivateResponse> => {
+    const response = await apiClient.post('/api/auth/mfa/activate/', data, {
+      headers: preAuthToken ? { Authorization: `Bearer ${preAuthToken}` } : undefined,
+    });
     return response.data;
   },
 

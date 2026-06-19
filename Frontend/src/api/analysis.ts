@@ -199,7 +199,7 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Poll batch analysis results (replaces WebSocket for Redis 3.0 compatibility)
+  // Fallback: poll batch results via REST (used when WebSocket disconnects)
   pollBatchResults: async (batchId: string): Promise<{
     total: number;
     done: number;

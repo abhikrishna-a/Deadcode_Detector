@@ -214,13 +214,13 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
           return list;
         });
       }
-    } catch (err: any) {
+    } catch {
       setMessages(prev => {
         const list = [...prev];
         if (list.length > 0) {
           list[list.length - 1] = {
             role: 'assistant',
-            content: `Error: ${err?.message || 'Failed to get response from analysis engine.'}`
+            content: 'The analysis engine could not process your request. Please try again.'
           };
         }
         return list;

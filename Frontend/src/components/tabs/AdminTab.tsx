@@ -25,8 +25,8 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
     try {
       const data = await authAPI.getAdminUsers();
       setUsers(data);
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to load users', 'error');
+    } catch {
+      onShowToast('Unable to load user list. Refresh the page and try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -55,8 +55,8 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
       const updated = await authAPI.updateUserRole(userId, nextRole as 'admin' | 'viewer');
       setUsers(prev => prev.map(u => u.id === userId ? updated : u));
       onShowToast(`User "${updated.username}" is now ${updated.role.toUpperCase()}`, 'success');
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to update role', 'error');
+    } catch {
+      onShowToast('Unable to update role. Please try again.', 'error');
     } finally {
       setTogglingId(null);
     }
@@ -87,7 +87,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
         </span>
         <input
           type="text"
-          placeholder="Filter accounts by name or email identity..."
+          placeholder="Search by name or email..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-300 bg-zinc-950/40 border border-white/[0.06] focus:border-violet-500/60 rounded-xl outline-none transition-all placeholder:text-zinc-650"

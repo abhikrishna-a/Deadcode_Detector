@@ -217,8 +217,8 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     try {
       const result = await analysisAPI.ragHistory(MAX_ITEMS, 0, currentSearch);
       setItems(result.items);
-    } catch (err: any) {
-      onShowToast(err?.message || 'Failed to load history', 'error');
+    } catch {
+      onShowToast('Unable to load history. Refresh the page and try again.', 'error');
     } finally {
       setLoading(false);
     }

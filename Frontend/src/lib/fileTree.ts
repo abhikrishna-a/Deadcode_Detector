@@ -20,6 +20,7 @@ export function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
       const isLast = i === parts.length - 1;
 
       if (isLast) {
+        if (current.some(n => !n.isDir && n.name === part)) continue;
         current.push({
           name: part,
           isDir: false,

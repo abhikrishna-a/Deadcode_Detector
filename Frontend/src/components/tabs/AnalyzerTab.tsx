@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Upload, FileCode, Folder, GitBranch, Play, StopCircle,
@@ -11,6 +12,7 @@ import { GitManifest } from '../../api/types';
 import { analysisAPI } from '../../api/analysis';
 import { useAnalysisSocket } from '../../hooks/useAnalysisSocket';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+import { useAnalysisStore } from '../../store/analysisStore';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
@@ -37,11 +39,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 interface AnalyzerTabProps {
   key?: string;
-  history: AnalysisResult[];
-  onAddResult: (res: AnalysisResult) => void;
   onNavigateToChat: (docId: string, filename: string) => void;
-  viewTarget?: { analysisId: string; filename: string; scanFolder?: string } | null;
-  onClearViewTarget?: () => void;
   isActive?: boolean;
 }
 
@@ -197,14 +195,12 @@ function TreeNode({
   );
 }
 
-export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, viewTarget, onClearViewTarget, isActive = true }: AnalyzerTabProps) {
-  const [view, setView] = useState<'upload' | 'batch_progress' | 'workspace'>('upload');
-  const [historyMode, setHistoryMode] = useState(false);
+export default function AnalyzerTab({ onNavigateToChat, isActive = true }: AnalyzerTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [gitModalOpen, setGitModalOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
-  const [gitBranch, setGitBranch] = useState('main');
+  const [branch, setBranch] = useState('main');
   const [progressFiles, setProgressFiles] = useState<string[]>([]);
   const [filesTotalCount, setFilesTotalCount] = useState(0);
   const [scannedDoneCount, setScannedDoneCount] = useState(0);
@@ -212,19 +208,61 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
   const [activeFileName, setActiveFileName] = useState('');
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [batchActive, setBatchActive] = useState(false);
-  const [batchReportsList, setBatchReportsList] = useState<AnalysisResult[]>([]);
   const [batchErrorsList, setBatchErrorsList] = useState<Array<{ path: string; error: string }>>([]);
-  const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [currentFolderName, setCurrentFolderName] = useState<string>('');
-  const [issueFilter, setIssueFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-  const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [folderProcessing, setFolderProcessing] = useState(false);
+  const [pendingFolderName, setPendingFolderName] = useState('');
+  const [pendingFileCount, setPendingFileCount] = useState(0);
+  const [pendingSubdirs, setPendingSubdirs] = useState<string[]>([]);
+  const [scanScope, setScanScope] = useState<'full' | 'subdir'>('full');
+  const [selectedSubdir, setSelectedSubdir] = useState('');
+  const pendingFilesRef = useRef<File[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const connectionActiveRef = useRef(false);
   const analysisSocket = useAnalysisSocket();
   const pollRef = useRef<number | null>(null);
+  const scannedDoneCountRef = useRef(0);
+  const scannedFailCountRef = useRef(0);
+  const batchActiveRef = useRef(false);
+  const autoEnterTimeoutRef = useRef<number | null>(null);
+
+  const {
+    view, setView,
+    historyMode, setHistoryMode,
+    batchReportsList, setBatchReportsList,
+    selectedFile, setSelectedFile,
+    selectedFolder, setSelectedFolder,
+    expandedFolders, setExpandedFolders,
+    currentFolderName, setCurrentFolderName,
+    issueFilter, setIssueFilter,
+    expandedIssueId, setExpandedIssueId,
+    viewTarget, setViewTarget,
+    addHistoryReport,
+    toggleFolder,
+  } = useAnalysisStore(useShallow(s => ({
+    view: s.view,
+    setView: s.setView,
+    historyMode: s.historyMode,
+    setHistoryMode: s.setHistoryMode,
+    batchReportsList: s.batchReportsList,
+    setBatchReportsList: s.setBatchReportsList,
+    selectedFile: s.selectedFile,
+    setSelectedFile: s.setSelectedFile,
+    selectedFolder: s.selectedFolder,
+    setSelectedFolder: s.setSelectedFolder,
+    expandedFolders: s.expandedFolders,
+    setExpandedFolders: s.setExpandedFolders,
+    currentFolderName: s.currentFolderName,
+    setCurrentFolderName: s.setCurrentFolderName,
+    issueFilter: s.issueFilter,
+    setIssueFilter: s.setIssueFilter,
+    expandedIssueId: s.expandedIssueId,
+    setExpandedIssueId: s.setExpandedIssueId,
+    viewTarget: s.viewTarget,
+    setViewTarget: s.setViewTarget,
+    addHistoryReport: s.addHistoryReport,
+    toggleFolder: s.toggleFolder,
+  })));
 
   useEffect(() => {
     if (batchActive) {
@@ -233,6 +271,78 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       return () => clearInterval(timer);
     }
   }, [batchActive]);
+
+  // Cleanup on unmount — prevent false polling fallback
+  useEffect(() => {
+    return () => {
+      batchActiveRef.current = false;
+      analysisSocket.disconnect();
+      if (autoEnterTimeoutRef.current !== null) {
+        clearTimeout(autoEnterTimeoutRef.current);
+        autoEnterTimeoutRef.current = null;
+      }
+      if (pollRef.current !== null) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
+
+  // Fallback polling (used when WebSocket disconnects mid-scan)
+  const startPollingFallback = (batchId: string) => {
+    const seenFiles = new Set<string>();
+    const fallbackPoll = async () => {
+      if (abortRef.current?.signal.aborted || !batchActiveRef.current) return;
+      try {
+        const data = await analysisAPI.pollBatchResults(batchId);
+        setFilesTotalCount(data.total);
+        for (const f of data.files || []) {
+          if (seenFiles.has(f.filename) || !batchActiveRef.current) continue;
+          seenFiles.add(f.filename);
+          if (f.status === 'completed' && f.analysis) {
+            setActiveFileName(f.filename);
+            setProgressFiles(prev => [f.filename, ...prev]);
+            const report = mapToAnalysisResult(f, f.filename);
+            report._source_content = f.source_content || '';
+            addHistoryReport(report);
+            setBatchReportsList(prev => {
+              const idx = prev.findIndex(r => r.filename === f.filename);
+              if (idx >= 0) { const next = [...prev]; next[idx] = report; return next; }
+              return [...prev, report];
+            });
+            scannedDoneCountRef.current += 1;
+            setScannedDoneCount(p => p + 1);
+          } else if (f.status === 'error') {
+            setBatchErrorsList(prev => [...prev, { path: f.filename, error: f.error || 'Unknown error' }]);
+            scannedFailCountRef.current += 1;
+            setScannedFailCount(p => p + 1);
+          }
+        }
+        if (data.is_complete) {
+          setBatchActive(false);
+          batchActiveRef.current = false;
+          setActiveFileName('');
+          if (pollRef.current !== null) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          if (scannedDoneCountRef.current > 0) {
+            autoEnterTimeoutRef.current = setTimeout(() => {
+              autoEnterTimeoutRef.current = null;
+              setView('workspace');
+              setSelectedFolder(currentFolderName);
+              setSelectedFile(null);
+              setHistoryMode(true);
+            }, 1500);
+          }
+        }
+      } catch {
+        // will retry on next interval
+      }
+    };
+    fallbackPoll();
+    pollRef.current = window.setInterval(fallbackPoll, 1500);
+  };
 
   useEffect(() => {
     if (!viewTarget || !isActive) return;
@@ -260,7 +370,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       } catch (err: any) {
         console.error('Failed to load analysis from history:', err);
       } finally {
-        onClearViewTarget?.();
+        setViewTarget(null);
       }
     })();
   }, [viewTarget, isActive]);
@@ -290,6 +400,30 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       return needsUpdate ? next : prev;
     });
   }, [selectedFile, currentFolderName]);
+
+  // Re-fetch _source_content after store hydration (stripped by partialize)
+  const fetchedSourceRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!selectedFile || !selectedFile.document_id || selectedFile._source_content) return;
+    const docId = selectedFile.document_id;
+    if (fetchedSourceRef.current.has(docId)) return;
+    fetchedSourceRef.current.add(docId);
+    (async () => {
+      try {
+        const data = await analysisAPI.ragGetAnalysis(docId);
+        if (data._source_content) {
+          const updated = { ...selectedFile, _source_content: data._source_content };
+          setSelectedFile(updated);
+          setBatchReportsList(prev =>
+            prev.map(r => r.document_id === docId ? updated : r)
+          );
+        }
+      } catch (err) {
+        console.error('Failed to re-fetch source content:', err);
+      }
+    })();
+  }, [selectedFile?.document_id]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -329,21 +463,19 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       const result = await analysisAPI.analyzeFile(file);
       const report = mapToAnalysisResult(result, file.name);
       report._source_content = await file.text();
-      onAddResult(report);
+      addHistoryReport(report);
       setBatchReportsList([report]);
       setScannedDoneCount(1);
       setActiveFileName('');
       setSelectedFile(report);
       setView('workspace');
       setHistoryMode(false);
-    } catch (err: any) {
-      setBatchErrorsList(prev => [...prev, { path: file.name, error: err.message }]);
+    } catch {
+        setBatchErrorsList(prev => [...prev, { path: file.name, error: 'Unable to analyze file. It may be unsupported or corrupted.' }]);
       setScannedFailCount(1);
     }
     setBatchActive(false);
   };
-
-  const POLL_INTERVAL = 2000;
 
   const analyzeGitRepo = async () => {
     if (!gitUrl) return;
@@ -360,10 +492,10 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
     let manifest: GitManifest | null = null;
 
     try {
-      manifest = await analysisAPI.gitClone(gitUrl, gitBranch);
+      manifest = await analysisAPI.gitClone(gitUrl, branch);
       if (manifest) setCurrentFolderName(manifest.repo_name);
-    } catch (err: any) {
-      setBatchErrorsList(prev => [{ path: gitUrl, error: err.message }]);
+    } catch {
+      setBatchErrorsList(prev => [{ path: gitUrl, error: 'Unable to clone repository. Check the URL and try again.' }]);
       setScannedFailCount(1);
       setBatchActive(false);
       setActiveFileName('');
@@ -410,204 +542,222 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
 
     try {
       const { batch_id } = await analysisAPI.submitBatchAnalysis(files, manifest.repo_name, 'repo');
-      connectionActiveRef.current = true;
+      scannedDoneCountRef.current = 0;
+      scannedFailCountRef.current = 0;
+      batchActiveRef.current = true;
 
-      // Poll for batch results (same pattern as handleOpenFolder)
-      const seenFiles = new Set<string>();
-      const poll = async () => {
-        try {
-          const data = await analysisAPI.pollBatchResults(batch_id);
+      analysisSocket.connect(batch_id, {
+        onProgress: (done, total, currentFile) => {
           if (abortRef.current?.signal.aborted) return;
-          setFilesTotalCount(data.total);
-
-          for (const f of data.files || []) {
-            if (seenFiles.has(f.filename)) continue;
-            seenFiles.add(f.filename);
-
-            if (f.status === 'completed' && f.analysis) {
-              setActiveFileName(f.filename);
-              setProgressFiles(prev => [f.filename, ...prev.slice(0, 10)]);
-              const report = mapToAnalysisResult(f, f.filename);
-              report._source_content = f.source_content || fileContents[f.filename] || '';
-              onAddResult(report);
-              setBatchReportsList(prev => {
-                if (prev.some(r => r.filename === f.filename)) return prev;
-                return [...prev, report];
-              });
-              setScannedDoneCount(prev => prev + 1);
-            } else if (f.status === 'error') {
-              setBatchErrorsList(prev => [...prev, { path: f.filename, error: f.error || 'Unknown error' }]);
-              setScannedFailCount(prev => prev + 1);
+          setFilesTotalCount(total);
+          setActiveFileName(currentFile);
+        },
+        onFileComplete: (msg) => {
+          if (abortRef.current?.signal.aborted) return;
+          setActiveFileName(msg.filename);
+          setProgressFiles(prev => [msg.filename, ...prev]);
+          const report = mapToAnalysisResult(
+            { ...msg.analysis, document_id: msg.document_id, scan_folder: msg.scan_folder || '', scan_type: msg.scan_type || 'single' }, msg.filename,
+          );
+          report._source_content = msg.source_content || fileContents[msg.filename] || '';
+          addHistoryReport(report);
+          setBatchReportsList(prev => {
+            const idx = prev.findIndex(r => r.filename === msg.filename);
+            if (idx >= 0) { const next = [...prev]; next[idx] = report; return next; }
+            return [...prev, report];
+          });
+          scannedDoneCountRef.current += 1;
+          setScannedDoneCount(p => p + 1);
+        },
+        onFileError: (filename, error) => {
+          if (abortRef.current?.signal.aborted) return;
+          setBatchErrorsList(prev => [...prev, { path: filename, error }]);
+          scannedFailCountRef.current += 1;
+          setScannedFailCount(p => p + 1);
+        },
+        onBatchComplete: () => {
+          if (autoEnterTimeoutRef.current !== null) return;
+          setBatchActive(false);
+          batchActiveRef.current = false;
+          setActiveFileName('');
+          autoEnterTimeoutRef.current = setTimeout(() => {
+            autoEnterTimeoutRef.current = null;
+            if (scannedDoneCountRef.current > 0) {
+              setView('workspace');
+              setSelectedFolder(currentFolderName);
+              setSelectedFile(null);
+              setHistoryMode(true);
             }
+          }, 1500);
+        },
+        onClose: () => {
+          if (batchActiveRef.current) {
+            startPollingFallback(batch_id);
           }
-
-          if (data.is_complete) {
-            setBatchActive(false);
-            setActiveFileName('');
-            connectionActiveRef.current = false;
-            if (pollRef.current !== null) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
-            }
-          }
-        } catch (err) {
-          console.error('Poll error:', err);
-        }
-      };
-
-      poll();
-      pollRef.current = window.setInterval(poll, 1500);
+        },
+        onError: (err) => console.error('WS error:', err),
+      });
     } catch {
-      // Fallback: sequential analysis
-      connectionActiveRef.current = true;
-      for (const file of manifest.files) {
-        const content = fileContents[file.path];
-        if (!content) continue;
-        if (abortRef.current?.signal.aborted) break;
-        setActiveFileName(file.path);
-        setProgressFiles(prev => [file.path, ...prev.slice(0, 10)]);
-        try {
-          const fakeFile = new File([content], file.path);
-          const result = await analysisAPI.analyzeFile(fakeFile, manifest.repo_name, 'repo');
-          const report = mapToAnalysisResult(result, file.path);
-          report._source_content = content;
-          onAddResult(report);
-          setBatchReportsList(prev => [...prev, report]);
-          setScannedDoneCount(prev => prev + 1);
-        } catch (err: any) {
-          setBatchErrorsList(prev => [...prev, { path: file.path, error: err.message }]);
-          setScannedFailCount(prev => prev + 1);
-        }
-      }
+      setBatchErrorsList(prev => [{ path: gitUrl, error: 'Unable to submit batch for analysis. Please try again.' }]);
       setBatchActive(false);
-      setActiveFileName('');
-      connectionActiveRef.current = false;
+      batchActiveRef.current = false;
     }
   };
 
-  const handleOpenWorkspace = () => {
-    const valid = batchReportsList.filter(r => r.summary);
-    if (valid.length > 0) setSelectedFile(valid[0]);
-    setSelectedFolder(null);
-    setView('workspace');
-    setHistoryMode(false);
-  };
-
-  const handleOpenFolder = async () => {
+  const handleOpenFolder = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.webkitdirectory = true;
-    input.onchange = async (e) => {
+    input.onchange = (e) => {
       const allFiles = Array.from((e.target as HTMLInputElement).files || []);
       if (allFiles.length === 0) return;
 
-      const files = allFiles.filter(f => {
-        const path = f.webkitRelativePath || f.name;
-        if (shouldSkipPath(path)) return false;
-        if (f.size > MAX_FILE_BYTES) return false;
-        const ext = '.' + f.name.split('.').pop()?.toLowerCase();
-        return SUPPORTED_EXTENSIONS.has(ext);
-      });
-
-      // Extract the selected folder name from webkitRelativePath (first segment on Windows)
+      // Extract folder name and show modal immediately (no computation)
       const samplePath = allFiles[0]?.webkitRelativePath || '';
       const folderName = samplePath.includes('\\') || samplePath.includes('/')
         ? samplePath.replace(/\\/g, '/').split('/')[0]
         : `Folder ${new Date().toISOString().slice(0, 10)}`;
-      setCurrentFolderName(folderName);
 
-      setView('batch_progress');
-      setBatchActive(true);
-      setScannedDoneCount(0);
-      setScannedFailCount(0);
-      setFilesTotalCount(files.length);
-      setActiveFileName('');
-      setBatchReportsList([]);
-      setBatchErrorsList([]);
+      setPendingFolderName(folderName);
+      setPendingFileCount(allFiles.length);
+      setPendingSubdirs([]);
+      setFolderProcessing(true);
+      setFolderModalOpen(true);
 
-      try {
-        const { batch_id } = await analysisAPI.submitBatchAnalysis(files, folderName);
-        connectionActiveRef.current = true;
+      // Defer filtering so the browser paints the modal first
+      setTimeout(() => {
+        const subdirSet = new Set<string>();
+        const files: File[] = [];
 
-        // Poll for batch results (avoids channels_redis BZPOPMIN with Redis 3.0)
-        const seenFiles = new Set<string>();
-        const poll = async () => {
-          try {
-            const data = await analysisAPI.pollBatchResults(batch_id);
-            if (abortRef.current?.signal.aborted) return;
-            setFilesTotalCount(data.total);
+        for (const f of allFiles) {
+          const path = f.webkitRelativePath || f.name;
+          if (shouldSkipPath(path)) continue;
+          if (f.size > MAX_FILE_BYTES) continue;
+          const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+          if (!SUPPORTED_EXTENSIONS.has(ext)) continue;
 
-            for (const f of data.files || []) {
-              if (seenFiles.has(f.filename)) continue;
-              seenFiles.add(f.filename);
+          files.push(f);
 
-              if (f.status === 'completed' && f.analysis) {
-                setActiveFileName(f.filename);
-                setProgressFiles(prev => [f.filename, ...prev.slice(0, 10)]);
-                const report = mapToAnalysisResult(f, f.filename);
-                report._source_content = f.source_content || '';
-                onAddResult(report);
-                setBatchReportsList(prev => {
-                  if (prev.some(r => r.filename === f.filename)) return prev;
-                  return [...prev, report];
-                });
-                setScannedDoneCount(prev => prev + 1);
-              } else if (f.status === 'error') {
-                setBatchErrorsList(prev => [...prev, { path: f.filename, error: f.error || 'Unknown error' }]);
-                setScannedFailCount(prev => prev + 1);
-              }
-            }
-
-            if (data.is_complete) {
-              setBatchActive(false);
-              setActiveFileName('');
-              connectionActiveRef.current = false;
-              if (pollRef.current !== null) {
-                clearInterval(pollRef.current);
-                pollRef.current = null;
-              }
-            }
-          } catch (err) {
-            console.error('Poll error:', err);
-          }
-        };
-
-        poll();
-        pollRef.current = window.setInterval(poll, 1500);
-      } catch {
-        // Fallback: synchronous sequential analysis if async endpoint unavailable
-        connectionActiveRef.current = true;
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          if (abortRef.current?.signal.aborted) break;
-          setActiveFileName(file.webkitRelativePath || file.name);
-          setProgressFiles(prev => [(file.webkitRelativePath || file.name), ...prev.slice(0, 10)]);
-
-          try {
-            const result = await analysisAPI.analyzeFile(file, folderName, 'folder');
-            const report = mapToAnalysisResult(result, file.webkitRelativePath || file.name);
-            report._source_content = await file.text();
-            onAddResult(report);
-            setBatchReportsList(prev => [...prev, report]);
-            setScannedDoneCount(prev => prev + 1);
-          } catch (err: any) {
-            setBatchErrorsList(prev => [...prev, { path: file.webkitRelativePath || file.name, error: err.message }]);
-            setScannedFailCount(prev => prev + 1);
-          }
+          const parts = path.replace(/\\/g, '/').split('/');
+          if (parts.length >= 2) subdirSet.add(parts[1]);
         }
-        setBatchActive(false);
-        setActiveFileName('');
-        connectionActiveRef.current = false;
-      }
+
+        const subdirs = Array.from(subdirSet).filter(s => !SKIP_DIRS.has(s)).sort();
+
+        pendingFilesRef.current = files;
+        setPendingFileCount(files.length);
+        setPendingSubdirs(subdirs);
+        setFolderProcessing(false);
+      }, 0);
+
+      setScanScope('full');
+      setSelectedSubdir('');
     };
     input.click();
+  };
+
+  const confirmFolderScan = async () => {
+    const files = pendingFilesRef.current;
+    if (files.length === 0) return;
+    const folderName = pendingFolderName;
+
+    // Filter to selected subdirectory if scope is subdir
+    let scanFiles = files;
+    let scanName = folderName;
+    if (scanScope === 'subdir' && selectedSubdir) {
+      const prefix = folderName + '/' + selectedSubdir;
+      scanFiles = files.filter(f => {
+        const path = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+        return path.startsWith(prefix);
+      });
+      scanName = prefix;
+    }
+
+    setFolderModalOpen(false);
+    setCurrentFolderName(scanName);
+
+    setView('batch_progress');
+    setBatchActive(true);
+    setScannedDoneCount(0);
+    setScannedFailCount(0);
+    setFilesTotalCount(scanFiles.length);
+    setActiveFileName('');
+    setBatchReportsList([]);
+    setBatchErrorsList([]);
+
+    try {
+      const { batch_id } = await analysisAPI.submitBatchAnalysis(scanFiles, scanName);
+      scannedDoneCountRef.current = 0;
+      scannedFailCountRef.current = 0;
+      batchActiveRef.current = true;
+
+      analysisSocket.connect(batch_id, {
+        onProgress: (done, total, currentFile) => {
+          if (abortRef.current?.signal.aborted) return;
+          setFilesTotalCount(total);
+          setActiveFileName(currentFile);
+        },
+        onFileComplete: (msg) => {
+          if (abortRef.current?.signal.aborted) return;
+          setActiveFileName(msg.filename);
+          setProgressFiles(prev => [msg.filename, ...prev]);
+          const report = mapToAnalysisResult(
+            { ...msg.analysis, document_id: msg.document_id, scan_folder: msg.scan_folder || '', scan_type: msg.scan_type || 'single' }, msg.filename,
+          );
+          report._source_content = msg.source_content || '';
+          addHistoryReport(report);
+          setBatchReportsList(prev => {
+            const idx = prev.findIndex(r => r.filename === msg.filename);
+            if (idx >= 0) { const next = [...prev]; next[idx] = report; return next; }
+            return [...prev, report];
+          });
+          scannedDoneCountRef.current += 1;
+          setScannedDoneCount(p => p + 1);
+        },
+        onFileError: (filename, error) => {
+          if (abortRef.current?.signal.aborted) return;
+          setBatchErrorsList(prev => [...prev, { path: filename, error }]);
+          scannedFailCountRef.current += 1;
+          setScannedFailCount(p => p + 1);
+        },
+        onBatchComplete: () => {
+          if (autoEnterTimeoutRef.current !== null) return;
+          setBatchActive(false);
+          batchActiveRef.current = false;
+          setActiveFileName('');
+          autoEnterTimeoutRef.current = setTimeout(() => {
+            autoEnterTimeoutRef.current = null;
+            if (scannedDoneCountRef.current > 0) {
+              setView('workspace');
+              setSelectedFolder(currentFolderName);
+              setSelectedFile(null);
+              setHistoryMode(true);
+            }
+          }, 1500);
+        },
+        onClose: () => {
+          if (batchActiveRef.current) {
+            startPollingFallback(batch_id);
+          }
+        },
+        onError: (err) => console.error('WS error:', err),
+      });
+    } catch {
+      setBatchErrorsList(prev => [{ path: folderName, error: 'Unable to submit batch for analysis. Please try again.' }]);
+      setBatchActive(false);
+      batchActiveRef.current = false;
+    }
   };
 
   const cancelBatchProcess = () => {
     abortRef.current?.abort();
     analysisSocket.disconnect();
-    connectionActiveRef.current = false;
+    batchActiveRef.current = false;
     setBatchActive(false);
+    if (autoEnterTimeoutRef.current !== null) {
+      clearTimeout(autoEnterTimeoutRef.current);
+      autoEnterTimeoutRef.current = null;
+    }
     if (pollRef.current !== null) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -639,13 +789,6 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       : items;
     return buildFileTree(processed);
   }, [batchReportsList, batchErrorsList, currentFolderName]);
-
-  const toggleFolder = (path: string, depth: number = 0) => {
-    setExpandedFolders(prev => ({
-      ...prev,
-      [path]: prev[path] === undefined ? true : !prev[path],
-    }));
-  };
 
   const RESULTS_CATEGORIES = [
     { key: 'unused_import', label: 'Unused Imports', color: '#8b5cf6' },
@@ -817,9 +960,6 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
               Import from GitHub
             </button>
           </div>
-          <p className="text-[10px] text-zinc-600 font-mono text-center -mt-2">
-            The folder picker shows folders only — all files inside will be scanned
-          </p>
 
           <div className="p-4 border border-cyan-400/10 bg-cyan-450/5 rounded-2xl flex gap-3 text-left">
             <HelpCircle size={15} className="text-cyan-400 flex-shrink-0 mt-0.5" />
@@ -876,19 +1016,12 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                 {batchActive && activeFileName ? `Current: ${activeFileName}` : 'Complete.'}
               </span>
 
-              {batchActive ? (
+              {batchActive && (
                 <button
                   onClick={cancelBatchProcess}
                   className="px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-wider font-bold rounded-lg border border-rose-500/20 text-rose-450 hover:bg-rose-500/5 transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <StopCircle size={12} /> Cancel
-                </button>
-              ) : scannedDoneCount > 0 && (
-                <button
-                  onClick={handleOpenWorkspace}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-zinc-900 border border-cyan-400/20 text-cyan-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  Open Workspace <ArrowRight size={13} />
                 </button>
               )}
             </div>
@@ -921,7 +1054,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       {view === 'workspace' && (
         <div className={`flex-1 min-h-0 grid grid-cols-1 gap-6 text-left ${
           allProjectIssues.length > 0
-            ? 'lg:grid-cols-[280px_minmax(0,1fr)_240px]'
+            ? 'lg:grid-cols-[240px_minmax(0,1fr)_200px]'
             : 'lg:grid-cols-[320px_minmax(0,1fr)]'
         }`}>
           <div className="rounded-3xl glass-card p-5 overflow-y-auto max-h-[640px] space-y-4">
@@ -1300,6 +1433,84 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
         </div>
       )}
 
+      <Modal open={folderModalOpen} onClose={() => setFolderModalOpen(false)} title="Directory Scan">
+        <div className="space-y-4 font-sans text-left">
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Confirm directory scan for the selected folder.
+          </p>
+          {folderProcessing ? (
+            <div className="text-xs text-zinc-500 py-4 text-center font-mono">
+              Scanning files...
+            </div>
+          ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Folder</label>
+              <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl truncate">
+                {pendingFolderName || 'No folder selected'}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Files to Scan</label>
+              <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl">
+                {scanScope === 'subdir' && selectedSubdir
+                  ? `${pendingFilesRef.current.filter(f => (f.webkitRelativePath || f.name).replace(/\\/g, '/').startsWith(pendingFolderName + '/' + selectedSubdir)).length} of ${pendingFileCount} files`
+                  : `${pendingFileCount} files`}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Scan Scope</label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] transition-colors flex-1">
+                  <input
+                    type="radio"
+                    name="scope"
+                    value="full"
+                    checked={scanScope === 'full'}
+                    onChange={() => setScanScope('full')}
+                    className="accent-cyan-400"
+                  />
+                  <span className="text-[11px] text-zinc-300 font-medium">Full Project</span>
+                </label>
+                <label className={`flex items-center gap-2 cursor-pointer py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] transition-colors flex-1 ${pendingSubdirs.length === 0 ? 'opacity-40 pointer-events-none' : ''}`}>
+                  <input
+                    type="radio"
+                    name="scope"
+                    value="subdir"
+                    checked={scanScope === 'subdir'}
+                    onChange={() => setScanScope('subdir')}
+                    className="accent-cyan-400"
+                  />
+                  <span className="text-[11px] text-zinc-300 font-medium">Subfolder</span>
+                </label>
+              </div>
+              {scanScope === 'subdir' && (
+                <select
+                  value={selectedSubdir}
+                  onChange={(e) => setSelectedSubdir(e.target.value)}
+                  className="w-full py-2 px-3 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all cursor-pointer mt-2"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="">Select subfolder...</option>
+                  {pendingSubdirs.map(s => <option key={s} value={s}>{s}/</option>)}
+                </select>
+              )}
+            </div>
+            </div>
+          )}
+          <div className="pt-3 flex justify-end gap-2.5 text-xs">
+            <button onClick={() => setFolderModalOpen(false)} className="px-4 py-2 border border-white/[0.04] text-neutral-400 hover:text-white rounded-lg cursor-pointer bg-white/[0.01]">Cancel</button>
+            <button
+              onClick={confirmFolderScan}
+              disabled={folderProcessing || pendingFileCount === 0}
+              className="px-5 py-2 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold rounded-lg hover:opacity-95 transition-all text-center cursor-pointer shadow-lg shadow-cyan-500/10 disabled:opacity-40"
+            >
+              Start Scan
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={gitModalOpen} onClose={() => setGitModalOpen(false)} title="Git Repository Import">
         <div className="space-y-4 font-sans text-left">
           <p className="text-xs text-neutral-400 leading-relaxed">
@@ -1318,13 +1529,15 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Branch</label>
-              <input
-                type="text"
-                placeholder="main"
-                value={gitBranch}
-                onChange={(e) => setGitBranch(e.target.value)}
-                className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-455/60 rounded-xl outline-none transition-all placeholder:text-zinc-600"
-              />
+              <select
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all cursor-pointer appearance-none"
+                style={{ colorScheme: 'dark' }}
+              >
+                <option value="main">main</option>
+                <option value="dev">dev</option>
+              </select>
             </div>
           </div>
           <div className="pt-3 flex justify-end gap-2.5 text-xs">

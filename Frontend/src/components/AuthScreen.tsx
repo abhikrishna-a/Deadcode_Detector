@@ -76,14 +76,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
           setMode('mfa_setup');
         }
       }
-    } catch (err: any) {
-      if (err?.response) {
-        const status = err?.response?.status || '';
-        const body = JSON.stringify(err?.response?.data || {});
-        showError(`[${status}] ${body}`);
-      } else {
-        showError(err?.message || 'Authentication failed');
-      }
+    } catch {
+      showError('Invalid credentials. Please try again.');
     }
     setLoading(false);
   };
@@ -107,8 +101,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         storeLogin(response);
         onSuccess();
       }
-    } catch (err: any) {
-      showError(err?.response?.data?.error || err?.message || 'MFA verification failed');
+    } catch {
+      showError('Incorrect code. Please try again.');
     }
     setLoading(false);
   };
@@ -119,14 +113,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
       const response = await authAPI.setupMFA(preAuthToken);
       setMfaQRImage(response.qr_code_image);
       setMode('mfa_setup');
-    } catch (err: any) {
-      if (err?.response) {
-        const status = err?.response?.status || '';
-        const body = JSON.stringify(err?.response?.data || {});
-        showError(`[${status}] ${body}`);
-      } else {
-        showError(err?.message || 'Failed to generate QR code');
-      }
+    } catch {
+      showError('Unable to generate QR code. Please try again.');
     }
     setLoading(false);
   };
@@ -151,14 +139,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         setResetToken('');
         setNewPassword('');
       }
-    } catch (err: any) {
-      if (err?.response) {
-        const status = err?.response?.status || '';
-        const body = JSON.stringify(err?.response?.data || {});
-        showError(`[${status}] ${body}`);
-      } else {
-        showError(err?.message || 'Password reset failed');
-      }
+    } catch {
+      showError('Password reset failed. Check your email or token and try again.');
     }
     setLoading(false);
   };
@@ -330,7 +312,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
                   <input
                     required
                     type="text"
-                    placeholder="Reset token from email"
+                    placeholder="Reset token"
                     value={resetToken}
                     onChange={(e) => setResetToken(e.target.value)}
                     className="w-full pl-4 pr-4 py-2.5 text-xs text-zinc-200 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:text-zinc-600"
