@@ -95,10 +95,11 @@ interface TreeNodeProps {
   selectedFile: AnalysisResult | null;
   onSelectFile: (file: AnalysisResult) => void;
   onNavigateToChat?: (docId: string, filename: string) => void;
+  currentFolderName: string;
 }
 
 function TreeNode({
-  node, depth, parentPath, expandedFolders, onToggle, selectedFile, onSelectFile, onNavigateToChat
+  node, depth, parentPath, expandedFolders, onToggle, selectedFile, onSelectFile, onNavigateToChat, currentFolderName
 }: TreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
 
@@ -111,7 +112,14 @@ function TreeNode({
         </div>
       );
     }
-    const isSelected = selectedFile?.filename === node.file?.filename;
+    const prefix = currentFolderName
+      ? (currentFolderName.split('/').pop() || currentFolderName) + '/'
+      : '';
+    const isSelected = selectedFile && node.file
+      ? (prefix && selectedFile.filename.startsWith(prefix)
+          ? selectedFile.filename.slice(prefix.length)
+          : selectedFile.filename) === node.file.filename
+      : false;
     const issueCount = node.file?.summary?.total_issues ?? 0;
     return (
       <div
@@ -137,7 +145,7 @@ function TreeNode({
     );
   }
 
-  const isExpanded = expandedFolders[fullPath] ?? (depth < 2);
+  const isExpanded = expandedFolders[fullPath] ?? false;
   const dirIssueCount = node.totalIssues ?? 0;
 
   return (
@@ -179,6 +187,7 @@ function TreeNode({
                 selectedFile={selectedFile}
                 onSelectFile={onSelectFile}
                 onNavigateToChat={onNavigateToChat}
+                currentFolderName={currentFolderName}
               />
             ))}
           </motion.div>
@@ -211,6 +220,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
   const [currentFolderName, setCurrentFolderName] = useState<string>('');
   const [issueFilter, setIssueFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
+  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const connectionActiveRef = useRef(false);
   const analysisSocket = useAnalysisSocket();
@@ -254,6 +264,32 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       }
     })();
   }, [viewTarget, isActive]);
+
+  useEffect(() => {
+    if (!selectedFile) return;
+    const prefix = currentFolderName
+      ? (currentFolderName.split('/').pop() || currentFolderName) + '/'
+      : '';
+    const relPath = prefix && selectedFile.filename.startsWith(prefix)
+      ? selectedFile.filename.slice(prefix.length)
+      : selectedFile.filename;
+    const segments = relPath.split('/');
+    segments.pop();
+    if (segments.length === 0) return;
+    setExpandedFolders(prev => {
+      let needsUpdate = false;
+      const next = { ...prev };
+      let acc = '';
+      for (const seg of segments) {
+        acc = acc ? `${acc}/${seg}` : seg;
+        if (!next[acc]) {
+          next[acc] = true;
+          needsUpdate = true;
+        }
+      }
+      return needsUpdate ? next : prev;
+    });
+  }, [selectedFile, currentFolderName]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -607,7 +643,7 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
   const toggleFolder = (path: string, depth: number = 0) => {
     setExpandedFolders(prev => ({
       ...prev,
-      [path]: prev[path] === undefined ? !(depth < 2) : !prev[path],
+      [path]: prev[path] === undefined ? true : !prev[path],
     }));
   };
 
@@ -634,13 +670,26 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
     return { allIssues, totalLines, totalIssues, healthScore, severityCounts };
   }, [batchReportsList, selectedFolder]);
 
-  const visibleIssues = useMemo(() => {
-    const issuesList = selectedFile
-      ? (selectedFile.issues || [])
-      : (selectedFolder ? (folderAggregate?.allIssues || []) : []);
-    if (issueFilter === 'all') return issuesList;
-    return issuesList.filter(i => i.severity === issueFilter);
-  }, [selectedFile, selectedFolder, folderAggregate, issueFilter]);
+  const allProjectIssues = useMemo(() => {
+    return batchReportsList.flatMap(r => r.issues || []);
+  }, [batchReportsList]);
+
+  const filteredProjectIssues = useMemo(() => {
+    if (issueFilter === 'all') return allProjectIssues;
+    return allProjectIssues.filter(i => i.severity === issueFilter);
+  }, [allProjectIssues, issueFilter]);
+
+  const handleIssueClick = (issue: Issue) => {
+    setExpandedIssueId(prev => prev === issue.id ? null : issue.id);
+    const targetFile = batchReportsList.find(r => r.filename === issue.file);
+    if (targetFile) {
+      if (targetFile !== selectedFile) {
+        setSelectedFile(targetFile);
+        setSelectedFolder(null);
+      }
+      setScrollToLine(issue.line_start || issue.line || 1);
+    }
+  };
 
   const donutData = useMemo(() => {
     const issues = (historyMode && selectedFolder && folderAggregate)
@@ -870,8 +919,12 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
       )}
 
       {view === 'workspace' && (
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5 gap-6 text-left">
-          <div className="lg:col-span-1 rounded-3xl glass-card p-5 overflow-y-auto max-h-[640px] space-y-4">
+        <div className={`flex-1 min-h-0 grid grid-cols-1 gap-6 text-left ${
+          allProjectIssues.length > 0
+            ? 'lg:grid-cols-[280px_minmax(0,1fr)_240px]'
+            : 'lg:grid-cols-[320px_minmax(0,1fr)]'
+        }`}>
+          <div className="rounded-3xl glass-card p-5 overflow-y-auto max-h-[640px] space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.03]">
               <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">
                 Scanned Files
@@ -895,14 +948,14 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                     selectedFile={selectedFile}
                     onSelectFile={(file) => { setSelectedFile(file); setSelectedFolder(null); }}
                     onNavigateToChat={onNavigateToChat}
+                    currentFolderName={currentFolderName}
                   />
                 ))
               )}
             </div>
           </div>
 
-          <div className="lg:col-span-4 flex flex-col lg:flex-row gap-6 min-h-0">
-            <div className="flex-1 space-y-6">
+          <div className="min-w-0 min-h-0 overflow-y-auto space-y-6">
               {selectedFolder && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-2 text-cyan-400">
@@ -1002,18 +1055,22 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                 </div>
               )}
 
-              {batchReportsList.length === 1 && selectedFile && (
+              {selectedFile && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-4 gap-4">
                     {[
                       { val: selectedFile.metrics?.total_lines || 0, label: 'TOTAL LINES', color: 'text-neutral-200' },
-                      { val: selectedFile.summary?.total_issues || 0, label: 'ISSUES', color: (selectedFile.summary?.total_issues || 0) > 0 ? 'text-rose-450' : 'text-emerald-400' },
+                      { val: allProjectIssues.length, label: 'ISSUES', color: allProjectIssues.length > 0 ? 'text-rose-450' : 'text-emerald-400' },
                       { val: selectedFile.metrics?.complexity_hint || 'low', label: 'COMPLEXITY', color: 'text-amber-200' },
                       { val: `${selectedFile.summary?.health_score || 0}%`, label: 'HEALTH', color: 'text-cyan-400' }
                     ].map((card, idx) => (
-                      <div key={idx} className="py-2.5 px-3 rounded-2xl text-left shadow-sm glass-card min-w-0 overflow-hidden">
+                      <div key={idx} className={`text-left shadow-sm glass-card min-w-0 overflow-hidden ${
+                        historyMode ? 'py-3 px-4 rounded-3xl shadow-md border border-white/[0.05]' : 'py-2.5 px-3 rounded-2xl'
+                      }`}>
                         <span className="text-[9px] font-mono tracking-widest text-zinc-500 uppercase block font-bold">{card.label}</span>
-                        <span className={`text-sm font-display font-extrabold mt-1 block uppercase ${card.color}`}>{card.val}</span>
+                        <span className={`mt-1.5 block uppercase font-display font-extrabold ${
+                          historyMode ? 'text-sm tracking-wide' : 'text-sm'
+                        } ${card.color}`}>{card.val}</span>
                       </div>
                     ))}
                   </div>
@@ -1117,10 +1174,21 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                       source={selectedFile._source_content || ''}
                       issues={selectedFile.issues || []}
                       filename={selectedFile.filename}
+                      scrollToLine={scrollToLine}
+                      onScrolled={() => setScrollToLine(null)}
+                    />
+                  )}
+                  {historyMode && selectedFile._source_content && (
+                    <CodeViewer
+                      source={selectedFile._source_content}
+                      issues={selectedFile.issues || []}
+                      filename={selectedFile.filename}
+                      scrollToLine={scrollToLine}
+                      onScrolled={() => setScrollToLine(null)}
                     />
                   )}
 
-                  {!historyMode && selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
+                  {selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
                     <div className="p-4 border border-violet-500/[0.08] bg-violet-500/[0.01] rounded-xl space-y-1.5 text-left">
                       <div className="flex items-center gap-2 text-violet-400">
                         <BookOpen size={14} />
@@ -1142,32 +1210,36 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
               )}
             </div>
 
-            {(selectedFile || selectedFolder) && (
-              <div className="w-full lg:w-[280px] p-5 rounded-3xl flex flex-col space-y-4 flex-shrink-0 glass-card">
+            {allProjectIssues.length > 0 && (
+              <div className="p-5 rounded-3xl flex flex-col space-y-4 overflow-y-auto glass-card">
                 <div className="space-y-3">
                   <span className="text-[10px] font-mono tracking-wider uppercase text-neutral-500 font-bold block">Filter</span>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {['all', 'high', 'medium', 'low'].map(filter => (
-                      <button
-                        key={filter}
-                        onClick={() => setIssueFilter(filter as any)}
-                        className={`text-[10px] font-semibold py-1.5 px-2 rounded-xl cursor-pointer transition-all ${
-                          issueFilter === filter ? 'bg-cyan-400/15 text-cyan-300 font-bold border border-cyan-400/25 shadow-sm' : 'bg-white/[0.01] text-neutral-500 border border-white/[0.04]'
-                        }`}
-                      >
-                        {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                      </button>
-                    ))}
+                    {(() => {
+                      const counts = { all: allProjectIssues.length, high: allProjectIssues.filter(i => i.severity === 'high').length, medium: allProjectIssues.filter(i => i.severity === 'medium').length, low: allProjectIssues.filter(i => i.severity === 'low').length };
+                      return ['all', 'high', 'medium', 'low'].map(filter => (
+                        <button
+                          key={filter}
+                          onClick={() => setIssueFilter(filter as any)}
+                          className={`text-[10px] font-semibold py-1.5 px-2 rounded-xl cursor-pointer transition-all ${
+                            issueFilter === filter ? 'bg-cyan-400/15 text-cyan-300 font-bold border border-cyan-400/25 shadow-sm' : 'bg-white/[0.01] text-neutral-500 border border-white/[0.04]'
+                          }`}
+                        >
+                          {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                          <span className="ml-1 text-[9px] opacity-60">({counts[filter as keyof typeof counts]})</span>
+                        </button>
+                      ));
+                    })()}
                   </div>
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto max-h-[360px] pr-1">
-                  {visibleIssues.length === 0 ? (
+                <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+                  {filteredProjectIssues.length === 0 ? (
                     <div className="text-center py-10 text-neutral-500">
                       <p className="text-xs font-sans">No issues in this category.</p>
                     </div>
                   ) : (
-                    visibleIssues.map((issue, idx) => {
+                    filteredProjectIssues.map((issue, idx) => {
                       const isExpanded = expandedIssueId === issue.id;
                       const isHigh = issue.type === 'unused_function' || issue.type === 'unreachable_code';
                       const colorBadge = isHigh ? 'text-rose-450 bg-rose-500/10 border-rose-500/10' : 'text-amber-400 bg-amber-450/10 border-amber-450/10';
@@ -1175,16 +1247,17 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                       return (
                         <div
                           key={idx}
-                          onClick={() => setExpandedIssueId(isExpanded ? null : issue.id)}
+                          onClick={() => handleIssueClick(issue)}
                           className="border border-white/[0.03] rounded-2xl p-3.5 bg-white/[0.01] hover:border-cyan-400/20 cursor-pointer transition-all space-y-2.5"
                         >
-                          <div className="flex justify-between items-start">
-                            <span className={`px-2 py-0.5 rounded font-mono text-[8px] font-semibold border ${colorBadge}`}>
+                          <div className="flex justify-between items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded font-mono text-[8px] font-semibold border ${colorBadge} flex-shrink-0`}>
                               {issue.type.replace(/_/g, ' ')}
                             </span>
-                            <span className="text-[10px] font-mono text-zinc-600">L:{issue.line}</span>
+                            <span className="text-[10px] font-mono text-zinc-500 truncate min-w-0" title={issue.file}>{issue.file}</span>
+                            <span className="text-[10px] font-mono text-zinc-600 flex-shrink-0">L:{issue.line}</span>
                           </div>
-                          <p className="text-xs text-zinc-300 font-sans leading-normal">{issue.description}</p>
+                          <p className="text-xs text-zinc-300 font-sans leading-normal break-words">{issue.description}</p>
 
                           <AnimatePresence>
                             {isExpanded && (
@@ -1207,7 +1280,8 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onNavigateToChat(selectedFile.document_id, selectedFile.filename);
+                                    const f = batchReportsList.find(r => r.filename === issue.file);
+                                    if (f?.document_id) onNavigateToChat(f.document_id, f.filename);
                                   }}
                                   className="w-full py-1.5 bg-white/[0.02] hover:bg-white/[0.05] hover:text-white border border-white/[0.04] text-zinc-400 font-semibold font-sans rounded-xl transition-all cursor-pointer"
                                 >
@@ -1223,7 +1297,6 @@ export default function AnalyzerTab({ history, onAddResult, onNavigateToChat, vi
                 </div>
               </div>
             )}
-          </div>
         </div>
       )}
 
