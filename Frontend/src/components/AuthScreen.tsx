@@ -108,13 +108,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         onSuccess();
       }
     } catch (err: any) {
-      if (err?.response) {
-        const status = err?.response?.status || '';
-        const body = JSON.stringify(err?.response?.data || {});
-        showError(`[${status}] ${body}`);
-      } else {
-        showError(err?.message || 'MFA verification failed');
-      }
+      showError(err?.response?.data?.error || err?.message || 'MFA verification failed');
     }
     setLoading(false);
   };
@@ -151,7 +145,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         showError('Password reset link sent to your email.');
       } else if (resetToken && newPassword) {
         await authAPI.confirmPasswordReset(resetToken, newPassword);
-        showError('Password reset successfully. Please login.', 'info');
+        showError('Password reset successfully. Please login.');
         setMode('login');
         setResetSent(false);
         setResetToken('');

@@ -167,7 +167,7 @@ export default function App() {
                     </AnimatePresence>
                   )}
 
-                  <div style={{ display: activeTab === 'analyzer' ? '' : 'none' }}>
+                  <div className="flex-1 min-h-0 flex flex-col" style={{ display: activeTab === 'analyzer' ? '' : 'none' }}>
                     <AnalyzerTab
                       key="analyzer"
                       history={history}
