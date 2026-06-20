@@ -28,6 +28,7 @@ async def init_db():
                     file_hash TEXT NOT NULL,
                     scan_folder TEXT NOT NULL DEFAULT '',
                     scan_type TEXT NOT NULL DEFAULT 'single',
+                    scan_id TEXT NOT NULL DEFAULT '',
                     analysis_json TEXT NOT NULL,
                     health_score INTEGER NOT NULL DEFAULT 0,
                     total_issues INTEGER NOT NULL DEFAULT 0,
@@ -45,6 +46,10 @@ async def init_db():
                 pass
             try:
                 await conn.execute(_t("ALTER TABLE analyses ADD COLUMN source TEXT NOT NULL DEFAULT ''"))
+            except Exception:
+                pass
+            try:
+                await conn.execute(_t("ALTER TABLE analyses ADD COLUMN scan_id TEXT NOT NULL DEFAULT ''"))
             except Exception:
                 pass
             await conn.execute(_t("CREATE INDEX IF NOT EXISTS idx_analyses_user_hash ON analyses(user_id, file_hash)"))
@@ -70,6 +75,7 @@ async def init_db():
                     file_hash   TEXT NOT NULL DEFAULT '',
                     scan_folder TEXT NOT NULL DEFAULT '',
                     scan_type   TEXT NOT NULL DEFAULT 'single',
+                    scan_id     TEXT NOT NULL DEFAULT '',
                     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
                     analysis    JSONB,
                     source      TEXT NOT NULL DEFAULT ''
@@ -79,6 +85,7 @@ async def init_db():
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_folder TEXT NOT NULL DEFAULT ''"))
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_type TEXT NOT NULL DEFAULT 'single'"))
             await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''"))
+            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_id TEXT NOT NULL DEFAULT ''"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_docs_user_hash ON rag_documents(user_id, file_hash)"))
             await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS rag_chunks (

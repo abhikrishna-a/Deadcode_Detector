@@ -196,20 +196,21 @@ async def check_references(
     # ── Single query: fetch ALL chunk content for this user ──
     all_text = await _fetch_user_chunks(db, user_id)
 
-    # ── No prior data → only check within-file references ──
-    if all_text is None:
-        if not source:
-            return []
-        search_text = source  # Check within-file refs only
-    else:
-        search_text = all_text
-        if source:
-            search_text = all_text + "\n" + source
-
     # ── Check each symbol in Python (fast, no DB round-trips) ──
     unreferenced = []
     for name, typ in uncached:
-        found = bool(re.search(r'\b' + re.escape(name) + r'\b', search_text))
+        # Check prior data first (if available)
+        found = False
+        if all_text is not None:
+            if re.search(r'\b' + re.escape(name) + r'\b', all_text):
+                found = True
+
+        # If not found in prior data (or no prior data), check intra-file
+        if not found and source:
+            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            if intra_count > 1:
+                found = True
+
         _cache_set(user_id, name, typ, found)
         if not found:
             unreferenced.append((name, typ))

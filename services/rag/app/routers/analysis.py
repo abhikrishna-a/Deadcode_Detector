@@ -176,7 +176,7 @@ async def analyze_file(
                 doc_id = await store_analysis(
                     db=db, user_id=user["user_id"], filename=file.filename,
                     language=language, source=source, scan_folder=scan_folder,
-                    scan_type=scan_type, analysis_json=clean_analysis,
+                    scan_type=scan_type, scan_id='', analysis_json=clean_analysis,
                 )
             except Exception:
                 doc_id = None
@@ -189,6 +189,7 @@ async def analyze_file(
                 "cached": False,
                 "scan_folder": scan_folder,
                 "scan_type": scan_type,
+                "scan_id": doc_id or '',
             }
 
         language = detect_language(file.filename)
@@ -255,7 +256,7 @@ async def analyze_file(
             document_id = await store_analysis(
                 db=db, user_id=user["user_id"], filename=file.filename,
                 language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, analysis_json=analysis_data,
+                scan_type=scan_type, scan_id='', analysis_json=analysis_data,
                 chunks=all_chunks, embeddings=embeddings,
             )
 
@@ -268,6 +269,7 @@ async def analyze_file(
                 "cached": False,
                 "scan_folder": scan_folder,
                 "scan_type": scan_type,
+                "scan_id": document_id or '',
             }
 
         # --- cross-ref first (fast), LLM refines in background ---
@@ -306,7 +308,7 @@ async def analyze_file(
             document_id = await store_analysis(
                 db=db, user_id=user["user_id"], filename=file.filename,
                 language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, analysis_json=cross_ref_result,
+                scan_type=scan_type, scan_id='', analysis_json=cross_ref_result,
                 chunks=all_chunks, embeddings=embeddings,
             )
         else:
@@ -314,7 +316,7 @@ async def analyze_file(
             document_id = await store_analysis(
                 db=db, user_id=user["user_id"], filename=file.filename,
                 language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, analysis_json=cross_ref_result,
+                scan_type=scan_type, scan_id='', analysis_json=cross_ref_result,
                 chunks=None, embeddings=None,
             )
             asyncio.create_task(_background_finalize(
@@ -333,6 +335,7 @@ async def analyze_file(
             "cached": False,
             "scan_folder": scan_folder,
             "scan_type": scan_type,
+            "scan_id": document_id or '',
         }
     except HTTPException:
         raise
@@ -368,6 +371,9 @@ async def batch_analyze(
     # Phase 1: fast batch cross-ref (cross-file only, no LLM)
     loop = asyncio.get_event_loop()
     per_file_results = await loop.run_in_executor(None, batch_check_references, filtered)
+
+    # All files in this batch share the same scan_id for session counting
+    batch_scan_id = str(uuid_mod.uuid4())
 
     file_map = {f.name: f.content for f in req.files if f.name}
 
@@ -418,6 +424,7 @@ async def batch_analyze(
         doc_id = await store_analysis(
             db, user["user_id"], filename, language, source, analysis,
             scan_folder=req.scan_folder, scan_type=req.scan_type,
+            scan_id=batch_scan_id,
             chunks=chunks, embeddings=file_embeddings,
         )
         results.append(BatchFileResult(
@@ -495,7 +502,7 @@ async def get_document_analysis(
         if IS_SQLITE:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found")
         result = await db.execute(
-            text("SELECT user_id, filename, language, analysis, source FROM rag_documents WHERE id = CAST(:id AS uuid)"),
+            text("SELECT user_id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = CAST(:id AS uuid)"),
             {"id": document_id},
         )
         row = result.fetchone()
@@ -503,7 +510,7 @@ async def get_document_analysis(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
         if row[0] != user["user_id"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-        return {"document_id": document_id, "filename": row[1], "language": row[2], "analysis": row[3], "_source_content": row[4] or ""}
+        return {"document_id": document_id, "filename": row[1], "language": row[2], "analysis": row[3], "_source_content": row[4] or "", "scan_id": row[5] or ""}
 
     return {
         "document_id": doc["analysis_id"],
@@ -511,6 +518,7 @@ async def get_document_analysis(
         "language": doc["language"],
         "analysis": doc["analysis"],
         "_source_content": doc.get("source", ""),
+        "scan_id": doc.get("scan_id") or "",
     }
 
 
@@ -592,6 +600,7 @@ async def rag_get_analysis(
         "language": doc["language"],
         "analysis": doc["analysis"],
         "source_content": doc.get("source", ""),
+        "scan_id": doc.get("scan_id") or "",
         "cached": True,
     }
 

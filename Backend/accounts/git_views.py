@@ -306,7 +306,7 @@ class BatchAnalysisView(APIView):
 
 
 class BatchResultsView(APIView):
-    """Frontend polls this endpoint to get batch analysis results (avoids WebSocket channel layer)."""
+    """Frontend polls this endpoint as fallback when WebSocket disconnects."""
 
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]

@@ -40,6 +40,7 @@ async def store_analysis(
     analysis_json: dict,
     scan_folder: str = "",
     scan_type: str = "single",
+    scan_id: str = "",
     chunks: list[Any] | None = None,
     embeddings: list[list[float]] | None = None,
 ) -> str:
@@ -52,13 +53,13 @@ async def store_analysis(
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
             text("""
-                INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, analysis_json, health_score, total_issues, created_at, source)
-                VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :json, :health, :issues, :now, :source)
+                INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, scan_id, analysis_json, health_score, total_issues, created_at, source)
+                VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :sid, :json, :health, :issues, :now, :source)
             """),
             {
                 "id": analysis_id, "uid": user_id, "fn": filename,
                 "lang": language, "hash": file_hash, "folder": scan_folder,
-                "stype": scan_type,
+                "stype": scan_type, "sid": scan_id,
                 "json": json.dumps(analysis_json),
                 "health": health_score, "issues": total_issues, "now": now,
                 "source": source,
@@ -87,14 +88,14 @@ async def store_analysis(
     else:
         result = await db.execute(
             text("""
-                INSERT INTO rag_documents (user_id, filename, language, file_hash, scan_folder, scan_type, analysis, source)
-                VALUES (:uid, :fn, :lang, :hash, :folder, :stype, CAST(:json AS jsonb), :source)
+                INSERT INTO rag_documents (user_id, filename, language, file_hash, scan_folder, scan_type, scan_id, analysis, source)
+                VALUES (:uid, :fn, :lang, :hash, :folder, :stype, :sid, CAST(:json AS jsonb), :source)
                 RETURNING id
             """),
             {
                 "uid": user_id, "fn": filename, "lang": language,
                 "hash": file_hash, "folder": scan_folder,
-                "stype": scan_type,
+                "stype": scan_type, "sid": scan_id,
                 "json": json.dumps(analysis_json),
                 "source": source,
             },
@@ -201,7 +202,7 @@ async def get_history(
             params["search"] = f"%{search}%"
         rows = (await db.execute(
             text(f"""
-                SELECT id, filename, language, health_score, total_issues, created_at, scan_folder, scan_type
+                SELECT id, filename, language, health_score, total_issues, created_at, scan_folder, scan_type, scan_id
                 FROM analyses
                 {where}
                 ORDER BY created_at DESC
@@ -212,7 +213,7 @@ async def get_history(
         return [
             {"analysis_id": r[0], "filename": r[1], "language": r[2],
              "health_score": r[3], "total_issues": r[4], "created_at": r[5],
-             "scan_folder": r[6], "scan_type": r[7]}
+             "scan_folder": r[6], "scan_type": r[7], "scan_id": r[8]}
             for r in rows
         ]
     else:
@@ -229,6 +230,7 @@ async def get_history(
                        d.created_at,
                        d.scan_folder,
                        d.scan_type,
+                       d.scan_id,
                        COUNT(c.id) AS chunk_count
                 FROM rag_documents d
                 LEFT JOIN rag_chunks c ON c.document_id = d.id
@@ -243,7 +245,7 @@ async def get_history(
             {"analysis_id": str(r[0]), "filename": r[1], "language": r[2],
              "health_score": r[3], "total_issues": r[4],
              "created_at": r[5].isoformat(), "scan_folder": r[6],
-             "scan_type": r[7]}
+             "scan_type": r[7], "scan_id": r[8]}
             for r in rows
         ]
 
@@ -282,7 +284,7 @@ async def get_document(
 ) -> dict | None:
     if IS_SQLITE:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json, source FROM analyses WHERE id = :id AND user_id = :uid"),
+            text("SELECT id, filename, language, analysis_json, source, scan_id FROM analyses WHERE id = :id AND user_id = :uid"),
             {"id": document_id, "uid": user_id},
         )).fetchone()
         if not row:
@@ -298,10 +300,11 @@ async def get_document(
             "language": row[2],
             "analysis": analysis,
             "source": row[4],
+            "scan_id": row[5],
         }
     else:
         row = (await db.execute(
-            text("SELECT id, filename, language, analysis, source FROM rag_documents WHERE id = :id AND user_id = :uid"),
+            text("SELECT id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = :id AND user_id = :uid"),
             {"id": document_id, "uid": user_id},
         )).fetchone()
         if not row:
@@ -312,6 +315,7 @@ async def get_document(
             "language": row[2],
             "analysis": row[3],
             "source": row[4],
+            "scan_id": row[5],
         }
 
 
@@ -323,7 +327,7 @@ async def get_documents_by_scan_folder(
     if IS_SQLITE:
         rows = (await db.execute(
             text("""
-                SELECT id, filename, language, analysis_json, health_score, total_issues, created_at, source
+                SELECT id, filename, language, analysis_json, health_score, total_issues, created_at, source, scan_id
                 FROM analyses
                 WHERE user_id = :uid AND scan_folder = :folder
                 ORDER BY filename
@@ -337,13 +341,14 @@ async def get_documents_by_scan_folder(
                 "health_score": r[4], "total_issues": r[5], "created_at": r[6],
                 "source": r[7],
                 "_source_content": r[7],
+                "scan_id": r[8],
             }
             for r in rows
         ]
     else:
         rows = (await db.execute(
             text("""
-                SELECT id, filename, language, analysis, created_at, source,
+                SELECT id, filename, language, analysis, created_at, source, scan_id,
                        COALESCE((analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((analysis->'summary'->>'total_issues')::int, 0) AS total_issues
                 FROM rag_documents
@@ -358,7 +363,8 @@ async def get_documents_by_scan_folder(
                 "analysis": r[3], "created_at": r[4].isoformat(),
                 "source": r[5],
                 "_source_content": r[5],
-                "health_score": r[6], "total_issues": r[7],
+                "scan_id": r[6],
+                "health_score": r[7], "total_issues": r[8],
             }
             for r in rows
         ]

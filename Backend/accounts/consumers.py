@@ -42,6 +42,8 @@ class AnalysisConsumer(AsyncJsonWebsocketConsumer):
             'document_id': event['document_id'],
             'analysis': event['analysis'],
             'source_content': event.get('source_content', ''),
+            'scan_folder': event.get('scan_folder', ''),
+            'scan_type': event.get('scan_type', 'single'),
         })
 
     async def analysis_file_error(self, event):

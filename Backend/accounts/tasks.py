@@ -3,8 +3,10 @@ import logging
 import os
 
 import requests
+from asgiref.sync import async_to_sync
 from celery import shared_task
 from celery.signals import task_failure
+from channels.layers import get_channel_layer
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -12,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 def _group_name(batch_id: str) -> str:
     return f'analysis_{batch_id}'
+
+
+def _send_ws(batch_id: str, message: dict) -> None:
+    async_to_sync(get_channel_layer().group_send)(_group_name(batch_id), message)
 
 
 def _rag_url() -> str:
@@ -82,14 +88,43 @@ def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str
         for fr in results_list:
             fn = fr['filename']
             processed.add(fn)
+            is_error = bool(fr.get('error'))
             _store_result(batch_id, fn, {
-                'status': 'completed' if not fr.get('error') else 'error',
+                'status': 'error' if is_error else 'completed',
                 'document_id': fr.get('document_id', ''),
                 'analysis': fr.get('analysis', {}),
                 'scan_folder': scan_folder,
+                'scan_type': scan_type,
                 'source_content': content_map.get(fn, ''),
             })
             _track_file_complete(batch_id, fn)
+
+            if is_error:
+                _send_ws(batch_id, {
+                    'type': 'analysis_file_error',
+                    'filename': fn,
+                    'batch_id': batch_id,
+                    'error': fr.get('error', 'Unknown error'),
+                })
+            else:
+                _send_ws(batch_id, {
+                    'type': 'analysis_file_complete',
+                    'filename': fn,
+                    'document_id': fr.get('document_id', ''),
+                    'batch_id': batch_id,
+                    'analysis': fr.get('analysis', {}),
+                    'source_content': content_map.get(fn, ''),
+                    'scan_folder': scan_folder,
+                    'scan_type': scan_type,
+                })
+
+            done = int(_batch_redis().scard(f'batch_done_{batch_id}'))
+            _send_ws(batch_id, {
+                'type': 'analysis_progress',
+                'done': done,
+                'total': len(files_data),
+                'current_file': fn,
+            })
 
         # Track ALL submitted files (using list, not dict keys — handles any dupes)
         for fn, _ in files_data:
@@ -98,8 +133,15 @@ def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str
                     'status': 'error',
                     'error': 'Skipped by analysis service (unsupported or empty)',
                     'scan_folder': scan_folder,
+                    'scan_type': scan_type,
                 })
                 _track_file_complete(batch_id, fn)
+                _send_ws(batch_id, {
+                    'type': 'analysis_file_error',
+                    'filename': fn,
+                    'batch_id': batch_id,
+                    'error': 'Skipped by analysis service (unsupported or empty)',
+                })
 
         logger.info(
             'Batch %s: %d/%d files analyzed (RAG), %d skipped',
@@ -129,12 +171,22 @@ def handle_batch_failure(sender=None, task_id=None, exception=None, args=None, *
                 _track_file_complete(batch_id, fn)
             except Exception:
                 pass
+            try:
+                _send_ws(batch_id, {
+                    'type': 'analysis_file_error',
+                    'filename': fn,
+                    'batch_id': batch_id,
+                    'error': f'Batch analysis failed: {exception}',
+                })
+            except Exception:
+                pass
 
 
 @shared_task
 def notify_batch_complete(batch_id: str, total: int):
-    """No-op: batch completion detected via frontend polling (HTTP), not WebSocket."""
-    logger.info('Batch %s complete: %d files (polling will detect)', batch_id, total)
+    """Send batch_complete via WebSocket channel layer."""
+    _send_ws(batch_id, {'type': 'analysis_batch_complete'})
+    logger.info('Batch %s complete: %d files (WS notified)', batch_id, total)
 
 
 @shared_task
