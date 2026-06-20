@@ -24,13 +24,13 @@ interface AnalysisState {
   setHistory: (history: AnalysisResult[]) => void;
   setViewTarget: (target: { analysisId: string; filename: string; scanFolder?: string } | null) => void;
   setChatTarget: (target: { docId: string; filename: string } | null) => void;
-  setBatchReportsList: (list: AnalysisResult[]) => void;
+  setBatchReportsList: (list: AnalysisResult[] | ((prev: AnalysisResult[]) => AnalysisResult[])) => void;
   setSelectedFile: (file: AnalysisResult | null) => void;
   setSelectedFolder: (folder: string | null) => void;
   setExpandedFolders: (folders: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   setCurrentFolderName: (name: string) => void;
   setIssueFilter: (filter: 'all' | 'high' | 'medium' | 'low') => void;
-  setExpandedIssueId: (id: string | null) => void;
+  setExpandedIssueId: (id: string | null | ((prev: string | null) => string | null)) => void;
   setView: (view: 'upload' | 'batch_progress' | 'workspace') => void;
   setHistoryMode: (mode: boolean) => void;
   toggleFolder: (path: string) => void;
@@ -130,6 +130,8 @@ export const useAnalysisStore = create<AnalysisState>()(
     }),
     {
       name: storageKey,
+      version: 1,
+      migrate: () => ({}),
       partialize: (state) => ({
         ...state,
         history: stripSource(state.history),

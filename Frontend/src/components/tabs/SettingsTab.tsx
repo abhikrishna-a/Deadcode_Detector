@@ -81,7 +81,7 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
       className="space-y-6 text-left max-w-3xl"
     >
       <div className="space-y-1">
-        <h2 className="font-display font-bold text-xl text-neutral-150 tracking-tight flex items-center gap-2">
+        <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2">
           <UserIcon className="text-cyan-400" size={20} /> Account Settings
         </h2>
         <p className="text-zinc-500 text-xs font-sans">
@@ -192,7 +192,7 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
                     value={mfaToken}
                     onChange={e => setMfaToken(e.target.value)}
                     maxLength={6}
-                    className="flex-1 px-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-purple-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-650 font-mono tracking-widest text-center"
+                    className="flex-1 px-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-purple-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-500 font-mono tracking-widest text-center"
                   />
                   <button
                     onClick={handleActivateMFA}
@@ -234,7 +234,7 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
             value={resetEmail}
             onChange={e => setResetEmail(e.target.value)}
             required
-            className="flex-1 px-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-amber-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-650"
+            className="flex-1 px-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-amber-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-500"
           />
           <button
             type="submit"
