@@ -65,9 +65,13 @@ export default function App() {
     if (screen !== 'dashboard') return;
     (async () => {
       try {
-        const { data } = await analysisAPI.ragHistory(50);
+        const result = await analysisAPI.ragHistory(50);
         const store = useAnalysisStore.getState();
-        for (const item of data.items) {
+        if (!result.items || result.items.length === 0) {
+          store.resetAll();
+          return;
+        }
+        for (const item of result.items) {
           store.addHistoryReport({
             document_id: item.analysis_id,
             filename: item.filename,

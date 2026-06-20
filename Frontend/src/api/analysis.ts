@@ -4,17 +4,10 @@ import type {
   GitFileContents,
 } from './types';
 
-const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/rag';
+const RAG_BASE = '/api/rag';
 
-async function readErrorDetail(response: Response, fallback: string): Promise<string> {
-  const text = await response.text().catch(() => '');
-  if (!text) return fallback;
-  try {
-    const parsed = JSON.parse(text);
-    return parsed?.detail || parsed?.error || fallback;
-  } catch {
-    return text;
-  }
+async function readErrorDetail(_response: Response, fallback: string): Promise<string> {
+  return fallback;
 }
 
 export const analysisAPI = {
@@ -90,6 +83,7 @@ export const analysisAPI = {
     language: string;
     analysis: any;
     cached: boolean;
+    _source_content?: string;
   }> => {
     const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
