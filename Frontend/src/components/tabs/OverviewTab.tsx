@@ -20,7 +20,7 @@ function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number;
 
   if (!node.isDir) {
     const health = node.file?.summary?.health_score ?? 100;
-    const color = health > 85 ? '#10b981' : health > 60 ? '#f59e0b' : '#ef4444';
+    const healthColor = health > 85 ? 'text-emerald-400' : health > 60 ? 'text-amber-400' : 'text-rose-400';
     return (
       <div
         onClick={() => node.file && onClick(node.file)}
@@ -34,7 +34,7 @@ function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number;
         </div>
         <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-600 flex-shrink-0">
           <span>{node.file?.metrics?.total_lines || 0} lines</span>
-          <span className="font-bold w-12 text-right" style={{ color }}>{health}%</span>
+          <span className={`font-bold w-12 text-right ${healthColor}`}>{health}%</span>
         </div>
       </div>
     );
@@ -85,14 +85,22 @@ export default function OverviewTab({ history, onViewResult, onNavigateToWorkspa
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => {
-    const folderScans = new Set(history.filter(r => r.scan_folder).map(r => r.scan_folder));
-    const singleFiles = history.filter(r => !r.scan_folder);
-    const auditRuns = folderScans.size + singleFiles.length;
-    const orphanedTokens = singleFiles.length;
-    const compliantRuns = history.filter(r => r.scan_type === 'folder').length;
-    const statementsScanned = history.filter(r => r.scan_type === 'repo').length;
-    const sourceDirectives = history.reduce((sum, r) => sum + (r.summary?.total_issues || 0), 0);
-    return { auditRuns, orphanedTokens, compliantRuns, statementsScanned, sourceDirectives };
+    const singles = history.filter(r => r.scan_type === 'single').length;
+    const folderWithScanId = history.filter(r => r.scan_type === 'folder' && r.scan_id);
+    const folderWithoutScanId = history.filter(r => r.scan_type === 'folder' && !r.scan_id);
+    const folderSessions = new Set(folderWithScanId.map(r => r.scan_id)).size + folderWithoutScanId.length;
+    const repoWithScanId = history.filter(r => r.scan_type === 'repo' && r.scan_id);
+    const repoWithoutScanId = history.filter(r => r.scan_type === 'repo' && !r.scan_id);
+    const repoSessions = new Set(repoWithScanId.map(r => r.scan_id)).size + repoWithoutScanId.length;
+    const total = singles + folderSessions + repoSessions;
+    const totalIssues = history.reduce((sum, r) => sum + (r.summary?.total_issues || 0), 0);
+    return {
+      auditRuns: total,
+      orphanedTokens: singles,
+      compliantRuns: folderSessions,
+      statementsScanned: repoSessions,
+      sourceDirectives: totalIssues,
+    };
   }, [history]);
 
   const folderGroups = useMemo(() => {
@@ -116,7 +124,7 @@ export default function OverviewTab({ history, onViewResult, onNavigateToWorkspa
       const row: Record<string, any> = { category: cat.label };
       for (const [folder, files] of Object.entries(folderGroups)) {
         row[folder] = files.reduce((sum, f) =>
-          sum + (f.issues?.filter(i => (i.type === cat.key || i.category === cat.key)).length || 0), 0
+          sum + (f.issues?.filter(i => i.type === cat.key).length || 0), 0
         );
       }
       return row;
@@ -159,6 +167,10 @@ export default function OverviewTab({ history, onViewResult, onNavigateToWorkspa
       transition={{ duration: 0.35 }}
       className="space-y-8"
     >
+      <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2 mb-4">
+        <BarChart3 size={18} className="text-cyan-400" />
+        Dashboard Overview
+      </h2>
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
