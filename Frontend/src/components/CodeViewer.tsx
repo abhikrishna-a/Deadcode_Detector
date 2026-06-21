@@ -58,7 +58,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename, scrollTo
         border: '1px solid rgba(255, 255, 255, 0.035)',
         boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.02)'
       }}
-      className="rounded-xl overflow-hidden font-mono text-base flex flex-col min-h-0 flex-1"
+      className="rounded-xl overflow-hidden font-mono text-xs flex flex-col min-h-0 flex-1"
     >
       {/* Code Header Tab bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.03] bg-zinc-950/40">
@@ -70,7 +70,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename, scrollTo
       </div>
 
       {/* Code viewport container */}
-      <div ref={scrollRef} className="overflow-y-auto flex-1 p-3 space-y-px max-h-[60vh]">
+      <div ref={scrollRef} className="overflow-y-auto flex-1 p-3 space-y-px max-h-[640px]">
         {lines.map((codeText, index) => {
           const lineNum = index + 1;
           const listIssues = lineIssueMap[lineNum] || [];

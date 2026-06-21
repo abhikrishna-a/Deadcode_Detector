@@ -82,6 +82,7 @@ export const analysisAPI = {
     filename: string;
     language: string;
     analysis: any;
+    scan_id?: string;
     cached: boolean;
     _source_content?: string;
   }> => {

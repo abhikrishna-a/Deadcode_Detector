@@ -17,6 +17,7 @@ export interface WsFileCompleteMessage {
   source_content?: string;
   scan_folder?: string;
   scan_type?: string;
+  batch_id?: string;
 }
 
 export interface WsFileErrorMessage {

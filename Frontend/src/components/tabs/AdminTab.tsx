@@ -72,7 +72,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
     >
       {/* Tab description */}
       <div className="space-y-2">
-        <h2 className="font-display font-bold text-xl text-neutral-150 tracking-tight flex items-center gap-2">
+        <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2">
           <ShieldCheck className="text-teal-400" /> User Credentials Registry
         </h2>
         <p className="text-zinc-500 text-xs font-sans">
@@ -82,7 +82,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
 
       {/* Filter panel */}
       <div className="relative">
-        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-650">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500">
           <Search size={14} />
         </span>
         <input
@@ -90,7 +90,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
           placeholder="Search by name or email..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-300 bg-zinc-950/40 border border-white/[0.06] focus:border-violet-500/60 rounded-xl outline-none transition-all placeholder:text-zinc-650"
+          className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-300 bg-zinc-950/40 border border-white/[0.06] focus:border-violet-500/60 rounded-xl outline-none transition-all placeholder:text-zinc-500"
         />
       </div>
 
@@ -142,7 +142,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
                       {userCheck.username[0].toUpperCase()}
                     </div>
                     <div>
-                      <span className="font-mono text-zinc-150 font-bold block text-xs">
+                      <span className="font-mono text-zinc-200 font-bold block text-xs">
                         {userCheck.username}
                       </span>
                       <span className="text-[9px] font-mono text-neutral-500">
@@ -181,14 +181,14 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
                   {/* Role mutation trigger buttons */}
                   <div className="col-span-1 text-right">
                     {isSelf ? (
-                      <span className="text-[10px] text-zinc-650 font-sans italic pr-2">Locked</span>
+                      <span className="text-[10px] text-zinc-500 font-sans italic pr-2">Locked</span>
                     ) : (
                       <button
                         onClick={() => toggleUserRole(userCheck.id)}
                         disabled={togglingId === userCheck.id}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold tracking-tight transition-all cursor-pointer disabled:opacity-40 ${
                           isAdmin 
-                            ? 'border border-rose-500/20 text-rose-450 hover:bg-rose-500/5' 
+                            ? 'border border-rose-500/20 text-rose-400 hover:bg-rose-500/5' 
                             : 'border border-teal-500/25 text-teal-400 hover:bg-teal-500/5'
                         }`}
                       >
