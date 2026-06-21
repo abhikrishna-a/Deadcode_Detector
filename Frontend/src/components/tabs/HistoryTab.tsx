@@ -275,7 +275,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     >
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h2 className="font-display font-bold text-xl text-neutral-150 tracking-tight flex items-center gap-2">
+          <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2">
             <Clock className="text-cyan-400" size={20} /> Analysis History
           </h2>
           <p className="text-zinc-500 text-xs font-sans">
@@ -291,7 +291,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
 
       <div className="flex gap-2 items-center">
         <form onSubmit={handleSearch} className="relative flex-1">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-650">
+          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500">
             <Search size={14} />
           </span>
           <input
@@ -299,7 +299,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
             placeholder="Search by filename..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-300 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-650"
+            className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-300 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-500"
           />
         </form>
         <div className="flex gap-1">

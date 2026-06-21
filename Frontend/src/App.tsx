@@ -86,6 +86,7 @@ export default function App() {
             metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
             scan_folder: item.scan_folder,
             scan_type: item.scan_type || 'single',
+            scan_id: item.scan_id || item.analysis_id,
           } as AnalysisResult);
         }
       } catch {

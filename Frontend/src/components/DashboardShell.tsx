@@ -142,7 +142,7 @@ export default function DashboardShell({ user, onLogout, children }: DashboardSh
       </main>
 
       {/* Floating diagnostics terminal rail footer */}
-      <footer className="px-8 py-3.5 glass-card border-x-0 border-b-0 rounded-none bg-transparent text-center flex justify-between items-center text-[10px] text-neutral-600 font-mono tracking-wider">
+      <footer className="px-8 py-3.5 glass-card border-x-0 border-b-0 rounded-none bg-transparent text-center flex justify-between items-center text-[10px] text-zinc-500 font-mono tracking-wider">
         <div className="flex items-center gap-2 select-none">
           <Terminal size={12} className="text-zinc-500" />
           <span>GHOSTCODE_KERNEL_ACTIVE: True</span>

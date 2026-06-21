@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.env
+.venv
+celerybeat-schedule*
+*.ps1
+.git
+.gitignore

@@ -36,7 +36,7 @@ export interface AnalysisSummary {
   total_issues: number;
   severity_counts: Record<'high' | 'medium' | 'low', number>;
   categories: Record<string, number>;
-  overall_health: 'clean' | 'good' | 'needs_attention' | 'poor';
+  overall_health: 'clean' | 'good' | 'needs_attention' | 'poor' | 'unknown';
   health_score: number;
 }
 
@@ -52,6 +52,7 @@ export interface AnalysisResult {
   cached?: boolean;
   scan_folder?: string;
   scan_type?: 'single' | 'folder' | 'repo';
+  scan_id?: string;
   error?: string;
 }
 

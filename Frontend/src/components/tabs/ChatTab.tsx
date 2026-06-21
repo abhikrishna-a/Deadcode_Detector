@@ -67,7 +67,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
             setSelectedDoc({
               document_id: initialDocId,
               filename: initialFilename || '',
-              summary: { total_issues: 0, severity_counts: {}, categories: {}, overall_health: 'unknown', health_score: 0 },
+              summary: { total_issues: 0,               severity_counts: { high: 0, medium: 0, low: 0 }, categories: {}, overall_health: 'unknown', health_score: 0 },
               issues: [],
               metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
               scan_type: 'single',
@@ -118,6 +118,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       isDir: true,
       children: buildFileTree(docs),
       file: undefined,
+      totalIssues: 0,
     }));
   }, [filteredDocs]);
 
@@ -147,12 +148,12 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
           {node.file?.error ? (
             <AlertOctagon size={10} className="text-rose-400 flex-shrink-0" />
           ) : (
-            <FileCode size={10} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
+            <FileCode size={10} className={isSelected ? 'text-cyan-400' : 'text-zinc-500 flex-shrink-0'} />
           )}
           <div className="min-w-0">
             <span className="font-mono text-[10px] truncate block">{nameOnly}</span>
             {!node.file?.error && (
-              <span className="text-[7px] font-mono text-zinc-600">
+              <span className={`text-[9px] font-mono ${(() => { const s = node.file?.summary?.health_score ?? 0; return s >= 85 ? 'text-emerald-400' : s >= 60 ? 'text-amber-400' : 'text-rose-400'; })()}`}>
                 {node.file?.issues?.length || 0} issues • {node.file?.summary?.health_score || 0}%
               </span>
             )}
@@ -201,10 +202,10 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
     setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    const chatHistory = messages.map(m => ({ role: m.role, content: m.content }));
 
     try {
-      for await (const chunk of analysisAPI.ragChat(selectedDoc.document_id, userPrompt, history)) {
+      for await (const chunk of analysisAPI.ragChat(selectedDoc.document_id, userPrompt, chatHistory)) {
         setMessages(prev => {
           const list = [...prev];
           if (list.length > 0) {
@@ -251,16 +252,14 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       <div 
         className="w-full md:w-[260px] p-5 rounded-3xl flex flex-col space-y-4 glass-card"
       >
-        <div className="flex items-center gap-2">
-          <MessageSquare size={14} className="text-cyan-400 animate-pulse" />
-          <span className="text-[10px] font-mono tracking-wider uppercase text-neutral-500 font-bold block">
-            Inspector Source
-          </span>
-        </div>
+        <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2">
+          <MessageSquare size={18} className="text-cyan-400" />
+          Inspector Source
+        </h2>
 
         {/* Filters */}
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-650">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">
             <Search size={12} />
           </span>
           <input
@@ -268,7 +267,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
             placeholder="Search report file..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-cyan-400/30 rounded-xl outline-none transition-all placeholder:text-zinc-650 font-sans"
+            className="w-full pl-8 pr-3 py-2 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-cyan-400/30 rounded-xl outline-none transition-all placeholder:text-zinc-500 font-sans"
           />
         </div>
 
@@ -294,7 +293,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.04] mb-4">
               <div className="flex items-center gap-2">
                 <Terminal size={14} className="text-cyan-400" />
-                <span className="text-xs font-mono font-medium text-zinc-250">
+                <span className="text-xs font-mono font-medium text-zinc-300">
                   REF: {selectedDoc.filename}
                 </span>
               </div>
@@ -319,7 +318,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
                   >
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   </div>
-                  <span className="text-[9px] font-mono text-zinc-650 mt-1 uppercase tracking-widest px-1">
+                  <span className="text-[9px] font-mono text-zinc-500 mt-1 uppercase tracking-widest px-1">
                     {msg.role === 'user' ? 'audit_lead' : 'inspec_kernel'}
                   </span>
                 </div>
@@ -327,7 +326,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
 
               {isTyping && (
                 <div className="flex flex-col items-start animate-pulse">
-                  <div className="bg-white/[0.01] border border-white/[0.04] text-neutral-550 rounded-2xl p-4 text-xs font-mono italic">
+                  <div className="bg-white/[0.01] border border-white/[0.04] text-neutral-500 rounded-2xl p-4 text-xs font-mono italic">
                     Reading AST node values...
                   </div>
                 </div>
@@ -344,7 +343,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
                 placeholder="Ask inspector, e.g., 'What dead code was found?'..."
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
-                className="flex-1 py-2.5 px-4 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-cyan-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-650 font-sans"
+                className="flex-1 py-2.5 px-4 text-xs text-zinc-300 bg-white/[0.01] border border-white/[0.06] focus:border-cyan-400/40 rounded-xl outline-none transition-all placeholder:text-zinc-500 font-sans"
               />
               <button
                 type="submit"
@@ -359,7 +358,7 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
           <div className="flex-1 flex flex-col items-center justify-center text-center text-zinc-500">
             <MessageSquare size={32} className="text-zinc-700 mb-3 animate-pulse" />
             <p className="text-xs font-sans">No code node selected for inspector.</p>
-            <p className="text-[11px] text-zinc-650 font-mono mt-1">Deploy analyses first, then activate inspector target.</p>
+            <p className="text-[11px] text-zinc-500 font-mono mt-1">Deploy analyses first, then activate inspector target.</p>
           </div>
         )}
       </div>

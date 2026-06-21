@@ -44,7 +44,8 @@ interface AnalyzerTabProps {
 }
 
 function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
-  const issues: Issue[] = (raw.analysis?.issues || []).map((i: any, idx: number) => ({
+  const src = raw.analysis || raw;
+  const issues: Issue[] = (src.issues || []).map((i: any, idx: number) => ({
     id: i.id || `GC-${idx}`,
     type: i.type || i.category || 'unused_import',
     name: i.name || null,
@@ -65,22 +66,23 @@ function mapToAnalysisResult(raw: any, filename: string): AnalysisResult {
     filename,
     summary: {
       total_issues: issues.length,
-      severity_counts: raw.analysis?.summary?.severity_counts || { high: 0, medium: 0, low: 0 },
-      categories: raw.analysis?.summary?.categories || {},
-      overall_health: raw.analysis?.summary?.overall_health || 'clean',
-      health_score: raw.analysis?.summary?.health_score ?? 100,
+      severity_counts: src.summary?.severity_counts || { high: 0, medium: 0, low: 0 },
+      categories: src.summary?.categories || {},
+      overall_health: src.summary?.overall_health || 'clean',
+      health_score: src.summary?.health_score ?? 100,
     },
     issues,
-    metrics: raw.analysis?.metrics || {
+    metrics: src.metrics || {
       total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0,
       dead_lines_estimate: 0, dead_code_percentage: 0,
     },
-    refactor_hints: raw.analysis?.refactor_hints || [],
+    refactor_hints: src.refactor_hints || [],
     _source_content: raw._source_content || '',
     llm_refining: raw.llm_refining || false,
     cached: raw.cached || false,
     scan_folder: raw.scan_folder || '',
     scan_type: raw.scan_type || 'single',
+    scan_id: raw.batch_id || raw.scan_id || raw.document_id || '',
   };
 }
 
@@ -128,7 +130,7 @@ function TreeNode({
             : 'text-zinc-500 hover:bg-white/[0.01] hover:text-zinc-300'
         }`}
       >
-        <FileCode size={11} className={isSelected ? 'text-cyan-400' : 'text-zinc-650 flex-shrink-0'} />
+        <FileCode size={11} className={isSelected ? 'text-cyan-400' : 'text-zinc-500 flex-shrink-0'} />
         <span className="font-mono truncate flex-1 min-w-0">{node.name}</span>
         {issueCount > 0 && (
           <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full leading-none ${
@@ -209,7 +211,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [batchActive, setBatchActive] = useState(false);
   const [batchErrorsList, setBatchErrorsList] = useState<Array<{ path: string; error: string }>>([]);
-  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+  const [scrollToLine, setScrollToLine] = useState<number | undefined>(undefined);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [folderProcessing, setFolderProcessing] = useState(false);
   const [pendingFolderName, setPendingFolderName] = useState('');
@@ -217,6 +219,8 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const [pendingSubdirs, setPendingSubdirs] = useState<string[]>([]);
   const [scanScope, setScanScope] = useState<'full' | 'subdir'>('full');
   const [selectedSubdir, setSelectedSubdir] = useState('');
+  const [subdirDropdownOpen, setSubdirDropdownOpen] = useState(false);
+  const subdirButtonRef = useRef<HTMLButtonElement>(null);
   const pendingFilesRef = useRef<File[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const analysisSocket = useAnalysisSocket();
@@ -302,7 +306,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           if (f.status === 'completed' && f.analysis) {
             setActiveFileName(f.filename);
             setProgressFiles(prev => [f.filename, ...prev]);
-            const report = mapToAnalysisResult(f, f.filename);
+            const report = mapToAnalysisResult({ ...f, batch_id: batchId }, f.filename);
             report._source_content = f.source_content || '';
             addHistoryReport(report);
             setBatchReportsList(prev => {
@@ -326,7 +330,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
-          if (scannedDoneCountRef.current > 0) {
+          if (autoEnterTimeoutRef.current === null) {
             autoEnterTimeoutRef.current = setTimeout(() => {
               autoEnterTimeoutRef.current = null;
               setView('workspace');
@@ -347,11 +351,13 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   useEffect(() => {
     if (!viewTarget || !isActive) return;
     const { analysisId, filename, scanFolder } = viewTarget;
+    const abortCtrl = new AbortController();
 
     (async () => {
       try {
         if (scanFolder) {
           const folderData = await analysisAPI.ragGetAnalysesByFolder(scanFolder);
+          if (abortCtrl.signal.aborted) return;
           const reports: AnalysisResult[] = folderData.items.map(item =>
             mapToAnalysisResult({ ...item, document_id: item.analysis_id }, item.filename)
           );
@@ -360,6 +366,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           setSelectedFolder(scanFolder);
         } else {
           const data = await analysisAPI.ragGetAnalysis(analysisId);
+          if (abortCtrl.signal.aborted) return;
           const report = mapToAnalysisResult({ ...data, document_id: data.analysis_id }, filename);
           setBatchReportsList([report]);
           setSelectedFile(report);
@@ -373,6 +380,8 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         setViewTarget(null);
       }
     })();
+
+    return () => abortCtrl.abort();
   }, [viewTarget, isActive]);
 
   useEffect(() => {
@@ -405,22 +414,25 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const fetchedSourceRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!selectedFile || !selectedFile.document_id || selectedFile._source_content) return;
+    if (!selectedFile || !selectedFile.document_id) return;
     const docId = selectedFile.document_id;
     if (fetchedSourceRef.current.has(docId)) return;
     fetchedSourceRef.current.add(docId);
     (async () => {
       try {
         const data = await analysisAPI.ragGetAnalysis(docId);
-        if (data._source_content) {
-          const updated = { ...selectedFile, _source_content: data._source_content };
+        if (data.analysis) {
+          const updated = mapToAnalysisResult(
+            { ...data.analysis, document_id: data.analysis_id, scan_id: data.scan_id, _source_content: data._source_content || '' },
+            data.filename || selectedFile.filename,
+          );
           setSelectedFile(updated);
           setBatchReportsList(prev =>
             prev.map(r => r.document_id === docId ? updated : r)
           );
         }
       } catch (err) {
-        console.error('Failed to re-fetch source content:', err);
+        console.error('Failed to re-fetch analysis data:', err);
       }
     })();
   }, [selectedFile?.document_id]);
@@ -452,6 +464,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const analyzeSingleFile = async (file: File) => {
     setView('batch_progress');
     setBatchActive(true);
+    scannedDoneCountRef.current = 0;
     setScannedDoneCount(0);
     setScannedFailCount(0);
     setFilesTotalCount(1);
@@ -557,7 +570,14 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           setActiveFileName(msg.filename);
           setProgressFiles(prev => [msg.filename, ...prev]);
           const report = mapToAnalysisResult(
-            { ...msg.analysis, document_id: msg.document_id, scan_folder: msg.scan_folder || '', scan_type: msg.scan_type || 'single' }, msg.filename,
+            {
+              ...msg.analysis,
+              document_id: msg.document_id,
+              batch_id: msg.batch_id || batch_id,
+              scan_folder: msg.scan_folder || '',
+              scan_type: msg.scan_type || 'single',
+            },
+            msg.filename,
           );
           report._source_content = msg.source_content || fileContents[msg.filename] || '';
           addHistoryReport(report);
@@ -582,12 +602,10 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           setActiveFileName('');
           autoEnterTimeoutRef.current = setTimeout(() => {
             autoEnterTimeoutRef.current = null;
-            if (scannedDoneCountRef.current > 0) {
-              setView('workspace');
-              setSelectedFolder(currentFolderName);
-              setSelectedFile(null);
-              setHistoryMode(true);
-            }
+            setView('workspace');
+            setSelectedFolder(currentFolderName);
+            setSelectedFile(null);
+            setHistoryMode(true);
           }, 1500);
         },
         onClose: () => {
@@ -702,7 +720,14 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           setActiveFileName(msg.filename);
           setProgressFiles(prev => [msg.filename, ...prev]);
           const report = mapToAnalysisResult(
-            { ...msg.analysis, document_id: msg.document_id, scan_folder: msg.scan_folder || '', scan_type: msg.scan_type || 'single' }, msg.filename,
+            {
+              ...msg.analysis,
+              document_id: msg.document_id,
+              batch_id: msg.batch_id || batch_id,
+              scan_folder: msg.scan_folder || '',
+              scan_type: msg.scan_type || 'single',
+            },
+            msg.filename,
           );
           report._source_content = msg.source_content || '';
           addHistoryReport(report);
@@ -727,12 +752,10 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           setActiveFileName('');
           autoEnterTimeoutRef.current = setTimeout(() => {
             autoEnterTimeoutRef.current = null;
-            if (scannedDoneCountRef.current > 0) {
-              setView('workspace');
-              setSelectedFolder(currentFolderName);
-              setSelectedFile(null);
-              setHistoryMode(true);
-            }
+            setView('workspace');
+            setSelectedFolder(currentFolderName);
+            setSelectedFile(null);
+            setHistoryMode(true);
           }, 1500);
         },
         onClose: () => {
@@ -751,8 +774,8 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
 
   const cancelBatchProcess = () => {
     abortRef.current?.abort();
-    analysisSocket.disconnect();
     batchActiveRef.current = false;
+    analysisSocket.disconnect();
     setBatchActive(false);
     if (autoEnterTimeoutRef.current !== null) {
       clearTimeout(autoEnterTimeoutRef.current);
@@ -939,7 +962,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             <p className="font-display font-medium text-sm text-zinc-300">
               Drag file here or <span className="text-cyan-400 font-semibold group-hover:underline">browse</span>
             </p>
-            <p className="text-[10px] text-zinc-650 font-mono mt-2 uppercase tracking-wider">
+            <p className="text-[10px] text-zinc-500 font-mono mt-2 uppercase tracking-wider">
               Python • JavaScript • TypeScript
             </p>
           </div>
@@ -961,7 +984,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             </button>
           </div>
 
-          <div className="p-4 border border-cyan-400/10 bg-cyan-450/5 rounded-2xl flex gap-3 text-left">
+          <div className="p-4 border border-cyan-400/10 bg-cyan-400/5 rounded-2xl flex gap-3 text-left">
             <HelpCircle size={15} className="text-cyan-400 flex-shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="text-xs font-semibold text-neutral-300 block">How it works</span>
@@ -990,7 +1013,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
 
             <div className="space-y-2">
               <div className="flex justify-between items-baseline">
-                <h3 className="font-display font-light text-2xl text-white">
+                <h3 className="font-display font-light text-lg text-white">
                   {batchActive
                     ? `Scanning file ${scannedDoneCount + scannedFailCount + 1}`
                     : `Completed ${scannedDoneCount} / ${filesTotalCount} scans`
@@ -1019,7 +1042,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
               {batchActive && (
                 <button
                   onClick={cancelBatchProcess}
-                  className="px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-wider font-bold rounded-lg border border-rose-500/20 text-rose-450 hover:bg-rose-500/5 transition-all cursor-pointer flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-wider font-bold rounded-lg border border-rose-500/20 text-rose-400 hover:bg-rose-500/5 transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <StopCircle size={12} /> Cancel
                 </button>
@@ -1052,7 +1075,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
       )}
 
       {view === 'workspace' && (
-        <div className={`flex-1 min-h-0 grid grid-cols-1 gap-6 text-left ${
+        <div className={`flex-1 min-h-0 grid grid-cols-1 gap-6 text-left -mx-6 w-[calc(100%+3rem)] ${
           allProjectIssues.length > 0
             ? 'lg:grid-cols-[240px_minmax(0,1fr)_200px]'
             : 'lg:grid-cols-[320px_minmax(0,1fr)]'
@@ -1098,7 +1121,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                   <div className="grid grid-cols-4 gap-4">
                     {[
                       { val: batchReportsList.length, label: 'FILES', color: 'text-neutral-200' },
-                      { val: folderAggregate?.totalIssues ?? 0, label: 'ISSUES', color: (folderAggregate?.totalIssues ?? 0) > 0 ? 'text-rose-450' : 'text-emerald-400' },
+                      { val: folderAggregate?.totalIssues ?? 0, label: 'ISSUES', color: (folderAggregate?.totalIssues ?? 0) > 0 ? 'text-rose-400' : 'text-emerald-400' },
                       { val: (folderAggregate?.totalIssues ?? 0) > 5 ? 'high' : (folderAggregate?.totalIssues ?? 0) > 0 ? 'medium' : 'low', label: 'COMPLEXITY', color: 'text-amber-200' },
                       { val: `${folderAggregate?.healthScore ?? 100}%`, label: 'HEALTH', color: 'text-cyan-400' }
                     ].map((card, idx) => (
@@ -1109,7 +1132,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                     ))}
                   </div>
                   <div className="flex gap-6 items-start">
-                    <div className="flex-1 p-4 rounded-3xl glass-card">
+                    <div className="flex-1 p-5 rounded-3xl glass-card">
                       <div className="flex items-center gap-2.5 mb-4">
                         <div className="w-1 h-4 bg-cyan-400 rounded-full" />
                         <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">Issue Breakdown</span>
@@ -1193,7 +1216,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                   <div className="grid grid-cols-4 gap-4">
                     {[
                       { val: selectedFile.metrics?.total_lines || 0, label: 'TOTAL LINES', color: 'text-neutral-200' },
-                      { val: allProjectIssues.length, label: 'ISSUES', color: allProjectIssues.length > 0 ? 'text-rose-450' : 'text-emerald-400' },
+                      { val: allProjectIssues.length, label: 'ISSUES', color: allProjectIssues.length > 0 ? 'text-rose-400' : 'text-emerald-400' },
                       { val: selectedFile.metrics?.complexity_hint || 'low', label: 'COMPLEXITY', color: 'text-amber-200' },
                       { val: `${selectedFile.summary?.health_score || 0}%`, label: 'HEALTH', color: 'text-cyan-400' }
                     ].map((card, idx) => (
@@ -1226,7 +1249,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
 
                   {historyMode ? (
                     <div className="flex gap-6 items-start">
-                      <div className="flex-1 p-4 rounded-3xl glass-card">
+                      <div className="flex-1 p-5 rounded-3xl glass-card">
                         <div className="flex items-center gap-2.5 mb-4">
                           <div className="w-1 h-4 bg-cyan-400 rounded-full" />
                           <span className="text-[10px] font-mono tracking-wider uppercase text-cyan-400 font-bold">Issue Breakdown</span>
@@ -1308,19 +1331,9 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                       issues={selectedFile.issues || []}
                       filename={selectedFile.filename}
                       scrollToLine={scrollToLine}
-                      onScrolled={() => setScrollToLine(null)}
+                      onScrolled={() => setScrollToLine(undefined)}
                     />
                   )}
-                  {historyMode && selectedFile._source_content && (
-                    <CodeViewer
-                      source={selectedFile._source_content}
-                      issues={selectedFile.issues || []}
-                      filename={selectedFile.filename}
-                      scrollToLine={scrollToLine}
-                      onScrolled={() => setScrollToLine(null)}
-                    />
-                  )}
-
                   {selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
                     <div className="p-4 border border-violet-500/[0.08] bg-violet-500/[0.01] rounded-xl space-y-1.5 text-left">
                       <div className="flex items-center gap-2 text-violet-400">
@@ -1344,7 +1357,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             </div>
 
             {allProjectIssues.length > 0 && (
-              <div className="p-5 rounded-3xl flex flex-col space-y-4 overflow-y-auto glass-card">
+              <div className="p-5 rounded-3xl flex flex-col space-y-4 max-h-[640px] overflow-y-auto glass-card">
                 <div className="space-y-3">
                   <span className="text-[10px] font-mono tracking-wider uppercase text-neutral-500 font-bold block">Filter</span>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -1375,7 +1388,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                     filteredProjectIssues.map((issue, idx) => {
                       const isExpanded = expandedIssueId === issue.id;
                       const isHigh = issue.type === 'unused_function' || issue.type === 'unreachable_code';
-                      const colorBadge = isHigh ? 'text-rose-450 bg-rose-500/10 border-rose-500/10' : 'text-amber-400 bg-amber-450/10 border-amber-450/10';
+                      const colorBadge = isHigh ? 'text-rose-400 bg-rose-500/10 border-rose-500/10' : 'text-amber-400 bg-amber-400/10 border-amber-400/10';
 
                       return (
                         <div
@@ -1445,13 +1458,13 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           ) : (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Folder</label>
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Folder</label>
               <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl truncate">
                 {pendingFolderName || 'No folder selected'}
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Files to Scan</label>
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Files to Scan</label>
               <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl">
                 {scanScope === 'subdir' && selectedSubdir
                   ? `${pendingFilesRef.current.filter(f => (f.webkitRelativePath || f.name).replace(/\\/g, '/').startsWith(pendingFolderName + '/' + selectedSubdir)).length} of ${pendingFileCount} files`
@@ -1459,7 +1472,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Scan Scope</label>
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Scan Scope</label>
               <div className="flex gap-3">
                 <label className="flex items-center gap-2 cursor-pointer py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] transition-colors flex-1">
                   <input
@@ -1485,15 +1498,56 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                 </label>
               </div>
               {scanScope === 'subdir' && (
-                <select
-                  value={selectedSubdir}
-                  onChange={(e) => setSelectedSubdir(e.target.value)}
-                  className="w-full py-2 px-3 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all cursor-pointer mt-2"
-                  style={{ colorScheme: 'dark' }}
-                >
-                  <option value="">Select subfolder...</option>
-                  {pendingSubdirs.map(s => <option key={s} value={s}>{s}/</option>)}
-                </select>
+                <div className="mt-2">
+                  <button
+                    ref={subdirButtonRef}
+                    type="button"
+                    onClick={() => setSubdirDropdownOpen(prev => !prev)}
+                    className="w-full py-2 px-3 text-xs text-left text-zinc-300 bg-zinc-800 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all cursor-pointer flex items-center justify-between"
+                  >
+                    <span className={selectedSubdir ? 'text-zinc-200' : 'text-zinc-500'}>
+                      {selectedSubdir ? `${selectedSubdir}/` : 'Select subfolder...'}
+                    </span>
+                    <span className="text-zinc-500 text-[10px]">&#9662;</span>
+                  </button>
+                  <AnimatePresence>
+                    {subdirDropdownOpen && (() => {
+                      const rect = subdirButtonRef.current?.getBoundingClientRect();
+                      if (!rect) return null;
+                      return (
+                        <motion.div
+                          className="fixed z-50"
+                          style={{ top: rect.bottom + 4, left: rect.left, width: rect.width }}
+                          initial={{ opacity: 0, scaleY: 0.95, y: -4 }}
+                          animate={{ opacity: 1, scaleY: 1, y: 0 }}
+                          exit={{ opacity: 0, scaleY: 0.95, y: -4 }}
+                          transition={{ duration: 0.12 }}
+                        >
+                          <div className="bg-zinc-800 border border-white/[0.06] rounded-xl shadow-xl max-h-[180px] overflow-y-auto">
+                            <div className="fixed inset-0 z-[-1]" onClick={() => setSubdirDropdownOpen(false)} />
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedSubdir(''); setSubdirDropdownOpen(false); }}
+                              className="w-full text-left px-3 py-2 text-xs text-zinc-500 hover:bg-white/[0.04] cursor-pointer transition-colors"
+                            >
+                              None (analyze all)
+                            </button>
+                            {pendingSubdirs.map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => { setSelectedSubdir(s); setSubdirDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2 text-xs cursor-pointer transition-colors hover:bg-white/[0.04] ${selectedSubdir === s ? 'text-cyan-400 bg-white/[0.04]' : 'text-zinc-300'}`}
+                              >
+                                {s}/
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+                  </AnimatePresence>
+                </div>
               )}
             </div>
             </div>
@@ -1518,17 +1572,17 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           </p>
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Repository URL</label>
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Repository URL</label>
               <input
                 type="text"
                 placeholder="https://github.com/user/repo"
                 value={gitUrl}
                 onChange={(e) => setGitUrl(e.target.value)}
-                className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-455/60 rounded-xl outline-none transition-all placeholder:text-zinc-600"
+                className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:text-zinc-600"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-550 font-mono tracking-wider font-semibold block uppercase">Branch</label>
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Branch</label>
               <select
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}

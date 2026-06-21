@@ -1,0 +1,117 @@
+services:
+  redis:
+    image: redis:5-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - backend
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: deadcode_detector
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - backend
+
+  backend:
+    build:
+      context: ./Backend
+      args:
+        EXTRA_REQS: prod.txt
+    env_file:
+      - .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+      DJANGO_DEBUG: "False"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             daphne -b 0.0.0.0 -p 8000 core.asgi:application"
+    restart: unless-stopped
+    networks:
+      - backend
+
+  celery-worker:
+    build:
+      context: ./Backend
+      args:
+        EXTRA_REQS: prod.txt
+    env_file:
+      - .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+      DJANGO_DEBUG: "False"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A core worker -l info --pool=solo
+    restart: unless-stopped
+    networks:
+      - backend
+
+  rag:
+    build:
+      context: ./services/rag
+    env_file:
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004
+    restart: unless-stopped
+    networks:
+      - backend
+
+  frontend:
+    build: ./Frontend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - backend
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+      - rag
+    restart: unless-stopped
+    networks:
+      - backend
+
+volumes:
+  redis_data:
+  pgdata:
+
+networks:
+  backend:
+    driver: bridge

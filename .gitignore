@@ -16,7 +16,10 @@ venv/
 # Environment files
 .env
 .env.example
-*.env
+.env*
+
+cookie.txt
+ghostcode.db
 
 # Django
 Backend/.env
