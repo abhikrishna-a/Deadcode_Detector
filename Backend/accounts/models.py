@@ -10,10 +10,8 @@ from urllib.parse import quote
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
-        ('admin', 'Admin'),
-        ('senior', 'Senior'),
-        ('developer', 'Developer'),
-        ('viewer', 'Viewer'),
+        ('senior', 'Senior')
+        ('junior', 'Junior'),
     )
 
     role = models.CharField(
