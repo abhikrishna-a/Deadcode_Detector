@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.chunker import detect_language
 from app.db import IS_SQLITE
+from app.services.grok_client import call_groq_json
+from app.services.prompts import BATCH_LLM_SYSTEM, get_batch_llm_prompt
 
 SymbolInfo = Tuple[str, str]  # (name, type)  type is one of: function, class, import, variable
 
@@ -303,6 +305,68 @@ def batch_check_references(
             result[filename] = build_result([], source, filename)
 
     return result
+
+
+# ── Phase 2: LLM analysis for files with 0 cross-ref hits ─────────────
+
+async def phase2_llm_analysis(filename: str, source: str, candidates: list[dict]) -> dict:
+    prompt = get_batch_llm_prompt(source, filename, candidates)
+    result, usage = await call_groq_json(prompt=prompt, system=BATCH_LLM_SYSTEM)
+    if usage:
+        result["_token_usage"] = usage
+    return result
+
+
+# ── Token index builder ──────────────────────────────────────────────
+
+def build_token_index(files: list[tuple[str, str]]) -> dict:
+    token_files: dict = {}
+    for idx, (filename, source) in enumerate(files):
+        tokens = set(re.findall(r'\w+', source))
+        for token in tokens:
+            token_files.setdefault(token, set()).add(idx)
+    return token_files
+
+
+def build_cross_references(
+    files: list[tuple[str, str]],
+    token_index: dict | None = None,
+) -> dict:
+    if token_index is None:
+        token_index = build_token_index(files)
+    result: dict = {}
+    for idx, (filename, source) in enumerate(files):
+        syms = extract_symbols(source, filename)
+        unreferenced = []
+        for name, typ in syms:
+            sources = token_index.get(name)
+            if sources is not None and (sources - {idx}):
+                continue
+            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            if intra_count > 1:
+                continue
+            unreferenced.append((name, typ))
+        result[filename] = build_result(unreferenced, source, filename)
+    return result
+
+
+async def cross_reference(
+    files: list[tuple[str, str]],
+    db=None,
+    user_id: int | None = None,
+) -> dict:
+    all_results: dict = {}
+    if db is not None and user_id is not None:
+        for filename, source in files:
+            syms = extract_symbols(source, filename)
+            if syms:
+                unreferenced = await check_references(db, user_id, syms, source)
+                all_results[filename] = build_result(unreferenced, source, filename)
+            else:
+                all_results[filename] = build_result([], source, filename)
+    else:
+        all_results = build_cross_references(files)
+    return all_results
 
 
 # ── Build result for unreferenced symbols ──────────────────────────────

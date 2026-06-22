@@ -80,3 +80,20 @@ export interface DocItemProps {
   created_at: string;
   chunk_count: number;
 }
+
+export interface IssueThread {
+  id: number;
+  document_id: string;
+  title: string;
+  created_at: string;
+  resolved: boolean;
+  messages: ThreadMessage[];
+}
+
+export interface ThreadMessage {
+  id: number;
+  thread_id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}

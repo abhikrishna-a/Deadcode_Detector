@@ -345,4 +345,107 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Chat Threads
+  createThread: async (documentId: string, title: string): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/chat/threads/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify({ document_id: documentId, title }),
+    });
+    return response.json();
+  },
+
+  listThreads: async (documentId?: string): Promise<any[]> => {
+    const token_ = await getAccessToken();
+    const params = documentId ? `?document_id=${documentId}` : '';
+    const response = await fetch(`/api/chat/threads/${params}`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    return response.json();
+  },
+
+  postMessage: async (threadId: string, content: string): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/chat/threads/${threadId}/messages/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify({ content }),
+    });
+    return response.json();
+  },
+
+  resolveThread: async (threadId: string): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/chat/threads/${threadId}/resolve/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    return response.json();
+  },
+
+  // Junior (single file analysis)
+  juniorUpload: async (file: File): Promise<any> => {
+    const token_ = await getAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`/api/auth/junior/upload/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token_}` },
+      body: formData,
+    });
+    return response.json();
+  },
+
+  listSubmissions: async (): Promise<any[]> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/list/`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    return response.json();
+  },
+
+  getSubmissionDetail: async (submissionId: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/detail/${submissionId}/`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    return response.json();
+  },
+
+  triggerSubmissionAnalysis: async (submissionId: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/analyze/${submissionId}/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    return response.json();
+  },
+
+  juniorGitImport: async (repoUrl: string, branch: string, paths: string[]): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/git-import/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify({ repo_url: repoUrl, branch, paths }),
+    });
+    return response.json();
+  },
+
+  clearAllHistory: async (): Promise<void> => {
+    const token_ = await getAccessToken();
+    await fetch(`/api/rag/history`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+  },
+
+  clearJuniorSubmissions: async (): Promise<void> => {
+    const token_ = await getAccessToken();
+    await fetch(`/api/auth/junior/clear/`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+  },
+
 };

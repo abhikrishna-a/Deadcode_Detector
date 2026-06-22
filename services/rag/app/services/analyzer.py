@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 from asyncio import timeout as async_timeout
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,13 @@ from app.services.grok_client import call_groq_json
 from app.services.prompts import get_analysis_prompt, get_analysis_system_prompt
 from app.services.chunker import detect_language
 from app.services.cross_reference import extract_symbols, check_references, build_result
+
+class BatchAnalyzeState(Enum):
+    PENDING = "pending"
+    ANALYZING = "analyzing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 
 DEAD_CODE_CATEGORIES = [
     "unused_import", "unused_function", "unused_class", "unused_variable",
@@ -371,6 +379,35 @@ async def _run_llm_analysis(source: str, filename: str, rag_result: dict) -> dic
     result["summary"]["total_issues"] = total
 
     return result
+
+
+async def analyze_file_content(
+    content: str, filename: str,
+    user_id: int, document_id: str,
+    store_db=None,
+) -> tuple[dict, dict | None]:
+    result, llm_task = await analyze_file(content, filename, store_db, user_id)
+    llm_info = None
+    if llm_task is not None:
+        llm_info = {"analysis_id": document_id}
+    return result, llm_info
+
+
+def update_batch_scan_file(batch_id: str, filename: str, status: str):
+    """Update the status of a file in a batch scan (Redis-backed)."""
+    import redis as _r
+    from django.conf import settings
+    try:
+        r = _r.from_url(
+            settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0],
+            socket_timeout=3,
+            socket_connect_timeout=3,
+        )
+        key = f"batch_scan_status:{batch_id}"
+        r.hset(key, filename, status)
+        r.expire(key, 3600)
+    except Exception:
+        pass
 
 
 # Backwards-compatible alias (used by rag/routers/analysis.py)

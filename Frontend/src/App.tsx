@@ -12,6 +12,9 @@ import AnalyzerTab from './components/tabs/AnalyzerTab';
 import ChatTab from './components/tabs/ChatTab';
 import AdminTab from './components/tabs/AdminTab';
 import HistoryTab from './components/tabs/HistoryTab';
+import JuniorTab from './components/tabs/JuniorTab';
+import AIAssistTab from './components/tabs/AIAssistTab';
+import TeamChatTab from './components/tabs/TeamChatTab';
 import SettingsTab from './components/tabs/SettingsTab';
 import Toast from './components/ui/Toast';
 
@@ -177,6 +180,26 @@ export default function App() {
                           onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
                             handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
                           }}
+                          onShowToast={showToast}
+                        />
+                      )}
+
+                      {activeTab === 'junior' && (
+                        <JuniorTab
+                          key="junior"
+                          onShowToast={showToast}
+                        />
+                      )}
+
+                      {activeTab === 'assist' && (
+                        <AIAssistTab
+                          key="assist"
+                        />
+                      )}
+
+                      {activeTab === 'team' && (
+                        <TeamChatTab
+                          key="team"
                           onShowToast={showToast}
                         />
                       )}

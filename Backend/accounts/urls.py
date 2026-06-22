@@ -12,6 +12,12 @@ from .views import (
     AdminUserRoleUpdateView,
     SessionCheckView,
     LogoutView,
+    JuniorSubmissionUploadView,
+    JuniorSubmissionListView,
+    JuniorSubmissionDetailView,
+    JuniorSubmissionAnalyzeView,
+    JuniorClearView,
+    JuniorGitImportView,
 )
 
 urlpatterns = [
@@ -31,4 +37,11 @@ urlpatterns = [
 
     path('admin/users/', AdminUserListView.as_view(), name='admin_user_list'),
     path('admin/users/<int:user_id>/role/', AdminUserRoleUpdateView.as_view(), name='admin_user_role_update'),
+
+    path('junior/upload/', JuniorSubmissionUploadView.as_view(), name='junior_upload'),
+    path('junior/list/', JuniorSubmissionListView.as_view(), name='junior_list'),
+    path('junior/detail/<int:submission_id>/', JuniorSubmissionDetailView.as_view(), name='junior_detail'),
+    path('junior/analyze/<int:submission_id>/', JuniorSubmissionAnalyzeView.as_view(), name='junior_analyze'),
+    path('junior/clear/', JuniorClearView.as_view(), name='junior_clear'),
+    path('junior/git-import/', JuniorGitImportView.as_view(), name='junior_git_import'),
 ]

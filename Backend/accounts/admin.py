@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser
+from . import chat_models as models
 
 
 @admin.register(CustomUser)
@@ -43,3 +44,18 @@ class CustomUserAdmin(UserAdmin):
 
     # Make mfa_secret read-only so admins can see it but not accidentally corrupt it
     readonly_fields = ('mfa_secret',)
+
+
+@admin.register(models.IssueThread)
+class IssueThreadAdmin(admin.ModelAdmin):
+    list_display = ('id', 'analysis_id', 'filename', 'issue_id', 'created_by', 'resolved', 'created_at')
+    list_filter = ('resolved', 'created_by')
+    search_fields = ('filename', 'analysis_id', 'issue_id')
+    ordering = ('-created_at',)
+
+
+@admin.register(models.ThreadMessage)
+class ThreadMessageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'thread_id', 'author', 'is_ai_hint', 'created_at')
+    list_filter = ('is_ai_hint', 'author')
+    ordering = ('-created_at',)

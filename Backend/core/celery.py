@@ -14,4 +14,8 @@ app.conf.beat_schedule = {
         'task': 'accounts.tasks.cleanup_temp_git_dirs',
         'schedule': 21600,
     },
+    'nightly-scan-all-users': {
+        'task': 'accounts.scheduled_scans.nightly_scan_all_users',
+        'schedule': 86400,
+    },
 }

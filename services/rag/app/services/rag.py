@@ -81,6 +81,27 @@ def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) 
     ]
 
 
+def format_chunks_as_context(context_chunks: List[dict]) -> str:
+    parts = []
+    for i, chunk in enumerate(context_chunks):
+        meta = chunk.get("metadata", {})
+        header = f"[Chunk {i + 1}] {meta.get('chunk_type', 'block')}"
+        if meta.get("name"):
+            header += f" - {meta['name']}"
+        header += f" (lines {meta.get('line_start', '?')}-{meta.get('line_end', '?')})"
+        parts.append(f"{header}\n```\n{chunk.get('content', '')}\n```")
+    return "\n\n".join(parts)
+
+
+def format_history(history: List[dict]) -> str:
+    lines = []
+    for msg in history:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
 def build_chat_context_prompt(question: str, sources: list[dict]) -> List[dict]:
     context = "\n\n---\n\n".join(
         f"[{s['filename']}]\n{s['chunk_text']}" for s in sources

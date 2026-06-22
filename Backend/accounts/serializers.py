@@ -4,6 +4,7 @@ import threading
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from .models import JuniorSubmission
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -124,3 +125,15 @@ class CustomTokenRefreshSerializer(TokenRefreshSerializer):
             raise InvalidToken("MFA verification incomplete. Cannot refresh session.")
             
         return data
+
+
+class JuniorSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JuniorSubmission
+        fields = ['id', 'file_name', 'language', 'status', 'submitted_at', 'analysis_id', 'scan_id']
+
+
+class JuniorSubmissionDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JuniorSubmission
+        fields = '__all__'

@@ -4,4 +4,5 @@ from . import consumers
 
 websocket_urlpatterns = [
     re_path(r'ws/analysis/(?P<batch_id>[^/]+)/$', consumers.AnalysisConsumer.as_asgi()),
+    re_path(r'ws/notifications/$', consumers.NotificationConsumer.as_asgi()),
 ]

@@ -17,7 +17,7 @@ from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
 from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.cross_reference import batch_check_references
-from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history
+from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history, delete_all_user_documents
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
 
 logger = logging.getLogger("ghostcode-rag.analysis")
@@ -651,6 +651,15 @@ async def rag_history(
     items = await get_history(db, user["user_id"], limit=limit, offset=offset, search=search)
     total = await count_history(db, user["user_id"], search=search)
     return {"items": items, "total": total}
+
+
+@router.delete("/history")
+async def rag_delete_history(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await delete_all_user_documents(db, user["user_id"])
+    return {"message": f"Deleted {deleted} documents."}
 
 
 # ── Analyzer alias endpoints (replaces services/analyzer entirely) ──────────

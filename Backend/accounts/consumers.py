@@ -57,3 +57,48 @@ class AnalysisConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({
             'type': 'batch_complete',
         })
+
+
+class NotificationConsumer(AsyncJsonWebsocketConsumer):
+    async def connect(self):
+        user = self.scope.get('user')
+        if not user or not user.is_authenticated:
+            await self.close(code=4001)
+            return
+        self.user_id = user.id
+        self.group_name = f'notifications_user_{user.id}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        logger.info('Notification WS connected: user=%s', user)
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content):
+        pass
+
+    async def new_chat_thread(self, event):
+        await self.send_json({
+            'type': 'new_chat_thread',
+            'thread_id': event.get('thread_id'),
+            'from_username': event.get('from_username'),
+        })
+
+    async def nightly_report_ready(self, event):
+        await self.send_json({'type': 'nightly_report_ready'})
+
+    async def junior_analysis_complete(self, event):
+        await self.send_json({
+            'type': 'junior.analysis_complete',
+            'submission_id': event.get('submission_id'),
+            'file_name': event.get('file_name'),
+            'result': event.get('result'),
+        })
+
+    async def junior_analysis_failed(self, event):
+        await self.send_json({
+            'type': 'junior.analysis_failed',
+            'submission_id': event.get('submission_id'),
+            'file_name': event.get('file_name'),
+        })

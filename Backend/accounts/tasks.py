@@ -17,7 +17,10 @@ def _group_name(batch_id: str) -> str:
 
 
 def _send_ws(batch_id: str, message: dict) -> None:
-    async_to_sync(get_channel_layer().group_send)(_group_name(batch_id), message)
+    try:
+        async_to_sync(get_channel_layer().group_send)(_group_name(batch_id), message)
+    except Exception:
+        logger.warning('Failed to send WS message to batch %s', batch_id, exc_info=True)
 
 
 def _rag_url() -> str:
@@ -223,4 +226,62 @@ def cleanup_temp_git_dirs():
             cache.delete(key)
 
     logger.info('Git cleanup done: %d keys scanned, %d dirs removed', keys_found, dirs_removed)
+
+
+def _notify_user(user_id: int, message: dict) -> None:
+    try:
+        async_to_sync(get_channel_layer().group_send)(f'user_{user_id}', message)
+    except Exception:
+        logger.warning('Failed to notify user %d', user_id, exc_info=True)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def analyze_junior_submission(self, submission_id: int):
+    from .models import JuniorSubmission
+    try:
+        submission = JuniorSubmission.objects.select_related('user').get(id=submission_id)
+    except JuniorSubmission.DoesNotExist:
+        logger.error('JuniorSubmission %d not found', submission_id)
+        return
+    user = submission.user
+    rag_url = getattr(settings, 'RAG_ANALYZE_URL', 'http://localhost:8004/rag/analyze')
+    try:
+        resp = requests.post(
+            rag_url,
+            json={
+                'filename': submission.file_name,
+                'content': submission.content,
+                'user_id': user.id,
+                'language': submission.language,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        submission.result = data.get('analysis', data)
+        submission.status = 'completed'
+        submission.save(update_fields=['result', 'status'])
+        _notify_user(user.id, {
+            'type': 'junior.analysis_complete',
+            'submission_id': submission.id,
+            'file_name': submission.file_name,
+            'result': submission.result,
+        })
+        logger.info('Junior analysis complete for submission %d', submission_id)
+    except Exception as exc:
+        submission.status = 'failed'
+        submission.save(update_fields=['status'])
+        logger.exception('Junior analysis failed for submission %d', submission_id)
+        _notify_user(user.id, {
+            'type': 'junior.analysis_failed',
+            'submission_id': submission.id,
+            'file_name': submission.file_name,
+        })
+        raise self.retry(exc=exc)
+
+
+@shared_task
+def batch_analyze_junior_submissions(submission_ids: list):
+    for sid in submission_ids:
+        analyze_junior_submission.delay(sid)
 

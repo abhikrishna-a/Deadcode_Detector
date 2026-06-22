@@ -67,8 +67,9 @@ def get_gemini_client() -> AsyncOpenAI:
     return gemini_key_manager.get_client()
 
 
-async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, dict | None]:
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+async def call_groq_json(prompt: str, system: str | None = None, user: str = "", model: str = "", temperature: float = 0.1) -> tuple[dict, dict | None]:
+    if not model:
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     messages = []
@@ -87,7 +88,7 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
                 client.chat.completions.create(
                     model=groq_model,
                     messages=messages,
-                    temperature=0.1,
+                    temperature=temperature,
                     max_tokens=8192,
                     response_format={"type": "json_object"},
                 ),
@@ -138,7 +139,7 @@ async def call_groq_json(prompt: str, system: str | None = None) -> tuple[dict, 
                 client.chat.completions.create(
                     model=gemini_model,
                     messages=gemini_messages,
-                    temperature=0.1,
+                    temperature=temperature,
                     max_tokens=8192,
                 ),
                 timeout=60,

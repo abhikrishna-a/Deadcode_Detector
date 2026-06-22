@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, PieChartIcon, ExternalLink } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AnalysisResult } from '../../types';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
 

@@ -43,6 +43,7 @@ async def store_analysis(
     scan_id: str = "",
     chunks: list[Any] | None = None,
     embeddings: list[list[float]] | None = None,
+    document_id_override: str | None = None,
 ) -> str:
     file_hash = hashlib.sha256(source.encode()).hexdigest()
     health_score = analysis_json.get("summary", {}).get("health_score", 0)
@@ -466,6 +467,46 @@ async def cleanup_stale_documents(
                     {"id": row[0]},
                 )
                 deleted += 1
+
+    await db.commit()
+    return deleted
+
+
+async def delete_all_user_documents(
+    db: AsyncSession,
+    user_id: int,
+) -> int:
+    deleted = 0
+    if IS_SQLITE:
+        rows = (await db.execute(
+            text("SELECT id FROM analyses WHERE user_id = :uid"),
+            {"uid": user_id},
+        )).fetchall()
+        for (row_id,) in rows:
+            await db.execute(
+                text("DELETE FROM embeddings WHERE analysis_id = :id"),
+                {"id": row_id},
+            )
+            await db.execute(
+                text("DELETE FROM analyses WHERE id = :id"),
+                {"id": row_id},
+            )
+            deleted += 1
+    else:
+        rows = (await db.execute(
+            text("SELECT id FROM rag_documents WHERE user_id = :uid"),
+            {"uid": user_id},
+        )).fetchall()
+        for (row_id,) in rows:
+            await db.execute(
+                text("DELETE FROM rag_chunks WHERE document_id = CAST(:id AS uuid)"),
+                {"id": row_id},
+            )
+            await db.execute(
+                text("DELETE FROM rag_documents WHERE id = CAST(:id AS uuid)"),
+                {"id": row_id},
+            )
+            deleted += 1
 
     await db.commit()
     return deleted

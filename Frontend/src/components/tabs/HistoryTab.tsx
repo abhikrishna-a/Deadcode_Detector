@@ -69,6 +69,10 @@ function buildHistoryTree(files: HistoryItem[], defaultScanFolder?: string): His
   return root;
 }
 
+function buildUnifiedTree(files: HistoryItem[], defaultScanFolder?: string): HistoryTreeNode[] {
+  return buildHistoryTree(files, defaultScanFolder);
+}
+
 function buildTree(items: HistoryItem[]): { name: string; scanType?: string; files: HistoryItem[] }[] {
   const groups = new Map<string, { name: string; scanType?: string; files: HistoryItem[] }>();
   for (const item of items) {

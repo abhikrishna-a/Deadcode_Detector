@@ -56,3 +56,40 @@ def get_analysis_prompt(source: str, filename: str, language: str) -> str:
 # Keep backwards-compatible alias used by rag/services/analyzer.py
 def build_analysis_prompt(source: str, filename: str, language: str) -> str:
     return get_analysis_prompt(source, filename, language)
+
+
+BATCH_LLM_SYSTEM = """You are GhostCode Phase 2 Analyzer. You receive a source file and
+a list of cross-reference candidates that MAY be dead code.
+
+Your job:
+1. Review each candidate in context of the full file.
+2. Confirm or reject each one based on actual intra-file usage.
+3. Flag any additional dead code you spot that cross-referencing missed.
+
+Return JSON with:
+- "issues": array of confirmed dead code items
+- "summary": with total_issues, severity_counts
+- "metrics": dead_lines_estimate, dead_code_percentage"""
+
+
+def get_batch_llm_prompt(source: str, filename: str, candidates: list[dict]) -> str:
+    total_lines = source.count("\n") + 1
+    numbered = "\n".join(
+        f"{i+1} {line}" for i, line in enumerate(source.splitlines())
+    )
+    candidates_text = "\n".join(
+        f"  - {c.get('name', '?')} ({c.get('category', '?')}) line {c.get('line_start', '?')}"
+        for c in candidates
+    )
+    return f"""Analyze this file for dead code. Cross-reference candidates are listed below.
+
+## File
+{filename}  {total_lines} lines
+
+## Cross-Reference Candidates
+{candidates_text}
+
+## Source (numbered)
+```
+{numbered}
+```"""

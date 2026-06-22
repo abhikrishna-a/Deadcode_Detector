@@ -11,6 +11,8 @@ from urllib.parse import quote
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
         ('admin', 'Admin'),
+        ('senior', 'Senior'),
+        ('developer', 'Developer'),
         ('viewer', 'Viewer'),
     )
 
@@ -112,3 +114,24 @@ class UserSession(models.Model):
 
     def __str__(self):
         return f"Session {self.session_key[:8]}... - {self.user.username}"
+
+
+class JuniorSubmission(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    )
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='junior_submissions')
+    file_name = models.CharField(max_length=512)
+    language = models.CharField(max_length=50, blank=True, default='')
+    content = models.TextField()
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    result = models.JSONField(blank=True, null=True)
+    analysis_id = models.CharField(max_length=64, blank=True, default='')
+    scan_id = models.CharField(max_length=64, blank=True, default='')
+
+    def __str__(self):
+        return f"{self.file_name} ({self.user.username})"

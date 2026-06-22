@@ -483,6 +483,129 @@ class SessionCheckView(APIView):
         return resp
 
 
+class JuniorSubmissionUploadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import JuniorSubmission
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        content = file.read().decode('utf-8', errors='replace')
+        name = file.name
+        lang = name.rsplit('.', 1)[-1] if '.' in name else ''
+        submission = JuniorSubmission.objects.create(
+            user=request.user,
+            file_name=name,
+            language=lang,
+            content=content,
+        )
+        from .serializers import JuniorSubmissionSerializer
+        return Response(JuniorSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
+
+
+class JuniorSubmissionListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import JuniorSubmission
+        from .serializers import JuniorSubmissionSerializer
+        submissions = JuniorSubmission.objects.filter(user=request.user).order_by('-submitted_at')
+        return Response(JuniorSubmissionSerializer(submissions, many=True).data)
+
+
+class JuniorSubmissionDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        from .models import JuniorSubmission
+        from .serializers import JuniorSubmissionDetailSerializer
+        try:
+            submission = JuniorSubmission.objects.get(id=submission_id, user=request.user)
+        except JuniorSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(JuniorSubmissionDetailSerializer(submission).data)
+
+
+class JuniorSubmissionAnalyzeView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, submission_id):
+        from .models import JuniorSubmission
+        from .tasks import analyze_junior_submission
+        try:
+            submission = JuniorSubmission.objects.get(id=submission_id, user=request.user)
+        except JuniorSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if submission.status == 'processing':
+            return Response({'error': 'Already processing.'}, status=status.HTTP_400_BAD_REQUEST)
+        submission.status = 'processing'
+        submission.save(update_fields=['status'])
+        analyze_junior_submission.delay(submission.id)
+        return Response({'message': 'Analysis started.'})
+
+
+class JuniorGitImportView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import JuniorSubmission
+        repo_url = request.data.get('repo_url', '').strip()
+        branch = request.data.get('branch', 'main')
+        paths = request.data.get('paths', [])
+        if not repo_url or not paths:
+            return Response({'error': 'repo_url and paths required'}, status=status.HTTP_400_BAD_REQUEST)
+        import tempfile, os, subprocess
+        temp_dir = tempfile.mkdtemp(prefix='junior_git_')
+        try:
+            subprocess.run(['git', 'clone', '--depth', '1', '-b', branch, repo_url, temp_dir],
+                           capture_output=True, timeout=60, check=True)
+            submissions = []
+            for rel_path in paths:
+                full_path = os.path.join(temp_dir, rel_path)
+                if not os.path.isfile(full_path):
+                    continue
+                with open(full_path, 'r', encoding='utf-8', errors='replace') as fh:
+                    content = fh.read()
+                name = os.path.basename(rel_path)
+                lang = name.rsplit('.', 1)[-1] if '.' in name else ''
+                submission = JuniorSubmission.objects.create(
+                    user=request.user,
+                    file_name=name,
+                    language=lang,
+                    content=content,
+                )
+                submissions.append(submission.id)
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            from .serializers import JuniorSubmissionSerializer
+            qs = JuniorSubmission.objects.filter(id__in=submissions)
+            return Response(JuniorSubmissionSerializer(qs, many=True).data, status=status.HTTP_201_CREATED)
+        except subprocess.TimeoutExpired:
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return Response({'error': 'Git clone timed out'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except subprocess.CalledProcessError as e:
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return Response({'error': f'Git clone failed: {e.stderr.decode()}'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class JuniorClearView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        from .models import JuniorSubmission
+        JuniorSubmission.objects.filter(user=request.user).delete()
+        return Response({'message': 'All junior submissions cleared.'})
+
+
 class LogoutView(APIView):
     permission_classes = [AllowAny]
 
