@@ -129,10 +129,16 @@ class CustomTokenRefreshSerializer(TokenRefreshSerializer):
 
 class JuniorSubmissionSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
+    total_issues = serializers.SerializerMethodField()
 
     class Meta:
         model = JuniorSubmission
-        fields = ['id', 'filename', 'language', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds']
+        fields = ['id', 'filename', 'language', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds', 'total_issues']
+
+    def get_total_issues(self, obj):
+        if not obj.result:
+            return 0
+        return obj.result.get('summary', {}).get('total_issues', len(obj.result.get('issues', [])))
 
 
 class JuniorSubmissionDetailSerializer(serializers.ModelSerializer):

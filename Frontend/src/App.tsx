@@ -8,21 +8,17 @@ import LandingPage from './components/LandingPage';
 import AuthScreen from './components/AuthScreen';
 import DashboardShell from './components/DashboardShell';
 import OverviewTab from './components/tabs/OverviewTab';
-import AnalyzerTab from './components/tabs/AnalyzerTab';
-import ChatTab from './components/tabs/ChatTab';
 import AdminTab from './components/tabs/AdminTab';
 import HistoryTab from './components/tabs/HistoryTab';
 import JuniorTab from './components/tabs/JuniorTab';
 import SubmissionsReviewPanel from './components/tabs/SubmissionsReviewPanel';
-import AIAssistTab from './components/tabs/AIAssistTab';
 import TeamChatTab from './components/tabs/TeamChatTab';
 import SettingsTab from './components/tabs/SettingsTab';
 import Toast from './components/ui/Toast';
 
 export default function App() {
-  const { user, isAuthenticated, isLoading, checkSession, logout } = useAuthStore();
+  const { user, checkSession, logout } = useAuthStore();
   const history = useAnalysisStore(s => s.history);
-  const chatTarget = useAnalysisStore(s => s.chatTarget);
   const setViewTarget = useAnalysisStore(s => s.setViewTarget);
   const setChatTarget = useAnalysisStore(s => s.setChatTarget);
   const resetWorkspace = useAnalysisStore(s => s.resetWorkspace);
@@ -61,7 +57,7 @@ export default function App() {
 
   const handleNavigateToWorkspace = useCallback((analysisId: string, filename: string, scanFolder?: string, onNavigate?: (tab: string) => void) => {
     setViewTarget({ analysisId, filename, scanFolder });
-    onNavigate?.('analyzer');
+    onNavigate?.('junior');
   }, [setViewTarget]);
 
   // Hydrate history from backend once dashboard is active
@@ -148,108 +144,76 @@ export default function App() {
             >
               {(activeTab, onNavigate) => (
                 <div className="flex-1 flex flex-col justify-start min-h-0">
-                  {activeTab !== 'analyzer' && (
-                    <AnimatePresence mode="wait">
-                      {activeTab === 'overview' && (
-                        <OverviewTab
-                          key="overview"
-                          history={history}
-                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
-                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
-                          }}
-                        />
-                      )}
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'overview' && (
+                      <OverviewTab
+                        key="overview"
+                        history={history}
+                        onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                          handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                        }}
+                      />
+                    )}
 
-                      {activeTab === 'chat' && (
-                        <ChatTab
-                          key="chat"
-                          history={history}
-                          initialDocId={chatTarget?.docId}
-                          initialFilename={chatTarget?.filename}
-                        />
-                      )}
+                    {activeTab === 'history' && (
+                      <HistoryTab
+                        key="history"
+                        onNavigateToChat={(docId, filename) => {
+                          setChatTarget({ docId, filename });
+                        }}
+                        onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                          handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                        }}
+                        onShowToast={showToast}
+                      />
+                    )}
 
-                      {activeTab === 'history' && (
-                        <HistoryTab
-                          key="history"
-                          onNavigateToChat={(docId, filename) => {
-                            setChatTarget({ docId, filename });
-                            onNavigate('chat');
-                          }}
-                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
-                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
-                          }}
-                          onShowToast={showToast}
-                        />
-                      )}
+                    {activeTab === 'junior' && (
+                      <JuniorTab
+                        key="junior"
+                        currentUser={currentUser}
+                        history={history}
+                        onShowToast={showToast}
+                        onNavigateToChat={(docId, filename) => {
+                          setChatTarget({ docId, filename });
+                        }}
+                        onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                          handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                        }}
+                      />
+                    )}
 
-                      {activeTab === 'junior' && (
-                        <JuniorTab
-                          key="junior"
-                          currentUser={currentUser}
-                          history={history}
-                          onShowToast={showToast}
-                          onNavigateToChat={(docId, filename) => {
-                            setChatTarget({ docId, filename });
-                            onNavigate('chat');
-                          }}
-                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
-                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
-                          }}
-                        />
-                      )}
+                    {activeTab === 'review' && currentUser.role === 'senior' && (
+                      <SubmissionsReviewPanel
+                        key="review"
+                        currentUser={currentUser}
+                        onShowToast={showToast}
+                      />
+                    )}
 
-                      {activeTab === 'review' && currentUser.role === 'senior' && (
-                        <SubmissionsReviewPanel
-                          key="review"
-                          currentUser={currentUser}
-                          onShowToast={showToast}
-                        />
-                      )}
+                    {activeTab === 'team' && (
+                      <TeamChatTab
+                        key="team"
+                        currentUser={currentUser}
+                      />
+                    )}
 
-                      {activeTab === 'assist' && (
-                        <AIAssistTab
-                          key="assist"
-                          currentUser={user!}
-                          onShowToast={showToast}
-                        />
-                      )}
+                    {activeTab === 'settings' && (
+                      <SettingsTab
+                        key="settings"
+                        currentUser={currentUser}
+                        onShowToast={showToast}
+                      />
+                    )}
 
-                      {activeTab === 'team' && (
-                        <TeamChatTab
-                          key="team"
-                          currentUser={currentUser}
-                        />
-                      )}
-
-                      {activeTab === 'settings' && (
-                        <SettingsTab
-                          key="settings"
-                          currentUser={currentUser}
-                          onShowToast={showToast}
-                        />
-                      )}
-
-                      {activeTab === 'admin' && currentUser.role === 'senior' && (
-                        <AdminTab
-                          key="admin"
-                          currentUser={currentUser}
-                          onShowToast={showToast}
-                        />
-                      )}
-                    </AnimatePresence>
-                  )}
-
-                  <div className="flex-1 min-h-0 flex flex-col" style={{ display: activeTab === 'analyzer' ? '' : 'none' }}>
-                    <AnalyzerTab
-                      key="analyzer"
-                      onNavigateToChat={(docId, filename) => {
-                        setChatTarget({ docId, filename });
-                        onNavigate('chat');
-                      }}
-                      isActive={activeTab === 'analyzer'}
-                    />
-                  </div>
+                    {activeTab === 'admin' && currentUser.role === 'senior' && (
+                      <AdminTab
+                        key="admin"
+                        currentUser={currentUser}
+                        onShowToast={showToast}
+                      />
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </DashboardShell>

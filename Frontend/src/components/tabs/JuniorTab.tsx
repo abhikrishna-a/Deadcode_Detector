@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   AlertTriangle, AlertCircle, Info, MessageSquare,
   Loader2, FolderOpen, CheckCircle, RefreshCw, Upload,
-  FileCode, X, BarChart3, Bug, File, Folder,
-  LayoutDashboard, ClipboardList, GitBranch,
+  FileCode, FileText, X, BarChart3, Bug, File, Folder,
+  LayoutDashboard, ClipboardList, GitBranch, Users,
   ChevronRight, XCircle, Clock, Trash2,
   MessageSquareText, Send,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { analysisAPI } from '../../api/analysis';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
 import { timeAgo } from '../../lib/time';
 import HistoryTab from './HistoryTab';
+import TeamChatTab from './TeamChatTab';
 
 
 interface JuniorTabProps {
@@ -28,6 +29,7 @@ const SUB_TABS = [
   { id: 'history' as const, label: 'History', icon: Clock },
   { id: 'upload' as const, label: 'Upload', icon: Upload },
   { id: 'results' as const, label: 'Results', icon: ClipboardList },
+  { id: 'teamchat' as const, label: 'Team Chat', icon: Users },
   { id: 'feedback' as const, label: 'Feedback', icon: MessageSquareText },
 ];
 
@@ -59,6 +61,82 @@ const statusBadge = (status: string) => {
   }
 };
 
+const FILE_ICONS: Record<string, { icon: any; color: string }> = {
+  py:   { icon: FileCode, color: 'text-blue-400' },
+  ts:   { icon: FileCode, color: 'text-cyan-400' },
+  tsx:  { icon: FileCode, color: 'text-cyan-400' },
+  mts:  { icon: FileCode, color: 'text-cyan-400' },
+  cts:  { icon: FileCode, color: 'text-cyan-400' },
+  js:   { icon: FileText, color: 'text-yellow-400' },
+  jsx:  { icon: FileText, color: 'text-yellow-400' },
+  mjs:  { icon: FileText, color: 'text-yellow-400' },
+  cjs:  { icon: FileText, color: 'text-yellow-400' },
+  json: { icon: FileCode, color: 'text-orange-400' },
+  yaml: { icon: FileCode, color: 'text-orange-400' },
+  yml:  { icon: FileCode, color: 'text-orange-400' },
+  toml: { icon: FileCode, color: 'text-orange-400' },
+  css:  { icon: FileCode, color: 'text-pink-400' },
+  scss: { icon: FileCode, color: 'text-pink-400' },
+  less: { icon: FileCode, color: 'text-pink-400' },
+  html: { icon: FileCode, color: 'text-red-400' },
+  htm:  { icon: FileCode, color: 'text-red-400' },
+  md:   { icon: FileText, color: 'text-zinc-400' },
+  rst:  { icon: FileText, color: 'text-zinc-400' },
+  txt:  { icon: FileText, color: 'text-zinc-400' },
+  sh:   { icon: FileCode, color: 'text-lime-400' },
+  bash: { icon: FileCode, color: 'text-lime-400' },
+  zsh:  { icon: FileCode, color: 'text-lime-400' },
+  ps1:  { icon: FileCode, color: 'text-lime-400' },
+  rs:   { icon: FileCode, color: 'text-orange-400' },
+  go:   { icon: FileCode, color: 'text-cyan-400' },
+  java: { icon: FileCode, color: 'text-red-400' },
+  vue:  { icon: FileCode, color: 'text-emerald-400' },
+  svelte: { icon: FileCode, color: 'text-rose-400' },
+  sql:  { icon: FileCode, color: 'text-purple-400' },
+  dockerfile: { icon: FileCode, color: 'text-blue-400' },
+  dockerignore: { icon: FileCode, color: 'text-blue-400' },
+  env:  { icon: FileCode, color: 'text-zinc-500' },
+};
+
+function getFileIcon(filename: string) {
+  const dot = filename.lastIndexOf('.');
+  const ext = dot !== -1 ? filename.slice(dot + 1).toLowerCase() : '';
+  return FILE_ICONS[ext] || { icon: FileCode, color: 'text-zinc-500' };
+}
+
+function buildUploadTree(files: File[]): TreeNode[] {
+  const root: TreeNode[] = [];
+  const map = new Map<string, TreeNode[]>();
+  for (const f of files) {
+    const parts = (f.webkitRelativePath || f.name).replace(/\\/g, '/').split('/');
+    let current = root;
+    let path = '';
+    for (let i = 0; i < parts.length; i++) {
+      const isLast = i === parts.length - 1;
+      path = path ? `${path}/${parts[i]}` : parts[i];
+      if (isLast) {
+        current.push({ name: parts[i], isDir: false, children: [], item: f, key: path });
+      } else {
+        let dir = current.find(n => n.isDir && n.name === parts[i]);
+        if (!dir) {
+          dir = { name: parts[i], isDir: true, children: [], key: path };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  const sortNodes = (ns: TreeNode[]) => {
+    ns.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of ns) if (n.children.length) sortNodes(n.children);
+  };
+  sortNodes(root);
+  return root;
+}
+
 interface TreeNode {
   name: string;
   isDir: boolean;
@@ -68,7 +146,7 @@ interface TreeNode {
 }
 
 export default function JuniorTab({ currentUser, history, onShowToast, onNavigateToChat, onNavigateToWorkspace }: JuniorTabProps) {
-  const [subTab, setSubTab] = useState<'dashboard' | 'history' | 'upload' | 'results' | 'feedback'>('dashboard');
+  const [subTab, setSubTab] = useState<'dashboard' | 'history' | 'upload' | 'results' | 'teamchat' | 'feedback'>('dashboard');
   const [folders, setFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState('');
   const [reports, setReports] = useState<any[]>([]);
@@ -78,6 +156,16 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 
   const [feedbackNotifs, setFeedbackNotifs] = useState(0);
   const feedbackNotifsRef = useRef(0);
+
+  // Live refresh state
+  const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 30s tick to re-render timeAgo
+  useEffect(() => {
+    const tick = setInterval(() => setLastRefreshed(prev => prev + 1), 30000);
+    return () => clearInterval(tick);
+  }, []);
 
   // Upload state
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -108,6 +196,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   };
 
   const loadData = async () => {
+    setRefreshing(true);
     try {
       const hist = await analysisAPI.ragHistory(500);
       const items = hist.items;
@@ -119,10 +208,12 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       setFolders(arr);
       if (arr.length > 0 && !selectedFolder) setSelectedFolder(arr[0]);
       setReports(items);
+      setLastRefreshed(Date.now());
     } catch (e: any) {
       onShowToast(e?.message || 'Failed to load history reports.', 'error');
     }
     setLoading(false);
+    setRefreshing(false);
   };
 
   useEffect(() => { loadData(); }, []);
@@ -133,6 +224,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       try {
         const data = await analysisAPI.listSubmissions();
         setSubmissions(Array.isArray(data) ? data : data.submissions || []);
+        setLastRefreshed(Date.now());
       } catch { /* ignore */ }
     };
     refresh();
@@ -144,8 +236,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
         setFeedbackNotifs(feedbackNotifsRef.current);
       }
     });
-    const pollTimer = setInterval(refresh, 15000);
-    return () => { clearInterval(pollTimer); disconnect(); };
+    return () => { disconnect(); };
   }, [connect]);
 
   const BATCH_SIZE = 100;
@@ -424,23 +515,51 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     return nodes;
   }, [folderReports]);
 
-  function renderTree(nodes: TreeNode[], depth: number, parentPath: string, renderFile: (node: TreeNode, depth: number) => React.ReactNode) {
-    return nodes.map(node => {
+  function renderTree(
+    nodes: TreeNode[],
+    depth: number,
+    parentPath: string,
+    renderFile: (node: TreeNode, depth: number, isLast: boolean) => React.ReactNode,
+    siblingIndex?: number,
+    totalSiblings?: number,
+  ) {
+    return nodes.map((node, idx) => {
       const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
       const treeKey = node.key || fullPath;
       const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+      const nodeIsLast = idx === nodes.length - 1;
 
       if (!node.isDir) {
-        return renderFile(node, depth);
+        return renderFile(node, depth, nodeIsLast);
       }
+
+      const guideLine = depth > 0 && (
+        <div className="flex-shrink-0 self-stretch flex" style={{ width: `${depth * 16}px` }}>
+          {Array.from({ length: depth }).map((_, gi) => {
+            const parentIsLast = gi === depth - 1 ? (siblingIndex !== undefined && nodeIsLast) : false;
+            return (
+              <div key={gi} className="w-4 h-full relative">
+                <div className="absolute left-[7px] top-0 bottom-0 w-px bg-white/[0.06]" />
+              </div>
+            );
+          })}
+        </div>
+      );
 
       return (
         <div key={treeKey}>
           <div
             onClick={() => toggleTreePath(fullPath)}
-            className="flex items-center gap-1.5 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
+            className="flex items-center gap-1.5 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
             style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
           >
+            {depth > 0 && (
+              <div className="flex items-center h-full">
+                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                  {nodeIsLast ? '└── ' : '├── '}
+                </span>
+              </div>
+            )}
             <ChevronRight
               size={10}
               className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
@@ -501,9 +620,9 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
         <div>
           <h2 className="font-bold text-xl text-neutral-200 tracking-tight">Junior Dev Portal</h2>
           <p className="text-zinc-500 text-xs font-sans mt-1">
-            Nightly reports &middot; {new Date().toLocaleDateString()}
+            Nightly reports &middot; updated {timeAgo(lastRefreshed)}
             <button onClick={loadData} className="ml-2 text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 cursor-pointer">
-              <RefreshCw size={10} /> refresh
+              <RefreshCw size={10} className={refreshing ? 'animate-spin' : ''} /> refresh
             </button>
           </p>
         </div>
@@ -698,28 +817,32 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {renderTree(reportTree, 1, '__reports__', (node, depth) => {
+                        {renderTree(reportTree, 1, '__reports__', (node, depth, isLast) => {
                           const r = node.item;
                           const health = r.health_score ?? 100;
                           const issues = r.total_issues ?? 0;
-                          const dots = issueDots(issues);
+                          const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
                           return (
                             <div key={node.name}
-                              className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
+                              className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
                               style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                               onClick={() => {
                                 setSelectedFolder(r.scan_folder || '');
                                 toggleTreePath('__issues__');
                               }}
                             >
-                              <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
+                              {depth > 0 && (
+                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                                  {isLast ? '└── ' : '├── '}
+                                </span>
+                              )}
+                              <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
                               <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{node.name}</span>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 <div className="w-12 h-1 rounded-full bg-zinc-800 overflow-hidden">
                                   <div className={`h-full rounded-full ${healthBarColor(health)}`} style={{ width: `${health}%` }} />
                                 </div>
                                 <span className={`text-[8px] font-mono w-6 text-right ${healthTextColor(health)}`}>{health}%</span>
-                                <span className={`text-[9px] font-mono w-4 text-center ${dots.color}`}>{dots.dots}</span>
                               </div>
                             </div>
                           );
@@ -756,15 +879,20 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {renderTree(issuesTree, 1, '__issues__', (node, depth) => {
+                        {renderTree(issuesTree, 1, '__issues__', (node, depth, isLast) => {
                           const { report, issue, severity, color } = node.item;
                           const key = `${report.analysis_id}:${issue.id}`;
                           const Icon = severity === 'high' ? AlertTriangle : severity === 'medium' ? AlertCircle : Info;
                           return (
                             <div key={key}
-                              className="flex items-center gap-2 py-1.5 px-3 hover:bg-white/[0.015] transition-colors"
+                              className="flex items-center gap-2 py-1 px-3 hover:bg-white/[0.015] transition-colors"
                               style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                             >
+                              {depth > 0 && (
+                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                                  {isLast ? '└── ' : '├── '}
+                                </span>
+                              )}
                               <Icon size={10} className={`${color} flex-shrink-0`} />
                               <div className="flex-1 min-w-0">
                                 <span className="text-[10px] text-zinc-300 truncate block">{issue.description}</span>
@@ -828,18 +956,43 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                 />
               </div>
               {uploadFiles.length > 0 ? (
-                <div className="mb-3 space-y-1.5">
-                  {uploadFiles.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between bg-white/[0.01] border border-white/[0.04] rounded-lg px-3 py-1.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileCode size={12} className="text-zinc-500 flex-shrink-0" />
-                        <span className="text-xs font-mono text-zinc-300 truncate">{f.webkitRelativePath || f.name}</span>
-                        <span className="text-[9px] text-zinc-600">({(f.size / 1024).toFixed(1)} KB)</span>
-                      </div>
-                      <button onClick={() => removeFile(i)} className="text-zinc-600 hover:text-rose-400 cursor-pointer flex-shrink-0"><X size={12} /></button>
-                    </div>
-                  ))}
-                  <div className="flex gap-2 pt-1">
+                <div className="mb-3">
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(16, 15, 23, 0.6), rgba(8, 8, 12, 0.7))',
+                      border: '1px solid rgba(255, 255, 255, 0.03)',
+                      boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.03)'
+                    }}
+                    className="rounded-2xl overflow-hidden backdrop-blur-md py-2 max-h-64 overflow-y-auto"
+                  >
+                    {(() => {
+                      const uploadTree = buildUploadTree(uploadFiles);
+                      const renderUploadFile = (node: TreeNode, depth: number, isLast: boolean) => {
+                        const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
+                        const idx = uploadFiles.indexOf(node.item as File);
+                        return (
+                          <div key={node.key}
+                            className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors group"
+                            style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
+                          >
+                            {depth > 0 && (
+                              <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                                {isLast ? '└── ' : '├── '}
+                              </span>
+                            )}
+                            <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
+                            <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{node.name}</span>
+                            {node.item && (
+                              <span className="text-[9px] text-zinc-600">({((node.item as File).size / 1024).toFixed(1)} KB)</span>
+                            )}
+                            <button onClick={() => removeFile(idx)} className="text-zinc-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer flex-shrink-0"><X size={12} /></button>
+                          </div>
+                        );
+                      };
+                      return renderTree(uploadTree, 0, '', renderUploadFile);
+                    })()}
+                  </div>
+                  <div className="flex gap-2 pt-3">
                     <button onClick={handleUpload} disabled={uploading}
                       className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-cyan-400 to-purple-600 text-white disabled:opacity-40 cursor-pointer">
                       {uploading ? 'Uploading...' : `Upload ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''}`}
@@ -944,16 +1097,23 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                 }}
                 className="rounded-2xl overflow-hidden backdrop-blur-md py-2"
               >
-                {renderTree(submissionTree, 0, '', (node, depth) => {
+                {renderTree(submissionTree, 0, '', (node, depth, isLast) => {
                   const s = node.item;
                   const badge = statusBadge(s.status);
                   const BadgeIcon = badge.icon;
+                  const { icon: FileIcon, color: iconColor } = getFileIcon(s.filename);
                   return (
                     <div key={s.id}
-                      className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors"
+                      className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors"
                       style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                     >
+                      {depth > 0 && (
+                        <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                          {isLast ? '└── ' : '├── '}
+                        </span>
+                      )}
                       <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
+                      <FileIcon size={10} className={`${iconColor} flex-shrink-0`} />
                       <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{s.filename}</span>
                       <span className={`text-[8px] font-mono px-1 rounded ${badge.bg} ${badge.color}`}>{s.status}</span>
                       {s.status === 'failed' && (
@@ -1171,20 +1331,25 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                     )}
                   </div>
                 </div>
-                {renderTree(resultsTree, 0, '', (node, depth) => {
+                {renderTree(resultsTree, 0, '', (node, depth, isLast) => {
                   const s = node.item;
                   if (!s) return null;
                   const issCount = s.total_issues ?? 0;
                   const hasIssues = issCount > 0;
-                  const iconColor = hasIssues ? 'text-amber-400' : 'text-violet-400/70';
+                  const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
                   const nameColor = hasIssues ? 'text-amber-300' : 'text-zinc-300';
                   return (
                     <div key={s.id}
-                      className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
+                      className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
                       style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                       onClick={() => handleViewResult(s.id)}
                     >
-                      <FileCode size={11} className={`${iconColor} flex-shrink-0`} />
+                      {depth > 0 && (
+                        <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                          {isLast ? '└── ' : '├── '}
+                        </span>
+                      )}
+                      <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
                       <span className={`text-[11px] font-mono ${nameColor} truncate flex-1 group-hover:text-cyan-400 transition-colors`}>{node.name}</span>
                       {hasIssues && (
                         <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded flex-shrink-0">{issCount}</span>
@@ -1196,6 +1361,13 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                 })}
               </div>
             )}
+          </motion.div>
+        )}
+
+        {/* ── TEAM CHAT ── */}
+        {subTab === 'teamchat' && (
+          <motion.div key="teamchat" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <TeamChatTab currentUser={currentUser} />
           </motion.div>
         )}
 
