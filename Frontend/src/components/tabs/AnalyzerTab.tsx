@@ -472,8 +472,14 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
     setBatchReportsList([]);
     setBatchErrorsList([]);
 
+    let scanFolder = '';
+    if (file.webkitRelativePath) {
+      const parts = file.webkitRelativePath.replace(/\\/g, '/').split('/');
+      if (parts.length > 1) scanFolder = parts[0];
+    }
+
     try {
-      const result = await analysisAPI.analyzeFile(file);
+      const result = await analysisAPI.analyzeFile(file, scanFolder, 'single');
       const report = mapToAnalysisResult(result, file.name);
       report._source_content = await file.text();
       addHistoryReport(report);

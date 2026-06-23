@@ -1,9 +1,14 @@
 import json
 import logging
+from datetime import datetime
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
+from django.contrib.auth import get_user_model
 
+from .chat_models import ChatRoom, RoomMessage
+
+UserModel = get_user_model()
 logger = logging.getLogger(__name__)
 
 
@@ -113,3 +118,97 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             'line_end': event.get('line_end'),
             'reviewer_username': event.get('reviewer_username'),
         })
+
+
+class ChatRoomConsumer(AsyncJsonWebsocketConsumer):
+    async def connect(self):
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_group_name = f'chat_{self.room_name}'
+
+        user = self.scope.get('user')
+        if not user or not user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.accept()
+        logger.info('Chat WS connected: room=%s user=%s', self.room_name, user)
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def receive_json(self, content):
+        action = content.get('action')
+        user = self.scope['user']
+
+        if action == 'send_message':
+            msg_text = content.get('content', '').strip()
+            if not msg_text:
+                return
+
+            msg = await self._save_message(self.room_name, user, msg_text)
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'chat_message',
+                    'id': msg.id,
+                    'author_id': user.id,
+                    'author_username': user.username,
+                    'content': msg_text,
+                    'created_at': msg.created_at.isoformat(),
+                }
+            )
+
+        elif action == 'typing':
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'user_typing',
+                    'author_id': user.id,
+                    'author_username': user.username,
+                }
+            )
+
+        elif action == 'stop_typing':
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'user_stop_typing',
+                    'author_id': user.id,
+                    'author_username': user.username,
+                }
+            )
+
+    async def chat_message(self, event):
+        await self.send_json({
+            'type': 'chat_message',
+            'id': event['id'],
+            'author_id': event['author_id'],
+            'author_username': event['author_username'],
+            'content': event['content'],
+            'created_at': event['created_at'],
+        })
+
+    async def user_typing(self, event):
+        await self.send_json({
+            'type': 'typing',
+            'author_id': event['author_id'],
+            'author_username': event['author_username'],
+        })
+
+    async def user_stop_typing(self, event):
+        await self.send_json({
+            'type': 'stop_typing',
+            'author_id': event['author_id'],
+            'author_username': event['author_username'],
+        })
+
+    @database_sync_to_async
+    def _save_message(self, room_name, user, content):
+        room, _ = ChatRoom.objects.get_or_create(
+            name=room_name,
+            defaults={'created_by': user},
+        )
+        return RoomMessage.objects.create(room=room, author=user, content=content)

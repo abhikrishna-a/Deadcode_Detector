@@ -11,6 +11,7 @@ import {
 import { User, AnalysisResult } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
+import { timeAgo } from '../../lib/time';
 
 
 interface JuniorTabProps {
@@ -53,17 +54,6 @@ const statusBadge = (status: string) => {
     default: return { icon: Clock, color: 'text-zinc-500', bg: 'bg-zinc-500/10' };
   }
 };
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 interface TreeNode {
   name: string;
@@ -1268,5 +1258,4 @@ function FeedbackView({ onShowToast }: { onShowToast: (msg: string, type: 'succe
   );
 }
 
-// Re-use timeAgo from the parent scope
-// Note: timeAgo is defined at the module level and accessible here
+// timeAgo imported from '../../lib/time'

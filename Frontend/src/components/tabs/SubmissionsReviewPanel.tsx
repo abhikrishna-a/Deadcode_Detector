@@ -9,6 +9,7 @@ import {
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
+import { timeAgo } from '../../lib/time';
 
 interface SubmissionsReviewPanelProps {
   currentUser: UserType;
@@ -53,17 +54,6 @@ const severityIcon = (sev: string) => {
     default: return <Info size={12} className="text-cyan-400" />;
   }
 };
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 export default function SubmissionsReviewPanel({ currentUser, onShowToast }: SubmissionsReviewPanelProps) {
   const [submissions, setSubmissions] = useState<any[]>([]);

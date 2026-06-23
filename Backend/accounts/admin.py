@@ -59,3 +59,17 @@ class ThreadMessageAdmin(admin.ModelAdmin):
     list_display = ('id', 'thread_id', 'author', 'is_ai_hint', 'created_at')
     list_filter = ('is_ai_hint', 'author')
     ordering = ('-created_at',)
+
+
+@admin.register(models.ChatRoom)
+class ChatRoomAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'scan_folder', 'created_by', 'created_at')
+    search_fields = ('name',)
+    ordering = ('-created_at',)
+
+
+@admin.register(models.RoomMessage)
+class RoomMessageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'room', 'author', 'created_at')
+    list_filter = ('author',)
+    ordering = ('-created_at',)

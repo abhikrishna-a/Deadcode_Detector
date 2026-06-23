@@ -39,7 +39,7 @@ const FILTERS: { mode: FilterMode; label: string }[] = [
   { mode: 'folder', label: 'Folder' },
 ];
 
-const MAX_ITEMS = 500;
+const MAX_ITEMS = 50;
 
 const healthColor = (score: number) => {
   if (score >= 85) return 'text-emerald-400';
@@ -223,6 +223,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['Single Files']));
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
 
@@ -231,6 +232,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     try {
       const result = await analysisAPI.ragHistory(MAX_ITEMS, 0, currentSearch);
       setItems(result.items);
+      setHasLoadedOnce(true);
     } catch {
       onShowToast('Unable to load history. Refresh the page and try again.', 'error');
     } finally {
@@ -240,9 +242,22 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
 
   useEffect(() => {
     loadHistory(search);
-    const interval = setInterval(() => loadHistory(search), 30000);
-    return () => clearInterval(interval);
-  }, []);
+    let interval = setInterval(() => loadHistory(search), 30000);
+    const handleVisibility = () => {
+      if (document.hidden) {
+        clearInterval(interval);
+      } else {
+        clearInterval(interval);
+        loadHistory(search);
+        interval = setInterval(() => loadHistory(search), 30000);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [search]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,13 +369,18 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                 </div>
               ))}
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && hasLoadedOnce ? (
             <div className="text-center py-16 text-neutral-600">
               <FileCode size={28} className="mx-auto text-zinc-700 mb-3" />
               <p className="text-xs font-sans">No analysis history found.</p>
               <p className="text-[11px] text-zinc-600 font-mono mt-1">
                 {filter !== 'all' ? 'Try a different filter.' : 'Run your first scan in the Scanner Workspace.'}
               </p>
+            </div>
+          ) : filtered.length === 0 && !hasLoadedOnce ? (
+            <div className="text-center py-16 text-neutral-600">
+              <Loader2 size={24} className="mx-auto text-zinc-700 mb-3 animate-spin" />
+              <p className="text-xs font-sans">Loading analysis history...</p>
             </div>
           ) : (
             tree.map(group => (

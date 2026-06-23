@@ -384,6 +384,33 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Chat rooms
+  listChatRooms: async (): Promise<{ rooms: any[] }> => {
+    const t = await getAccessToken();
+    const r = await fetch('/api/chat/rooms/', { headers: { Authorization: `Bearer ${t}` } });
+    return r.json();
+  },
+
+  createChatRoom: async (name: string, scanFolder?: string): Promise<any> => {
+    const t = await getAccessToken();
+    const r = await fetch('/api/chat/rooms/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      body: JSON.stringify({ name, scan_folder: scanFolder }),
+    });
+    return r.json();
+  },
+
+  getRoomMessages: async (roomName: string, before?: string, limit: number = 50): Promise<{ messages: any[] }> => {
+    const t = await getAccessToken();
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', before);
+    const r = await fetch(`/api/chat/rooms/${encodeURIComponent(roomName)}/messages/?${params}`, {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    return r.json();
+  },
+
   // Junior (batch upload)
   juniorUpload: async (files: File[], scanFolder?: string): Promise<any> => {
     const token_ = await getAccessToken();

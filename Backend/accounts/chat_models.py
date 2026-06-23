@@ -28,3 +28,30 @@ class ThreadMessage(models.Model):
 
     class Meta:
         ordering = ['created_at']
+
+
+class ChatRoom(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    scan_folder = models.CharField(max_length=500, blank=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_rooms'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name
+
+
+class RoomMessage(models.Model):
+    room = models.ForeignKey(
+        ChatRoom, on_delete=models.CASCADE, related_name='messages'
+    )
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']

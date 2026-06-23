@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .chat_models import IssueThread, ThreadMessage
+from .chat_models import ChatRoom, IssueThread, RoomMessage, ThreadMessage
 from .permissions import IsMFAVerified
 
 logger = logging.getLogger(__name__)
@@ -176,3 +176,86 @@ class ThreadResolveView(APIView):
         except Exception as e:
             logger.exception('Failed to resolve thread %s', pk)
             return Response({'error': 'Failed to resolve thread.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChatRoomListCreateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsMFAVerified]
+
+    def get(self, request):
+        try:
+            rooms = ChatRoom.objects.all().order_by('-created_at')
+            data = []
+            for r in rooms:
+                last_msg = r.messages.order_by('-created_at').first()
+                data.append({
+                    'id': r.id,
+                    'name': r.name,
+                    'scan_folder': r.scan_folder,
+                    'created_by': r.created_by.username,
+                    'created_at': r.created_at.isoformat(),
+                    'message_count': r.messages.count(),
+                    'last_message': {
+                        'content': last_msg.content[:200] if last_msg else '',
+                        'author_username': last_msg.author.username if last_msg else '',
+                        'created_at': last_msg.created_at.isoformat() if last_msg else '',
+                    } if last_msg else None,
+                })
+            return Response({'rooms': data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception('Failed to list rooms')
+            return Response({'error': 'Failed to list rooms.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request):
+        try:
+            name = request.data.get('name', '').strip()
+            scan_folder = request.data.get('scan_folder', '')
+            if not name:
+                return Response({'error': 'Room name required'}, status=status.HTTP_400_BAD_REQUEST)
+            room, created = ChatRoom.objects.get_or_create(
+                name=name,
+                defaults={'scan_folder': scan_folder or None, 'created_by': request.user},
+            )
+            return Response({
+                'id': room.id,
+                'name': room.name,
+                'scan_folder': room.scan_folder,
+                'created': created,
+            }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception('Failed to create room')
+            return Response({'error': 'Failed to create room.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChatRoomMessagesView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsMFAVerified]
+
+    def get(self, request, room_name):
+        try:
+            try:
+                room = ChatRoom.objects.get(name=room_name)
+            except ChatRoom.DoesNotExist:
+                return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            before = request.query_params.get('before')
+            limit = min(int(request.query_params.get('limit', 50)), 200)
+
+            qs = room.messages.select_related('author').all()
+            if before:
+                qs = qs.filter(created_at__lt=before)
+            qs = qs.order_by('-created_at')[:limit]
+
+            data = []
+            for m in reversed(list(qs)):
+                data.append({
+                    'id': m.id,
+                    'author_id': m.author_id,
+                    'author_username': m.author.username,
+                    'content': m.content,
+                    'created_at': m.created_at.isoformat(),
+                })
+            return Response({'messages': data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception('Failed to fetch messages for room %s', room_name)
+            return Response({'error': 'Failed to fetch messages.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
