@@ -33,6 +33,21 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (mode === 'mfa_setup' && preAuthToken && !mfaQRImage) {
+      (async () => {
+        setLoading(true);
+        try {
+          const response = await authAPI.setupMFA(preAuthToken);
+          setMfaQRImage(response.qr_code_image);
+        } catch {
+          showError('Unable to generate QR code. Please try again.');
+        }
+        setLoading(false);
+      })();
+    }
+  }, [mode, preAuthToken]);
+
   const showError = (msg: string) => {
     setErrorMsg(msg);
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
@@ -57,7 +72,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
           setPreAuthToken(response.pre_auth_token);
           setMode(response.is_mfa_enabled ? 'mfa_verify' : 'mfa_setup');
         } else {
-          setMode('mfa_setup');
+          onSuccess?.();
         }
       } else if (mode === 'register') {
         if (!username || !email || !password) {
@@ -66,15 +81,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
           return;
         }
         await authAPI.register({ username, email, password });
-        // Auto-login after registration
-        const loginResponse = await authAPI.login({ username, password });
-        storeLogin(loginResponse);
-        if (loginResponse.mfa_required) {
-          setPreAuthToken(loginResponse.pre_auth_token);
-          setMode(loginResponse.is_mfa_enabled ? 'mfa_verify' : 'mfa_setup');
-        } else {
-          setMode('mfa_setup');
-        }
+        setMode('login');
+        setErrorMsg('');
       }
     } catch {
       showError('Invalid credentials. Please try again.');
@@ -94,7 +102,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
 
     try {
       if (mode === 'mfa_setup') {
-        await authAPI.activateMFA({ token: mfaCode }, preAuthToken);
+        const response = await authAPI.activateMFA({ token: mfaCode }, preAuthToken);
+        storeLogin(response);
         onSuccess();
       } else {
         const response = await authAPI.verifyMFALogin({ token: mfaCode }, preAuthToken);
@@ -112,7 +121,6 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
     try {
       const response = await authAPI.setupMFA(preAuthToken);
       setMfaQRImage(response.qr_code_image);
-      setMode('mfa_setup');
     } catch {
       showError('Unable to generate QR code. Please try again.');
     }

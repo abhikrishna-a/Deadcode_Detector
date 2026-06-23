@@ -94,11 +94,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             }
 
         refresh = self.get_token(self.user)
-        refresh["mfa_verified_for_session"] = True
+        refresh["mfa_verified_for_session"] = False
         return {
-            "mfa_required": False,
+            "mfa_required": True,
             "refresh": str(refresh),
-            "access": str(refresh.access_token),
+            "pre_auth_token": str(refresh.access_token),
             "user": UserSerializer(self.user).data,
             "is_mfa_enabled": False,
         }

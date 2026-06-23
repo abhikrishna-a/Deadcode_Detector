@@ -51,7 +51,7 @@ def has_verified_mfa_session(token_claims):
     Validates if the present JWT claims represent an explicitly cleared 
     and fully authorized multi-factor authentication session.
     """
-    return bool(token_claims and token_claims.get("mfa_verified_for_session") is True)
+    return bool(token_claims and token_claims.payload.get("mfa_verified_for_session") is True)
 
 
 def build_qr_code_data_url(data):

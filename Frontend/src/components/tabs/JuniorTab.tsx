@@ -144,7 +144,7 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
     refresh();
     connect(msg => {
       if (msg.type === 'nightly_report_ready') loadData();
-      if (msg.type === 'submission_update') refresh();
+      if (msg.type === 'submission_update' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') refresh();
       if (msg.type === 'feedback_added') {
         feedbackNotifsRef.current += 1;
         setFeedbackNotifs(feedbackNotifsRef.current);
