@@ -19,7 +19,7 @@ const NAV_ITEMS: DashNavItem[] = [
   { id: 'review', label: 'Review Queue', icon: GitPullRequest, roles: ['senior'] },
   { id: 'junior', label: 'My Submissions', icon: UploadIcon, roles: ['junior'] },
   { id: 'analyzer', label: 'Scanner', icon: FileSearch, roles: ['junior'] },
-  { id: 'history', label: 'History', icon: Clock, roles: ['senior', 'junior'] },
+  { id: 'history', label: 'History', icon: Clock, roles: ['senior'] },
   { id: 'chat', label: 'AI Inspector', icon: MessageCircle, roles: ['senior', 'junior'] },
   { id: 'team', label: 'Team Chat', icon: Users, roles: ['senior', 'junior'] },
   { id: 'assist', label: 'AI Assist', icon: Bot, roles: ['junior'] },
@@ -110,54 +110,39 @@ export default function DashboardShell({ user, onLogout, children }: DashboardSh
           })}
         </nav>
 
-        {/* User section */}
-        <div className="border-t border-white/[0.04] px-3 py-3">
-          <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-cyan-400 to-purple-600 flex items-center justify-center text-xs font-extrabold text-white font-mono shadow-md shadow-cyan-500/10 flex-shrink-0">
-              {user.username[0].toUpperCase()}
-            </div>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-zinc-200 truncate">{user.username}</div>
-                <div className="text-[10px] text-zinc-600 font-mono tracking-wide capitalize">{user.role}</div>
-              </div>
-            )}
-          </div>
-          <div className={`flex mt-2 gap-1 ${collapsed ? 'flex-col' : ''}`}>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center justify-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-all cursor-pointer focus:outline-none ${
-                activeTab === 'settings' ? 'text-cyan-400 bg-cyan-400/10' : ''
-              } ${collapsed ? 'w-full' : 'flex-1'}`}
-              title="Settings"
-            >
-              <Settings size={14} />
-              {!collapsed && <span>Settings</span>}
-            </button>
-            <button
-              onClick={onLogout}
-              className={`flex items-center justify-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/5 transition-all cursor-pointer focus:outline-none ${
-                collapsed ? 'w-full' : 'flex-1'
-              }`}
-              title="Disconnect"
-            >
-              <LogOut size={14} />
-              {!collapsed && <span>Disconnect</span>}
-            </button>
-          </div>
-        </div>
       </aside>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
+         {/* Top bar */}
         <header className="sticky top-0 z-40 h-14 border-b border-white/[0.04] bg-[#060608]/80 backdrop-blur-xl flex items-center justify-between px-6">
           <div className="text-sm font-medium text-zinc-400">
             {visibleItems.find(i => i.id === activeTab)?.label || 'GhostCode'}
           </div>
-          <div className="flex items-center gap-3 text-[10px] text-zinc-600 font-mono tracking-wider">
-            <span className="text-emerald-400/70">● SECURE</span>
-            <span>v2.0</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+              <div className="w-6 h-6 rounded-md bg-gradient-to-r from-cyan-400 to-purple-600 flex items-center justify-center text-[8px] font-extrabold text-white font-mono flex-shrink-0">
+                {user.username[0].toUpperCase()}
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span className="text-[10px] font-semibold text-zinc-200 truncate max-w-[80px]">{user.username}</span>
+                <span className="text-[8px] text-zinc-500 font-mono tracking-wide capitalize">{user.role}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03] transition-all cursor-pointer"
+              title="Settings"
+            >
+              <Settings size={13} />
+            </button>
+            <button
+              onClick={onLogout}
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-rose-400 hover:bg-rose-500/5 transition-all cursor-pointer"
+              title="Disconnect"
+            >
+              <LogOut size={13} />
+            </button>
           </div>
         </header>
 

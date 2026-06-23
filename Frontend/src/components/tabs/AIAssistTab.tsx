@@ -1,21 +1,17 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle, MessageSquareText, FileCode } from 'lucide-react';
-import ChatTab from './ChatTab';
+import { MessageSquareText, FileCode } from 'lucide-react';
 import TeamChatTab from './TeamChatTab';
 import SubmissionsReviewPanel from './SubmissionsReviewPanel';
-import { User, AnalysisResult } from '../../types';
+import { User } from '../../types';
 
 interface AIAssistTabProps {
   currentUser: User;
-  history: AnalysisResult[];
-  initialDocId?: string;
-  initialFilename?: string;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
 
-export default function AIAssistTab({ currentUser, history, initialDocId, initialFilename, onShowToast }: AIAssistTabProps) {
-  const [subTab, setSubTab] = useState<'inspector' | 'teamchat' | 'submissions'>('inspector');
+export default function AIAssistTab({ currentUser, onShowToast }: AIAssistTabProps) {
+  const [subTab, setSubTab] = useState<'submissions' | 'teamchat'>('submissions');
 
   return (
     <div className="flex flex-col gap-4 min-h-0 text-left">
@@ -35,22 +31,6 @@ export default function AIAssistTab({ currentUser, history, initialDocId, initia
           )}
           <FileCode size={14} className={subTab === 'submissions' ? 'text-cyan-400' : ''} />
           Pending Reviews
-        </button>
-        <button
-          onClick={() => setSubTab('inspector')}
-          className={`relative px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition-all ${
-            subTab === 'inspector' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          {subTab === 'inspector' && (
-            <motion.div
-              layoutId="aiAssistSubTab"
-              transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-              className="absolute inset-0 rounded-lg bg-cyan-400/10 border border-cyan-400/20"
-            />
-          )}
-          <MessageCircle size={14} className={subTab === 'inspector' ? 'text-cyan-400' : ''} />
-          AI Inspector
         </button>
         <button
           onClick={() => setSubTab('teamchat')}
@@ -76,13 +56,6 @@ export default function AIAssistTab({ currentUser, history, initialDocId, initia
             key="submissions"
             currentUser={currentUser}
             onShowToast={onShowToast}
-          />
-        ) : subTab === 'inspector' ? (
-          <ChatTab
-            key="inspector"
-            history={history}
-            initialDocId={initialDocId}
-            initialFilename={initialFilename}
           />
         ) : (
           <TeamChatTab
