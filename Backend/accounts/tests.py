@@ -2,8 +2,10 @@ import json
 import pyotp
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 User = get_user_model()
@@ -294,3 +296,39 @@ class GitEndpointsTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class JuniorSubmissionWorkflowTests(APITestCase):
+    def setUp(self):
+        self.password = "TestPass123!"
+        self.user = User.objects.create_user(
+            username="junior1",
+            email="junior1@example.com",
+            password=self.password,
+            role="junior",
+        )
+        refresh = RefreshToken.for_user(self.user)
+        refresh["role"] = self.user.role
+        refresh["mfa_verified_for_session"] = True
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+    def test_batch_upload_stays_pending_review_until_scheduler_runs(self):
+        now = timezone.now()
+        response = self.client.post(
+            "/api/auth/junior/batch-upload/",
+            {
+                "files": [
+                    ("alpha.py", b"print('alpha')", "text/plain"),
+                    ("beta.py", b"print('beta')", "text/plain"),
+                ],
+                "scan_folder": "nightly-demo",
+                "scheduled_at": now.isoformat(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        submissions = response.data["submissions"]
+        self.assertEqual(len(submissions), 2)
+        self.assertTrue(all(item["status"] == "pending_review" for item in submissions))
+        self.assertTrue(all(item["scan_folder"] == "nightly-demo" for item in submissions))

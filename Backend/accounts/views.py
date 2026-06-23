@@ -571,11 +571,7 @@ class JuniorSubmissionBatchUploadView(APIView):
                 scan_folder=scan_folder,
                 scheduled_at=scheduled_at,
             )
-            sub.status = 'analysing'
-            sub.save(update_fields=['status'])
             submissions.append(sub)
-        from .tasks import batch_analyze_junior_submissions
-        batch_analyze_junior_submissions.delay([sub.id for sub in submissions])
         return Response(
             {'submissions': JuniorSubmissionSerializer(submissions, many=True).data},
             status=status.HTTP_201_CREATED,

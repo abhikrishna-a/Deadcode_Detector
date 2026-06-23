@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings.dev')
 
@@ -18,7 +19,7 @@ app.conf.beat_schedule = {
     },
     'nightly-scan-all-users': {
         'task': 'accounts.scheduled_scans.nightly_scan_all_users',
-        'schedule': 86400,
+        'schedule': crontab(hour=2, minute=0),
     },
     'process-scheduled-analyses': {
         'task': 'accounts.scheduler.process_scheduled_analyses',
