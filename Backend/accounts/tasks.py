@@ -231,7 +231,7 @@ def cleanup_temp_git_dirs():
 
 def _notify_user(user_id: int, message: dict) -> None:
     try:
-        async_to_sync(get_channel_layer().group_send)(f'user_{user_id}', message)
+        async_to_sync(get_channel_layer().group_send)(f'notifications_user_{user_id}', message)
     except Exception:
         logger.warning('Failed to notify user %d', user_id, exc_info=True)
 

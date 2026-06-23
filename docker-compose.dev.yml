@@ -72,6 +72,26 @@ services:
     command: celery -A core worker -l info --pool=solo
     restart: unless-stopped
 
+  celery-beat:
+    build:
+      context: ./Backend
+      args:
+        EXTRA_REQS: dev.txt
+    env_file:
+      - .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.dev
+      DJANGO_DEBUG: "True"
+    volumes:
+      - ./Backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A core beat -l info
+    restart: unless-stopped
+
   rag:
     build:
       context: ./services/rag

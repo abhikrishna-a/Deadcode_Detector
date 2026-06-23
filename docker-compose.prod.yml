@@ -71,6 +71,26 @@ services:
     networks:
       - backend
 
+  celery-beat:
+    build:
+      context: ./Backend
+      args:
+        EXTRA_REQS: prod.txt
+    env_file:
+      - .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+      DJANGO_DEBUG: "False"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A core beat -l info
+    restart: unless-stopped
+    networks:
+      - backend
+
   rag:
     build:
       context: ./services/rag

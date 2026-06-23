@@ -483,6 +483,30 @@ class SessionCheckView(APIView):
         return resp
 
 
+TEXT_EXTENSIONS = frozenset({
+    'py', 'js', 'ts', 'tsx', 'jsx', 'css', 'scss', 'less', 'html', 'htm',
+    'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
+    'md', 'rst', 'txt', 'csv', 'tsv',
+    'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd',
+    'java', 'kt', 'scala', 'groovy',
+    'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'cxx', 'hxx',
+    'cs', 'fs', 'vb',
+    'go', 'rs', 'rb', 'php', 'pl', 'pm', 'lua', 'r',
+    'swift', 'm', 'mm',
+    'sql', 'graphql', 'gql',
+    'vue', 'svelte', 'astro',
+    'tf', 'hcl', 'dockerignore', 'gitignore', 'editorconfig',
+    'env', 'properties',
+})
+
+
+def _is_text_file(name: str) -> bool:
+    dot = name.rfind('.')
+    if dot == -1:
+        return True
+    return name[dot + 1:].lower() in TEXT_EXTENSIONS
+
+
 class JuniorSubmissionUploadView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -493,6 +517,8 @@ class JuniorSubmissionUploadView(APIView):
         file = request.FILES.get('file')
         if not file:
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not _is_text_file(file.name):
+            return Response({'error': f'Unsupported file type: {file.name}. Only text files are accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         content = file.read().decode('utf-8', errors='replace').replace('\x00', '')
         name = file.name
         lang = name.rsplit('.', 1)[-1] if '.' in name else ''
@@ -505,6 +531,10 @@ class JuniorSubmissionUploadView(APIView):
             scan_folder=request.data.get('scan_folder', ''),
             scheduled_at=scheduled_at,
         )
+        from .tasks import analyze_junior_submission
+        submission.status = 'analysing'
+        submission.save(update_fields=['status'])
+        analyze_junior_submission.delay(submission.id)
         from .serializers import JuniorSubmissionSerializer
         return Response(JuniorSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
 
@@ -520,6 +550,12 @@ class JuniorSubmissionBatchUploadView(APIView):
         files = request.FILES.getlist('files')
         if not files:
             return Response({'error': 'No files provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        rejected = [f.name for f in files if not _is_text_file(f.name)]
+        if rejected:
+            return Response(
+                {'error': f'Unsupported file types: {", ".join(rejected)}. Only text files are accepted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         scan_folder = request.data.get('scan_folder', '')
         scheduled_at = request.data.get('scheduled_at', timezone.now())
         submissions = []
@@ -535,7 +571,11 @@ class JuniorSubmissionBatchUploadView(APIView):
                 scan_folder=scan_folder,
                 scheduled_at=scheduled_at,
             )
+            sub.status = 'analysing'
+            sub.save(update_fields=['status'])
             submissions.append(sub)
+        from .tasks import batch_analyze_junior_submissions
+        batch_analyze_junior_submissions.delay([sub.id for sub in submissions])
         return Response(
             {'submissions': JuniorSubmissionSerializer(submissions, many=True).data},
             status=status.HTTP_201_CREATED,

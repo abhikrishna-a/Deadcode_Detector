@@ -133,7 +133,7 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
 
   useEffect(() => { loadData(); }, []);
 
-  const { connect } = useNotificationSocket();
+  const { connect, disconnect } = useNotificationSocket();
   useEffect(() => {
     const refresh = async () => {
       try {
@@ -150,20 +150,52 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
         setFeedbackNotifs(feedbackNotifsRef.current);
       }
     });
+    const pollTimer = setInterval(refresh, 15000);
+    return () => { clearInterval(pollTimer); disconnect(); };
   }, [connect]);
 
   const BATCH_SIZE = 100;
 
+  const TEXT_EXTS = new Set([
+    'py', 'js', 'ts', 'tsx', 'jsx', 'css', 'scss', 'less', 'html', 'htm',
+    'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
+    'md', 'rst', 'txt', 'csv', 'tsv',
+    'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd',
+    'java', 'kt', 'scala', 'groovy',
+    'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'cxx', 'hxx',
+    'cs', 'fs', 'vb',
+    'go', 'rs', 'rb', 'php', 'pl', 'pm', 'lua', 'r',
+    'swift', 'm', 'mm',
+    'sql', 'graphql', 'gql',
+    'dockerfile', 'makefile', 'gradle', 'sbt',
+    'vue', 'svelte', 'astro',
+    'tf', 'hcl', 'dockerignore', 'gitignore', 'editorconfig',
+    'env', 'properties',
+  ]);
+
+  const isTextFile = (name: string) => {
+    const dot = name.lastIndexOf('.');
+    if (dot === -1) return true;
+    return TEXT_EXTS.has(name.slice(dot + 1).toLowerCase());
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setUploadFiles(Array.from(e.target.files));
+      const files = Array.from(e.target.files).filter(f => isTextFile(f.name));
+      if (files.length < e.target.files.length) {
+        onShowToast(`Filtered out ${e.target.files.length - files.length} non-text file(s).`, 'info');
+      }
+      setUploadFiles(files);
       setFolderName('Standalone');
     }
   };
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const files = Array.from(e.target.files);
+      const files = Array.from(e.target.files).filter(f => isTextFile(f.name));
+      if (files.length < e.target.files.length) {
+        onShowToast(`Filtered out ${e.target.files.length - files.length} non-text file(s).`, 'info');
+      }
       setUploadFiles(files);
       const name = files[0]?.webkitRelativePath?.replace(/\\/g, '/').split('/')[0] || 'Project';
       setFolderName(name);
@@ -234,6 +266,17 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
     setSending(p => ({ ...p, [key]: false }));
   };
 
+  const handleRetry = async (id: number) => {
+    try {
+      await analysisAPI.triggerSubmissionAnalysis(id);
+      onShowToast('Retrying analysis...', 'info');
+      const data = await analysisAPI.listSubmissions();
+      setSubmissions(Array.isArray(data) ? data : data.submissions || []);
+    } catch (e: any) {
+      onShowToast(e?.message || 'Retry failed.', 'error');
+    }
+  };
+
   const handleViewResult = async (id: number) => {
     setResultDetail(null);
     setResultLoading(true);
@@ -278,6 +321,13 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
     const submittedFiles = submissions.length;
     return { totalAnalyses, totalIssues, avgHealth, pendingReviews, submittedFiles };
   }, [reports, submissions]);
+
+  const subStatusCounts = useMemo(() => ({
+    analysing: submissions.filter(s => s.status === 'analysing').length,
+    done: submissions.filter(s => s.status === 'done').length,
+    failed: submissions.filter(s => s.status === 'failed').length,
+    pending_review: submissions.filter(s => s.status === 'pending_review').length,
+  }), [submissions]);
 
   const doneSubmissions = useMemo(() => submissions.filter(s => s.status === 'done'), [submissions]);
 
@@ -522,6 +572,32 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
               })}
             </div>
 
+            {/* Live submission status summary */}
+            {submissions.length > 0 && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/[0.04] bg-white/[0.02] text-[10px] font-mono">
+                <span className="text-zinc-500">Submissions:</span>
+                {subStatusCounts.analysing > 0 && (
+                  <span className="flex items-center gap-1.5 text-cyan-400">
+                    <Loader2 size={10} className="animate-spin" />{subStatusCounts.analysing} analysing
+                  </span>
+                )}
+                {subStatusCounts.done > 0 && (
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle size={10} />{subStatusCounts.done} done
+                  </span>
+                )}
+                {subStatusCounts.failed > 0 && (
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    <XCircle size={10} />{subStatusCounts.failed} failed
+                  </span>
+                )}
+                {subStatusCounts.pending_review > 0 && (
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <Clock size={10} />{subStatusCounts.pending_review} pending
+                  </span>
+                )}
+              </div>
+            )}
             {/* VS Code tree */}
             {submissions.length === 0 && reportTree.length === 0 && issuesTree.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-zinc-600 rounded-2xl border border-white/[0.03] backdrop-blur-md"
@@ -820,6 +896,32 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
               <input ref={folderInputRef} type="file" multiple {...{ webkitdirectory: '' } as any} onChange={handleFolderSelect} className="hidden" />
             </div>
 
+            {/* Live status summary */}
+            {submissions.length > 0 && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/[0.04] bg-white/[0.02] text-[10px] font-mono">
+                <span className="text-zinc-500">Submissions:</span>
+                {subStatusCounts.analysing > 0 && (
+                  <span className="flex items-center gap-1.5 text-cyan-400">
+                    <Loader2 size={10} className="animate-spin" />{subStatusCounts.analysing} analysing
+                  </span>
+                )}
+                {subStatusCounts.done > 0 && (
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle size={10} />{subStatusCounts.done} done
+                  </span>
+                )}
+                {subStatusCounts.failed > 0 && (
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    <XCircle size={10} />{subStatusCounts.failed} failed
+                  </span>
+                )}
+                {subStatusCounts.pending_review > 0 && (
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <Clock size={10} />{subStatusCounts.pending_review} pending
+                  </span>
+                )}
+              </div>
+            )}
             {/* Submissions tree */}
             {submissionTree.length > 0 && (
               <div
@@ -842,6 +944,12 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
                       <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
                       <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{s.filename}</span>
                       <span className={`text-[8px] font-mono px-1 rounded ${badge.bg} ${badge.color}`}>{s.status}</span>
+                      {s.status === 'failed' && (
+                        <button onClick={(e) => { e.stopPropagation(); handleRetry(s.id); }}
+                          className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 transition-all cursor-pointer flex-shrink-0">
+                          Retry
+                        </button>
+                      )}
                       <span className="text-[8px] font-mono text-zinc-600">{timeAgo(s.created_at)}</span>
                     </div>
                   );
@@ -854,6 +962,33 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
         {/* ── RESULTS ── */}
         {subTab === 'results' && (
           <motion.div key="results" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-5">
+            {submissions.length > 0 && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/[0.04] bg-white/[0.02] text-[10px] font-mono">
+                {subStatusCounts.analysing > 0 && (
+                  <span className="flex items-center gap-1.5 text-cyan-400">
+                    <Loader2 size={10} className="animate-spin" />{subStatusCounts.analysing} analysing
+                  </span>
+                )}
+                {subStatusCounts.done > 0 && (
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <CheckCircle size={10} />{subStatusCounts.done} done
+                  </span>
+                )}
+                {subStatusCounts.failed > 0 && (
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    <XCircle size={10} />{subStatusCounts.failed} failed
+                  </span>
+                )}
+                {subStatusCounts.pending_review > 0 && (
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <Clock size={10} />{subStatusCounts.pending_review} pending
+                  </span>
+                )}
+                {Object.values(subStatusCounts).every(c => c === 0) && (
+                  <span className="text-zinc-600">No submissions</span>
+                )}
+              </div>
+            )}
             {resultDetail ? (
               <>
                 <button onClick={handleBackToResults}
@@ -956,7 +1091,14 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
                   })() : (
                     <div className="p-8 text-center text-zinc-500 text-xs">
                       {resultDetail.status === 'failed' ? (
-                        <><XCircle size={24} className="mx-auto mb-2 text-rose-400" />Analysis failed{resultDetail.error ? `: ${resultDetail.error}` : ''}</>
+                        <div className="flex flex-col items-center gap-3">
+                          <XCircle size={24} className="text-rose-400" />
+                          <span>Analysis failed{resultDetail.error ? `: ${resultDetail.error}` : ''}</span>
+                          <button onClick={() => handleRetry(resultDetail.id)}
+                            className="text-[10px] font-mono px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 transition-all cursor-pointer">
+                            Retry Analysis
+                          </button>
+                        </div>
                       ) : (
                         <><Loader2 size={18} className="animate-spin mx-auto mb-2 text-cyan-400" />Still analysing...</>
                       )}
