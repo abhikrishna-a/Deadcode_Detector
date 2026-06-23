@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  LayoutDashboard, FileSearch, MessageCircle, Shield,
-  LogOut, Clock, Settings, GitPullRequest, Users, Bot,
+  LayoutDashboard, Shield,
+  LogOut, Clock, Settings, GitPullRequest, Users,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { User } from '../types';
@@ -15,14 +15,11 @@ interface DashNavItem {
 }
 
 const NAV_ITEMS: DashNavItem[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['senior', 'junior'] },
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['senior'] },
   { id: 'review', label: 'Review Queue', icon: GitPullRequest, roles: ['senior'] },
   { id: 'junior', label: 'My Submissions', icon: UploadIcon, roles: ['junior'] },
-  { id: 'analyzer', label: 'Scanner', icon: FileSearch, roles: ['junior'] },
   { id: 'history', label: 'History', icon: Clock, roles: ['senior'] },
-  { id: 'chat', label: 'AI Inspector', icon: MessageCircle, roles: ['senior', 'junior'] },
-  { id: 'team', label: 'Team Chat', icon: Users, roles: ['senior', 'junior'] },
-  { id: 'assist', label: 'AI Assist', icon: Bot, roles: ['junior'] },
+  { id: 'team', label: 'Team Chat', icon: Users, roles: ['senior'] },
   { id: 'admin', label: 'Admin', icon: Shield, roles: ['senior'] },
 ];
 
@@ -43,7 +40,8 @@ interface DashboardShellProps {
 }
 
 export default function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const defaultTab = user.role === 'junior' ? 'junior' : 'overview';
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [collapsed, setCollapsed] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(user.role));
@@ -51,6 +49,7 @@ export default function DashboardShell({ user, onLogout, children }: DashboardSh
   return (
     <div className="min-h-screen bg-[#060608] flex text-neutral-200">
       {/* Sidebar */}
+      {user.role !== 'junior' && (
       <aside
         className={`relative flex-shrink-0 flex flex-col border-r border-white/[0.04] bg-[#0a0a0d] transition-all duration-200 ${
           collapsed ? 'w-16' : 'w-56'
@@ -111,13 +110,14 @@ export default function DashboardShell({ user, onLogout, children }: DashboardSh
         </nav>
 
       </aside>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
          {/* Top bar */}
         <header className="sticky top-0 z-40 h-14 border-b border-white/[0.04] bg-[#060608]/80 backdrop-blur-xl flex items-center justify-between px-6">
           <div className="text-sm font-medium text-zinc-400">
-            {visibleItems.find(i => i.id === activeTab)?.label || 'GhostCode'}
+            {user.role === 'junior' ? 'Junior Dev Portal' : (visibleItems.find(i => i.id === activeTab)?.label || 'GhostCode')}
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04]">
