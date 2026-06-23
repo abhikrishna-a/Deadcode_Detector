@@ -18,4 +18,12 @@ app.conf.beat_schedule = {
         'task': 'accounts.scheduled_scans.nightly_scan_all_users',
         'schedule': 86400,
     },
+    'process-scheduled-analyses': {
+        'task': 'accounts.scheduler.process_scheduled_analyses',
+        'schedule': 60.0,
+    },
+    'cleanup-stale-scheduled': {
+        'task': 'accounts.scheduler.cleanup_stale_scheduled',
+        'schedule': 3600.0,
+    },
 }

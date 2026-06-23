@@ -10,14 +10,14 @@ from urllib.parse import quote
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
-        ('senior', 'Senior')
+        ('senior', 'Senior'),
         ('junior', 'Junior'),
     )
 
     role = models.CharField(
         max_length=10,
         choices=ROLE_CHOICES,
-        default='viewer'
+        default='junior'
     )
     # Secret key used to generate OTP
     mfa_secret = models.CharField(
@@ -116,20 +116,45 @@ class UserSession(models.Model):
 
 class JuniorSubmission(models.Model):
     STATUS_CHOICES = (
-        ('pending', 'Pending'),
-        ('processing', 'Processing'),
-        ('completed', 'Completed'),
+        ('pending_review', 'Pending Review'),
+        ('analysing', 'Analysing'),
+        ('done', 'Done'),
         ('failed', 'Failed'),
     )
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='junior_submissions')
-    file_name = models.CharField(max_length=512)
+    filename = models.CharField(max_length=500)
+    file_content = models.TextField(blank=True, default='')
     language = models.CharField(max_length=50, blank=True, default='')
-    content = models.TextField()
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    scan_folder = models.CharField(max_length=500, blank=True, default='')
+    analysis_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_review')
+    error = models.TextField(blank=True, default='')
     result = models.JSONField(blank=True, null=True)
-    analysis_id = models.CharField(max_length=64, blank=True, default='')
-    scan_id = models.CharField(max_length=64, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    scheduled_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    timeout_seconds = models.IntegerField(default=60)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.file_name} ({self.user.username})"
+        return f"{self.filename} ({self.user.username})"
+
+
+class CodeReviewFeedback(models.Model):
+    submission = models.ForeignKey(
+        JuniorSubmission, on_delete=models.CASCADE,
+        related_name='feedback'
+    )
+    reviewer = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE,
+        related_name='given_feedback'
+    )
+    line_start = models.IntegerField()
+    line_end = models.IntegerField(blank=True, null=True)
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Feedback on {self.submission.filename} L{self.line_start}"

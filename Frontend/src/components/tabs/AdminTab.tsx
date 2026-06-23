@@ -51,8 +51,8 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
     try {
       const user = users.find(u => u.id === userId);
       if (!user) return;
-      const nextRole = user.role === 'admin' ? 'viewer' : 'admin';
-      const updated = await authAPI.updateUserRole(userId, nextRole as 'admin' | 'viewer');
+      const nextRole = user.role === 'senior' ? 'junior' : 'senior';
+      const updated = await authAPI.updateUserRole(userId, nextRole as 'senior' | 'junior');
       setUsers(prev => prev.map(u => u.id === userId ? updated : u));
       onShowToast(`User "${updated.username}" is now ${updated.role.toUpperCase()}`, 'success');
     } catch {
@@ -125,7 +125,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
             </div>
           ) : (
             filteredUsers.map((userCheck, index) => {
-              const isAdmin = userCheck.role === 'admin';
+              const isSenior = userCheck.role === 'senior';
               const isSelf = userCheck.username === currentUser.username;
               return (
                 <div 
@@ -135,7 +135,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
                   {/* Avatar & Username */}
                   <div className="col-span-4 flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-xs ${
-                      isAdmin 
+                      isSenior 
                         ? 'bg-teal-500/10 text-teal-400 border border-teal-500/15' 
                         : 'bg-zinc-900 border border-white/[0.03] text-zinc-400'
                     }`}>
@@ -160,11 +160,11 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
                   {/* Level Badger */}
                   <div className="col-span-2">
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono uppercase font-bold border ${
-                      isAdmin 
+                      isSenior 
                         ? 'text-teal-400 bg-teal-500/5 border-teal-500/15' 
                         : 'text-zinc-500 bg-zinc-950/40 border-white/[0.02]'
                     }`}>
-                      {isAdmin ? <ShieldCheck size={10} /> : <Shield size={10} />}
+                      {isSenior ? <ShieldCheck size={10} /> : <Shield size={10} />}
                       {userCheck.role}
                     </span>
                   </div>
@@ -187,14 +187,14 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
                         onClick={() => toggleUserRole(userCheck.id)}
                         disabled={togglingId === userCheck.id}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold tracking-tight transition-all cursor-pointer disabled:opacity-40 ${
-                          isAdmin 
+                          isSenior 
                             ? 'border border-rose-500/20 text-rose-400 hover:bg-rose-500/5' 
                             : 'border border-teal-500/25 text-teal-400 hover:bg-teal-500/5'
                         }`}
                       >
                         {togglingId === userCheck.id ? (
                           <Loader2 size={12} className="animate-spin inline" />
-                        ) : isAdmin ? (
+                        ) : isSenior ? (
                           'Demote'
                         ) : (
                           'Promote'
@@ -212,7 +212,7 @@ export default function AdminTab({ currentUser, onShowToast }: AdminTabProps) {
         {/* Footer info counts */}
         <div className="bg-zinc-950/20 px-6 py-2 border-t border-white/[0.02] flex justify-between items-center text-[9px] font-mono text-zinc-600 tracking-wider">
           <span>REGISTRY: {users.length} MEMBERS</span>
-          <span>ADMINS: {users.filter(u => u.role === 'admin').length} ACTIVE</span>
+          <span>SENIORS: {users.filter(u => u.role === 'senior').length} ACTIVE</span>
         </div>
       </div>
 

@@ -102,3 +102,14 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             'submission_id': event.get('submission_id'),
             'file_name': event.get('file_name'),
         })
+
+    async def feedback_added(self, event):
+        await self.send_json({
+            'type': 'feedback_added',
+            'submission_id': event.get('submission_id'),
+            'file_name': event.get('file_name'),
+            'feedback_id': event.get('feedback_id'),
+            'line_start': event.get('line_start'),
+            'line_end': event.get('line_end'),
+            'reviewer_username': event.get('reviewer_username'),
+        })

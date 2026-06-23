@@ -249,8 +249,8 @@ def analyze_junior_submission(self, submission_id: int):
         resp = requests.post(
             rag_url,
             json={
-                'filename': submission.file_name,
-                'content': submission.content,
+                'filename': submission.filename,
+                'content': submission.file_content,
                 'user_id': user.id,
                 'language': submission.language,
             },
@@ -264,7 +264,7 @@ def analyze_junior_submission(self, submission_id: int):
         _notify_user(user.id, {
             'type': 'junior.analysis_complete',
             'submission_id': submission.id,
-            'file_name': submission.file_name,
+            'file_name': submission.filename,
             'result': submission.result,
         })
         logger.info('Junior analysis complete for submission %d', submission_id)
@@ -275,7 +275,7 @@ def analyze_junior_submission(self, submission_id: int):
         _notify_user(user.id, {
             'type': 'junior.analysis_failed',
             'submission_id': submission.id,
-            'file_name': submission.file_name,
+            'file_name': submission.filename,
         })
         raise self.retry(exc=exc)
 

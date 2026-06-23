@@ -6,6 +6,7 @@ import {
   FileCode, X, BarChart3, Bug, File, Folder,
   LayoutDashboard, ClipboardList, GitBranch,
   ChevronRight, XCircle, Clock, Trash2,
+  MessageSquareText, Send,
 } from 'lucide-react';
 import { User, AnalysisResult } from '../../types';
 import { analysisAPI } from '../../api/analysis';
@@ -22,6 +23,7 @@ const SUB_TABS = [
   { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
   { id: 'upload' as const, label: 'Upload', icon: Upload },
   { id: 'results' as const, label: 'Results', icon: ClipboardList },
+  { id: 'feedback' as const, label: 'Feedback', icon: MessageSquareText },
 ];
 
 const healthBarColor = (score: number) => {
@@ -72,13 +74,16 @@ interface TreeNode {
 }
 
 export default function JuniorTab({ currentUser, history, onShowToast }: JuniorTabProps) {
-  const [subTab, setSubTab] = useState<'dashboard' | 'upload' | 'results'>('dashboard');
+  const [subTab, setSubTab] = useState<'dashboard' | 'upload' | 'results' | 'feedback'>('dashboard');
   const [folders, setFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState('');
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState<Record<string, boolean>>({});
   const [createdMap, setCreatedMap] = useState<Record<string, boolean>>({});
+
+  const [feedbackNotifs, setFeedbackNotifs] = useState(0);
+  const feedbackNotifsRef = useRef(0);
 
   // Upload state
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -133,13 +138,17 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
     const refresh = async () => {
       try {
         const data = await analysisAPI.listSubmissions();
-        setSubmissions(data.submissions);
+        setSubmissions(Array.isArray(data) ? data : data.submissions || []);
       } catch { /* ignore */ }
     };
     refresh();
     connect(msg => {
       if (msg.type === 'nightly_report_ready') loadData();
       if (msg.type === 'submission_update') refresh();
+      if (msg.type === 'feedback_added') {
+        feedbackNotifsRef.current += 1;
+        setFeedbackNotifs(feedbackNotifsRef.current);
+      }
     });
   }, [connect]);
 
@@ -457,7 +466,13 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
           const Icon = tab.icon;
           const isSelected = subTab === tab.id;
           return (
-            <button key={tab.id} onClick={() => setSubTab(tab.id)}
+            <button key={tab.id} onClick={() => {
+              setSubTab(tab.id);
+              if (tab.id === 'feedback') {
+                setFeedbackNotifs(0);
+                feedbackNotifsRef.current = 0;
+              }
+            }}
               className={`relative px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition-all ${
                 isSelected ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
               }`}>
@@ -468,6 +483,11 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
               )}
               <Icon size={14} className={isSelected ? 'text-cyan-400' : ''} />
               {tab.label}
+              {tab.id === 'feedback' && feedbackNotifs > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-[8px] font-bold text-white flex items-center justify-center">
+                  {feedbackNotifs > 9 ? '9+' : feedbackNotifs}
+                </span>
+              )}
             </button>
           );
         })}
@@ -503,6 +523,18 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
             </div>
 
             {/* VS Code tree */}
+            {submissions.length === 0 && reportTree.length === 0 && issuesTree.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-zinc-600 rounded-2xl border border-white/[0.03] backdrop-blur-md"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(16, 15, 23, 0.6), rgba(8, 8, 12, 0.7))',
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.03)'
+                }}
+              >
+                <FileCode size={32} className="mb-3 text-zinc-700" />
+                <span className="text-sm font-medium">No activity yet</span>
+                <span className="text-[10px] font-mono mt-1">Upload code or run an analysis to see results here.</span>
+              </div>
+            ) : (
             <div
               style={{
                 background: 'linear-gradient(135deg, rgba(16, 15, 23, 0.6), rgba(8, 8, 12, 0.7))',
@@ -682,6 +714,7 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
                 </div>
               )}
             </div>
+            )}
           </motion.div>
         )}
 
@@ -1003,7 +1036,95 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
             )}
           </motion.div>
         )}
+
+        {/* ── FEEDBACK ── */}
+        {subTab === 'feedback' && (
+          <motion.div key="feedback" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <FeedbackView key={feedbackNotifs} onShowToast={onShowToast} />
+          </motion.div>
+        )}
       </AnimatePresence>
     </motion.div>
   );
 }
+
+function FeedbackView({ onShowToast }: { onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await analysisAPI.juniorListFeedback();
+        setFeedbacks(data);
+      } catch (e: any) {
+        onShowToast(e?.message || 'Failed to load feedback.', 'error');
+      }
+      setLoading(false);
+    })();
+  }, [onShowToast]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={18} className="animate-spin text-cyan-400" />
+      </div>
+    );
+  }
+
+  if (feedbacks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
+        <MessageSquareText size={32} className="mb-3 text-zinc-700" />
+        <span className="text-sm font-medium">No feedback yet</span>
+        <span className="text-[10px] font-mono mt-1">Your senior reviewers haven't added any inline comments.</span>
+      </div>
+    );
+  }
+
+  const grouped = feedbacks.reduce((acc: Record<string, any[]>, fb: any) => {
+    const key = fb.submission_id || 'unknown';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(fb);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  return (
+    <div className="space-y-4">
+      <div className="text-xs font-semibold text-zinc-400">
+        {feedbacks.length} feedback comment{feedbacks.length !== 1 ? 's' : ''} from reviewers
+      </div>
+      {Object.entries(grouped).map(([submissionId, fbs]) => (
+        <div key={submissionId} className="glass-card rounded-2xl p-4">
+          <div className="text-[10px] font-mono text-zinc-500 mb-3">
+            Submission #{submissionId}
+          </div>
+          <div className="space-y-2">
+            {fbs.map((fb: any) => (
+              <div key={fb.id} className="flex items-start gap-3 p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04]">
+                <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                  <MessageSquare size={10} className="text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-blue-400">{fb.reviewer_username}</span>
+                    <span className="text-[8px] font-mono text-zinc-600">
+                      L{fb.line_start}{fb.line_end ? `-${fb.line_end}` : ''}
+                    </span>
+                    <span className="text-[8px] font-mono text-zinc-600 ml-auto">
+                      {timeAgo(fb.created_at)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-300 mt-1">{fb.comment}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Re-use timeAgo from the parent scope
+// Note: timeAgo is defined at the module level and accessible here

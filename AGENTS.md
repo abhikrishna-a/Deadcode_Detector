@@ -1,48 +1,98 @@
-# Service startup order (Windows)
+# Docker development (Windows)
 
-All four services must be restarted after backend changes:
+## Requirements
+
+- Docker Desktop must be **running** before any Docker commands work
+- Vite frontend runs **locally** (port 5173), everything else in Docker
+
+## Startup
 
 ```powershell
-# 1. Redis (if not running)
-Get-Service Redis* | Start-Service
+# 1. Start all Docker services in background
+docker compose -f docker-compose.dev.yml up -d
 
-# 2. Django ASGI server (Daphne)
-# Open shell 1
-cd Backend
-python manage.py runserver 0.0.0.0:8000
+# 2. Apply migrations after backend changes
+docker compose -f docker-compose.dev.yml exec backend python manage.py migrate
+docker compose -f docker-compose.dev.yml restart backend
 
-# 3. Celery worker — MUST use --pool=solo on Windows
-# Open shell 2
-cd Backend
-celery -A core worker -l info --pool=solo
+# 3. Rebuild images after dependency changes (new packages, etc.)
+docker compose -f docker-compose.dev.yml up -d --build
 
-# 4. RAG FastAPI
-# Open shell 3
-cd services/rag
-uvicorn app.main:app --port 8004 --reload
-
-# 5. Vite frontend
-# Open shell 4
+# 4. Vite frontend (always local)
 cd Frontend
 npm run dev
+```
+
+## After pulling/rebasing
+
+If database schema changed:
+```powershell
+docker compose -f docker-compose.dev.yml exec backend python manage.py migrate
+docker compose -f docker-compose.dev.yml restart backend
+```
+
+For a full reset (fresh database):
+```powershell
+docker compose -f docker-compose.dev.yml down -v   # removes volumes
+docker compose -f docker-compose.dev.yml up -d      # recreates fresh
+docker compose -f docker-compose.dev.yml exec backend python manage.py migrate
+```
+
+## Viewing logs
+
+```powershell
+# All services
+docker compose -f docker-compose.dev.yml logs -f
+
+# Single service
+docker compose -f docker-compose.dev.yml logs -f backend
+docker compose -f docker-compose.dev.yml logs -f celery-worker
+docker compose -f docker-compose.dev.yml logs -f rag
+```
+
+## Stopping
+
+```powershell
+docker compose -f docker-compose.dev.yml down
+```
+
+To also remove database data (starts fresh next time):
+```powershell
+docker compose -f docker-compose.dev.yml down -v
 ```
 
 ## Verification
 
 - `http://localhost:5173` → login/signup works
 - Scan Directory: select folder → batch progress via WebSocket appears
-- Celery tasks visible in shell 2 logs
+- Celery tasks visible in logs: `docker compose logs -f celery-worker`
 - Single file drop → RAG direct (port 8004)
 - WebSocket auth: `?token=<JWT>` query param — no more 4001 close code
 - JWT extracted from `Authorization` header, passed to Celery tasks for RAG auth
+
+## Services & ports
+
+| Service | Port | How to access |
+|---|---|---|
+| Django backend | 8000 | `http://localhost:8000` |
+| RAG FastAPI | 8004 | `http://localhost:8004` |
+| PostgreSQL | 5432 | `localhost:5432` |
+| Redis | 6379 | `localhost:6379` |
+| Vite (local) | 5173 | `http://localhost:5173` |
+
+## Common issues
+
+- **Docker Desktop was restarted** → wait for it to fully start, then run `docker compose up -d` to restart services
+- **Port conflict** → ensure no local PostgreSQL/Redis services are running (stop via `Services` panel)
+- **DNS resolution fails inside containers** → Docker Desktop must be running for internal DNS to work
+- **ProgrammingError on `result` column** → Docker backend was serving instead of local; ensure all local Python `manage.py` processes are killed and use Docker exclusively
 
 ## Environment notes
 
 - Python 3.14.0, Django 6.0.5, Channels 4.3.2, Celery 5.6.3, Redis 3.0.504
 - FastAPI 0.136.3 on port 8004, PostgreSQL 16 on 5432
 - React 19, Vite 8, Tailwind CSS v4, motion v12
-- Django settings: `core/settings/dev.py` (default), override with `DJANGO_SETTINGS_MODULE=core.settings.prod` for prod
-- Redis config in `.env` (not committed): `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+- Django settings: `.env.docker` at project root (referenced by Docker Compose as `env_file`), override locally with `core/settings/prod.py`
 - JWT via `ghostcode_access` cookie — RAG requires `mfa_verified_for_session: true` (included in Django login/signup tokens)
 - Bugfix summary:
   - B1: missing `.apply_async()` on Celery chord → tasks now execute

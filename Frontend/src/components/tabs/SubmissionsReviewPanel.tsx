@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   FileCode, Loader2, Clock, AlertTriangle,
   AlertCircle, Info, CheckCircle, XCircle, Search,
-  User, Calendar, Timer,
+  User, Calendar, Timer, MessageSquare,
+  Send, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
@@ -17,15 +18,25 @@ interface SubmissionsReviewPanelProps {
 interface Submission {
   id: number;
   filename: string;
-  username: string;
+  username?: string;
   status: string;
-  language: string;
+  language?: string;
   created_at: string;
   scan_folder?: string;
   scheduled_at?: string;
   timeout_seconds?: number;
   file_content?: string;
-  analysis?: any;
+  result?: any;
+}
+
+interface Feedback {
+  id: number;
+  line_start: number;
+  line_end: number | null;
+  comment: string;
+  reviewer_username: string;
+  created_at: string;
+  resolved: boolean;
 }
 
 const STATUSES = [
@@ -59,33 +70,38 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<any>(null);
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [analyzing, setAnalyzing] = useState<Record<number, boolean>>({});
   const [scheduleOpen, setScheduleOpen] = useState<number | null>(null);
   const [scheduleTime, setScheduleTime] = useState('');
   const [timeoutSec, setTimeoutSec] = useState(60);
+  const [commentLine, setCommentLine] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({});
   const scheduleRef = useRef<HTMLDivElement>(null);
 
   const { connect } = useNotificationSocket();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const data = await analysisAPI.listSubmissions();
-      setSubmissions(data.submissions);
+      const data = await analysisAPI.seniorListSubmissions();
+      setSubmissions(data);
     } catch (e: any) {
       onShowToast?.(e?.message || 'Failed to load submissions.', 'error');
     }
     setLoading(false);
-  };
+  }, [onShowToast]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     connect(msg => {
       if (msg.type === 'submission_update') load();
     });
-  }, [connect]);
+  }, [connect, load]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -100,10 +116,13 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const loadDetail = async (id: number) => {
     setSelectedId(id);
     setDetail(null);
+    setFeedbacks([]);
     setDetailLoading(true);
     try {
       const data = await analysisAPI.getSubmissionDetail(id);
       setDetail(data);
+      const fb = await analysisAPI.listSubmissionFeedback(id);
+      setFeedbacks(fb);
     } catch (e: any) {
       onShowToast?.(e?.message || 'Failed to load submission detail.', 'error');
     }
@@ -113,7 +132,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const triggerAnalysis = async (submissionId: number, scheduledAt?: string, timeout?: number) => {
     setAnalyzing(p => ({ ...p, [submissionId]: true }));
     try {
-      const res = await analysisAPI.triggerSubmissionAnalysis(submissionId, { scheduled_at: scheduledAt, timeout_seconds: timeout });
+      const res = await analysisAPI.seniorTriggerAnalysis(submissionId, scheduledAt, timeout);
       onShowToast?.(res.message || 'Analysis triggered.', 'success');
       setScheduleOpen(null);
       load();
@@ -121,6 +140,21 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
       onShowToast?.(err?.message || 'Failed to trigger analysis.', 'error');
     }
     setAnalyzing(p => ({ ...p, [submissionId]: false }));
+  };
+
+  const addComment = async () => {
+    if (!selectedId || !commentText.trim() || commentLine === null) return;
+    setSubmittingComment(true);
+    try {
+      const fb = await analysisAPI.seniorAddFeedback(selectedId, commentLine, commentText.trim());
+      setFeedbacks(prev => [...prev, fb]);
+      setCommentText('');
+      setCommentLine(null);
+      onShowToast?.('Feedback added.', 'success');
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to add feedback.', 'error');
+    }
+    setSubmittingComment(false);
   };
 
   const filtered = useMemo(() => {
@@ -144,21 +178,31 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
 
   const issueMap = useMemo(() => {
     const map: Record<number, any[]> = {};
-    if (detail?.analysis?.analysis?.issues) {
-      for (const iss of detail.analysis.analysis.issues) {
-        const line = iss.line_start || iss.line || 1;
-        if (!map[line]) map[line] = [];
-        map[line].push(iss);
-      }
+    const issues = detail?.result?.issues || detail?.analysis?.analysis?.issues || [];
+    for (const iss of issues) {
+      const line = iss.line_start || iss.line || 1;
+      if (!map[line]) map[line] = [];
+      map[line].push(iss);
     }
     return map;
   }, [detail]);
+
+  const feedbackMap = useMemo(() => {
+    const map: Record<number, Feedback[]> = {};
+    for (const fb of feedbacks) {
+      const line = fb.line_start;
+      if (!map[line]) map[line] = [];
+      map[line].push(fb);
+    }
+    return map;
+  }, [feedbacks]);
 
   const codeLines = useMemo(() => {
     return (detail?.file_content || '').split('\n');
   }, [detail]);
 
   const issueCount = Object.values(issueMap).reduce((s, v) => s + v.length, 0);
+  const feedbackCount = feedbacks.length;
 
   const totalInStatus = STATUSES.map(s => ({
     ...s,
@@ -171,11 +215,10 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex gap-4 h-[580px] text-left"
+      className="flex gap-4 h-[calc(100vh-10rem)] text-left"
     >
       {/* Left panel — Linear-style kanban board */}
-      <div className="w-[480px] flex-shrink-0 flex flex-col">
-        {/* Header bar */}
+      <div className="w-[420px] flex-shrink-0 flex flex-col">
         <div className="flex items-center gap-3 mb-3">
           <div className="flex items-center gap-2">
             <FileCode size={14} className="text-cyan-400" />
@@ -191,7 +234,6 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
           </div>
         </div>
 
-        {/* Kanban columns */}
         <div className="flex-1 flex gap-3 overflow-x-auto pb-1">
           {totalInStatus.map(status => {
             const Icon = status.icon;
@@ -199,14 +241,12 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
             const isEmpty = items.length === 0;
             return (
               <div key={status.key} className="flex-1 min-w-[110px] flex flex-col">
-                {/* Column header */}
                 <div className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border ${status.border} ${status.bg} mb-2`}>
                   <Icon size={11} className={`${status.color} ${status.key === 'analysing' ? 'animate-spin' : ''}`} />
                   <span className={`text-[10px] font-mono font-semibold ${status.color}`}>{status.label}</span>
                   <span className="text-[9px] font-mono text-zinc-600 ml-auto">{items.length}</span>
                 </div>
 
-                {/* Cards */}
                 <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
                   {loading ? (
                     <div className="flex justify-center py-6">
@@ -220,20 +260,21 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                     <motion.div
                       key={s.id}
                       layoutId={`card-${s.id}`}
-                      className={`w-full p-2.5 rounded-xl border transition-all ${
+                      className={`w-full p-2.5 rounded-xl border transition-all cursor-pointer ${
                         selectedId === s.id
                           ? 'bg-white/[0.03] border-white/[0.1]'
                           : 'bg-white/[0.01] border-white/[0.04] hover:bg-white/[0.02] hover:border-white/[0.08]'
                       }`}
+                      onClick={() => loadDetail(s.id)}
                     >
                       <div className="flex items-center gap-1">
-                        <button onClick={() => loadDetail(s.id)} className="flex-1 min-w-0 text-left cursor-pointer">
+                        <div className="flex-1 min-w-0">
                           <div className="text-[10px] font-mono text-zinc-200 font-medium truncate leading-tight">
                             {s.filename}
                           </div>
-                        </button>
+                        </div>
                         {s.status === 'pending_review' && (
-                          <div className="relative flex-shrink-0">
+                          <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -308,7 +349,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                       </div>
                       <div className="flex items-center gap-1.5 mt-1.5">
                         <User size={8} className="text-zinc-600" />
-                        <span className="text-[8px] font-mono text-zinc-500 truncate">{s.username}</span>
+                        <span className="text-[8px] font-mono text-zinc-500 truncate">{s.username || 'unknown'}</span>
                         {s.scan_folder && (
                           <span className="text-[7px] font-mono text-zinc-600 truncate max-w-[60px] bg-white/[0.02] px-1 py-0.5 rounded">
                             {s.scan_folder}
@@ -317,19 +358,6 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                         <span className="text-[8px] font-mono text-zinc-600 ml-auto">
                           {timeAgo(s.created_at)}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {s.language && (
-                          <span className="text-[7px] font-mono uppercase tracking-wider text-zinc-600 bg-white/[0.02] px-1 py-0.5 rounded">
-                            {s.language}
-                          </span>
-                        )}
-                        {s.scheduled_at && s.status === 'analysing' && (
-                          <span className="text-[7px] font-mono text-purple-400/70 flex items-center gap-1">
-                            <Calendar size={7} />
-                            scheduled
-                          </span>
-                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -340,7 +368,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
         </div>
       </div>
 
-      {/* Right panel — code review */}
+      {/* Right panel — code review with inline commenting */}
       <div className="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden">
         {!selectedId ? (
           <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs gap-2">
@@ -361,7 +389,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                   {detail.language || 'txt'}
                 </span>
                 <span className="text-[9px] text-zinc-600 font-mono">
-                  by {detail.username}
+                  by {detail.username || `#${detail.user}`}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -371,6 +399,11 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                 {issueCount > 0 && (
                   <span className="text-[9px] font-mono text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
                     {issueCount} issue{issueCount > 1 ? 's' : ''}
+                  </span>
+                )}
+                {feedbackCount > 0 && (
+                  <span className="text-[9px] font-mono text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">
+                    {feedbackCount} feedback
                   </span>
                 )}
                 <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
@@ -387,7 +420,10 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                   {codeLines.map((line: string, i: number) => {
                     const lineNum = i + 1;
                     const issues = issueMap[lineNum] || [];
+                    const fbs = feedbackMap[lineNum] || [];
                     const hasIssues = issues.length > 0;
+                    const hasFeedback = fbs.length > 0;
+                    const isCommenting = commentLine === lineNum;
                     const maxSev = hasIssues
                       ? issues.some(iss => (iss.severity || '') === 'high') ? 'high'
                         : issues.some(iss => (iss.severity || '') === 'medium') ? 'medium'
@@ -395,19 +431,93 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                       : null;
 
                     return (
-                      <tr key={lineNum} className={hasIssues ? 'bg-amber-500/[0.02]' : ''}>
-                        <td className="select-none text-right px-3 py-0 text-zinc-700 w-12 border-r border-white/[0.03] align-top text-[10px]">
+                      <tr key={lineNum}
+                        className={`group transition-colors ${
+                          hasIssues ? 'bg-amber-500/[0.02]' : ''
+                        } ${hasFeedback ? 'bg-blue-500/[0.02]' : ''}`}
+                      >
+                        <td
+                          className="select-none text-right px-3 py-0 text-zinc-700 w-12 border-r border-white/[0.03] align-top text-[10px] cursor-pointer hover:text-cyan-400 transition-colors"
+                          onClick={() => {
+                            setCommentLine(isCommenting ? null : lineNum);
+                            setCommentText('');
+                          }}
+                        >
                           {lineNum}
                         </td>
                         <td className="w-6 px-1 py-0 align-top text-center border-r border-white/[0.03]">
-                          {hasIssues && (
+                          <button
+                            onClick={() => {
+                              setCommentLine(isCommenting ? null : lineNum);
+                              setCommentText('');
+                            }}
+                            className={`opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${
+                              isCommenting ? 'opacity-100' : ''
+                            }`}
+                            title="Add inline comment"
+                          >
+                            <MessageSquare size={10} className="text-zinc-500 hover:text-cyan-400" />
+                          </button>
+                          {!isCommenting && hasIssues && (
                             <span className={maxSev === 'high' ? 'text-rose-400' : maxSev === 'medium' ? 'text-amber-400' : 'text-cyan-400'}>
                               {'\u25CF'}
                             </span>
                           )}
+                          {!isCommenting && hasFeedback && !hasIssues && (
+                            <span className="text-blue-400">{'\u25CF'}</span>
+                          )}
                         </td>
-                        <td className="px-3 py-0 text-zinc-300 whitespace-pre-wrap align-top">
+                        <td className="px-3 py-0 text-zinc-300 whitespace-pre-wrap align-top relative">
                           {line || ' '}
+                          {isCommenting && (
+                            <div className="absolute left-3 right-0 top-full z-20 mt-1">
+                              <div className="bg-zinc-900 border border-white/[0.08] rounded-xl p-2 shadow-xl w-72">
+                                <textarea
+                                  value={commentText}
+                                  onChange={e => setCommentText(e.target.value)}
+                                  placeholder="Write a comment..."
+                                  rows={2}
+                                  className="w-full text-[10px] bg-zinc-950 border border-white/[0.06] rounded-lg px-2 py-1 text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-cyan-400/60 resize-none"
+                                  autoFocus
+                                />
+                                <div className="flex items-center gap-1.5 mt-1.5 justify-end">
+                                  <button
+                                    onClick={() => { setCommentLine(null); setCommentText(''); }}
+                                    className="text-[9px] px-2 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={addComment}
+                                    disabled={!commentText.trim() || submittingComment}
+                                    className="text-[9px] px-2 py-1 rounded-lg bg-cyan-400/10 text-cyan-400 hover:bg-cyan-400/20 cursor-pointer disabled:opacity-30 flex items-center gap-1"
+                                  >
+                                    {submittingComment ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+                                    Send
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {hasFeedback && !isCommenting && (
+                            <div className="mt-1 space-y-1">
+                              {fbs.slice(0, expandedComments[lineNum] ? undefined : 1).map(fb => (
+                                <div key={fb.id} className="text-[9px] bg-blue-500/[0.04] border border-blue-500/10 rounded-lg px-2 py-1 text-zinc-400">
+                                  <span className="text-blue-400 font-medium">{fb.reviewer_username}:</span>{' '}
+                                  {fb.comment}
+                                </div>
+                              ))}
+                              {fbs.length > 1 && (
+                                <button
+                                  onClick={() => setExpandedComments(p => ({ ...p, [lineNum]: !p[lineNum] }))}
+                                  className="text-[8px] text-zinc-600 hover:text-zinc-400 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {expandedComments[lineNum] ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                                  {expandedComments[lineNum] ? 'Show less' : `${fbs.length - 1} more`}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -416,12 +526,14 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
               </table>
             </div>
 
-            {issueCount > 0 && (
-              <div className="px-5 py-3 border-t border-white/[0.04] space-y-1.5 max-h-[160px] overflow-y-auto">
-                <div className="text-[10px] font-semibold text-zinc-400 mb-1">Issues</div>
+            {(issueCount > 0 || feedbackCount > 0) && (
+              <div className="px-5 py-3 border-t border-white/[0.04] space-y-1.5 max-h-[140px] overflow-y-auto">
+                <div className="text-[10px] font-semibold text-zinc-400 mb-1">
+                  Issues ({issueCount}) · Feedback ({feedbackCount})
+                </div>
                 {Object.entries(issueMap).map(([line, iss]) =>
                   iss.map((issue: any, idx: number) => (
-                    <div key={`${line}-${idx}`} className="flex items-start gap-2 text-[10px]">
+                    <div key={`iss-${line}-${idx}`} className="flex items-start gap-2 text-[10px]">
                       {severityIcon(issue.severity || 'low')}
                       <span className="text-zinc-300 flex-1">{issue.description}</span>
                       <span className="text-zinc-600 font-mono flex-shrink-0">L{line}</span>

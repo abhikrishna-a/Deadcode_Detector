@@ -384,16 +384,20 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Junior (single file analysis)
-  juniorUpload: async (file: File): Promise<any> => {
+  // Junior (batch upload)
+  juniorUpload: async (files: File[], scanFolder?: string): Promise<any> => {
     const token_ = await getAccessToken();
     const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(`/api/auth/junior/upload/`, {
+    for (const f of files) {
+      formData.append('files', f);
+    }
+    if (scanFolder) formData.append('scan_folder', scanFolder);
+    const response = await fetch(`/api/auth/junior/batch-upload/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token_}` },
       body: formData,
     });
+    if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status})`);
     return response.json();
   },
 
@@ -448,4 +452,63 @@ export const analysisAPI = {
     });
   },
 
+  // Senior: list all submissions
+  seniorListSubmissions: async (status?: string): Promise<any[]> => {
+    const token_ = await getAccessToken();
+    const params = status ? `?status=${status}` : '';
+    const response = await fetch(`/api/auth/senior/submissions/${params}`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch submissions');
+    return response.json();
+  },
+
+  // Senior: trigger analysis (optionally scheduled)
+  seniorTriggerAnalysis: async (submissionId: number, scheduledAt?: string, timeoutSeconds?: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const body: any = {};
+    if (scheduledAt) body.scheduled_at = scheduledAt;
+    if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
+    const response = await fetch(`/api/auth/junior/analyze/${submissionId}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error('Failed to trigger analysis');
+    return response.json();
+  },
+
+  // Senior: add feedback (inline comment)
+  seniorAddFeedback: async (submissionId: number, lineStart: number, comment: string, lineEnd?: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const body: any = { line_start: lineStart, comment };
+    if (lineEnd !== undefined) body.line_end = lineEnd;
+    const response = await fetch(`/api/auth/senior/feedback/${submissionId}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error('Failed to add feedback');
+    return response.json();
+  },
+
+  // Junior: list feedback on own submissions
+  juniorListFeedback: async (): Promise<any[]> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/feedback/`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch feedback');
+    return response.json();
+  },
+
+  // List feedback for a specific submission
+  listSubmissionFeedback: async (submissionId: number): Promise<any[]> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/junior/feedback/${submissionId}/`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch submission feedback');
+    return response.json();
+  },
 };

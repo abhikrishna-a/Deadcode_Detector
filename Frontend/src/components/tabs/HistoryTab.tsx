@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
+import { Skeleton } from '../ui/Skeleton';
 
 interface HistoryTabProps {
   key?: string;
@@ -333,9 +334,14 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
       >
         <div>
           {loading ? (
-            <div className="flex items-center justify-center py-16 text-neutral-500 gap-2">
-              <Loader2 size={16} className="animate-spin text-cyan-400" />
-              <span className="text-xs font-mono">Loading history...</span>
+            <div className="space-y-0">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-6 py-3 border-t border-white/[0.02]">
+                  <Skeleton className="w-3 h-3 rounded" />
+                  <Skeleton className="h-3 w-48" />
+                  <Skeleton className="h-3 w-12 ml-auto" />
+                </div>
+              ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-neutral-600">

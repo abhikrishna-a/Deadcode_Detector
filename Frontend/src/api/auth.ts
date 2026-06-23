@@ -54,7 +54,7 @@ export const authAPI = {
     return response.data;
   },
 
-  updateUserRole: async (userId: number, role: 'admin' | 'viewer'): Promise<User> => {
+  updateUserRole: async (userId: number, role: 'senior' | 'junior'): Promise<User> => {
     const response = await apiClient.patch(`/api/auth/admin/users/${userId}/role/`, { role });
     return response.data;
   },

@@ -2,8 +2,35 @@ export interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'viewer';
+  role: 'senior' | 'junior';
   is_mfa_enabled: boolean;
+}
+
+export interface CodeReviewFeedback {
+  id: number;
+  submission_id: number;
+  reviewer: number;
+  reviewer_username: string;
+  line_start: number;
+  line_end: number | null;
+  comment: string;
+  created_at: string;
+  resolved: boolean;
+}
+
+export interface JuniorSubmission {
+  id: number;
+  user: number;
+  username?: string;
+  filename: string;
+  file_content: string;
+  scan_folder: string;
+  status: 'pending_review' | 'analysing' | 'done' | 'failed';
+  result: any;
+  error?: string;
+  scheduled_at: string | null;
+  timeout_seconds: number;
+  created_at: string;
 }
 
 export interface Issue {

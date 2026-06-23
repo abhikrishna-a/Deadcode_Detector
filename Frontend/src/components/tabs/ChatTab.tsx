@@ -1,9 +1,28 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight, AlertOctagon } from 'lucide-react';
+import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight, AlertOctagon, ExternalLink } from 'lucide-react';
 import { AnalysisResult, ChatMessage, Issue } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+
+function renderContentWithCitations(text: string): React.ReactNode {
+  const parts = text.split(/(\[(?:File|Source|Line|L)\s*:?\s*[^\]]+\])/g);
+  return parts.map((part, i) => {
+    const match = part.match(/\[(?:File|Source|Line|L)\s*:?\s*([^\]]+)\]/i);
+    if (match) {
+      return (
+        <span key={i}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 border border-cyan-400/20 text-cyan-400 cursor-help mx-0.5"
+          title={match[1].trim()}
+        >
+          <ExternalLink size={8} />
+          {match[1].trim()}
+        </span>
+      );
+    }
+    return part;
+  });
+}
 
 interface ChatTabProps {
   key?: string;
@@ -316,7 +335,9 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
                         : 'bg-white/[0.01] border-white/[0.04] text-neutral-300'
                     }`}
                   >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    <p className="whitespace-pre-wrap">
+                      {msg.role === 'assistant' ? renderContentWithCitations(msg.content) : msg.content}
+                    </p>
                   </div>
                   <span className="text-[9px] font-mono text-zinc-500 mt-1 uppercase tracking-widest px-1">
                     {msg.role === 'user' ? 'audit_lead' : 'inspec_kernel'}

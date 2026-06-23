@@ -28,7 +28,7 @@ from .serializers import (
     AdminUserSerializer,
     AdminUserRoleSerializer,
 )
-from .permissions import IsAdminWithVerifiedMFA
+from .permissions import IsSeniorWithVerifiedMFA
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +324,7 @@ class MFAInitialVerifyView(APIView):
 
 class AdminUserListView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAdminWithVerifiedMFA]
+    permission_classes = [IsSeniorWithVerifiedMFA]
 
     def get(self, request):
         users = User.objects.all().order_by("date_joined")
@@ -400,7 +400,7 @@ class PasswordResetConfirmView(APIView):
 
 class AdminUserRoleUpdateView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAdminWithVerifiedMFA]
+    permission_classes = [IsSeniorWithVerifiedMFA]
 
     def patch(self, request, user_id):
         if request.user.id == user_id:
@@ -497,12 +497,43 @@ class JuniorSubmissionUploadView(APIView):
         lang = name.rsplit('.', 1)[-1] if '.' in name else ''
         submission = JuniorSubmission.objects.create(
             user=request.user,
-            file_name=name,
+            filename=name,
             language=lang,
-            content=content,
+            file_content=content,
+            scan_folder=request.data.get('scan_folder', ''),
         )
         from .serializers import JuniorSubmissionSerializer
         return Response(JuniorSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
+
+
+class JuniorSubmissionBatchUploadView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import JuniorSubmission
+        from .serializers import JuniorSubmissionSerializer
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({'error': 'No files provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        scan_folder = request.data.get('scan_folder', '')
+        submissions = []
+        for f in files:
+            content = f.read().decode('utf-8', errors='replace')
+            name = f.name
+            lang = name.rsplit('.', 1)[-1] if '.' in name else ''
+            sub = JuniorSubmission.objects.create(
+                user=request.user,
+                filename=name,
+                language=lang,
+                file_content=content,
+                scan_folder=scan_folder,
+            )
+            submissions.append(sub)
+        return Response(
+            {'submissions': JuniorSubmissionSerializer(submissions, many=True).data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class JuniorSubmissionListView(APIView):
@@ -512,7 +543,7 @@ class JuniorSubmissionListView(APIView):
     def get(self, request):
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionSerializer
-        submissions = JuniorSubmission.objects.filter(user=request.user).order_by('-submitted_at')
+        submissions = JuniorSubmission.objects.filter(user=request.user).order_by('-created_at')
         return Response(JuniorSubmissionSerializer(submissions, many=True).data)
 
 
@@ -524,7 +555,10 @@ class JuniorSubmissionDetailView(APIView):
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionDetailSerializer
         try:
-            submission = JuniorSubmission.objects.get(id=submission_id, user=request.user)
+            if request.user.role == 'senior':
+                submission = JuniorSubmission.objects.get(id=submission_id)
+            else:
+                submission = JuniorSubmission.objects.get(id=submission_id, user=request.user)
         except JuniorSubmission.DoesNotExist:
             return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(JuniorSubmissionDetailSerializer(submission).data)
@@ -538,15 +572,26 @@ class JuniorSubmissionAnalyzeView(APIView):
         from .models import JuniorSubmission
         from .tasks import analyze_junior_submission
         try:
-            submission = JuniorSubmission.objects.get(id=submission_id, user=request.user)
+            submission = JuniorSubmission.objects.get(id=submission_id)
         except JuniorSubmission.DoesNotExist:
             return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if submission.status == 'processing':
+
+        scheduled_at = request.data.get('scheduled_at')
+        timeout_seconds = request.data.get('timeout_seconds', 60)
+
+        if scheduled_at:
+            submission.scheduled_at = scheduled_at
+            submission.timeout_seconds = timeout_seconds
+            submission.save(update_fields=['scheduled_at', 'timeout_seconds'])
+            return Response({'message': 'Analysis scheduled.', 'submission_id': submission.id})
+        if submission.status == 'analysing':
             return Response({'error': 'Already processing.'}, status=status.HTTP_400_BAD_REQUEST)
-        submission.status = 'processing'
-        submission.save(update_fields=['status'])
+        submission.status = 'analysing'
+        submission.scheduled_at = None
+        submission.timeout_seconds = timeout_seconds
+        submission.save(update_fields=['status', 'scheduled_at', 'timeout_seconds'])
         analyze_junior_submission.delay(submission.id)
-        return Response({'message': 'Analysis started.'})
+        return Response({'message': 'Analysis started.', 'submission_id': submission.id})
 
 
 class JuniorGitImportView(APIView):
@@ -576,9 +621,10 @@ class JuniorGitImportView(APIView):
                 lang = name.rsplit('.', 1)[-1] if '.' in name else ''
                 submission = JuniorSubmission.objects.create(
                     user=request.user,
-                    file_name=name,
+                    filename=name,
                     language=lang,
-                    content=content,
+                    file_content=content,
+                    scan_folder=repo_url.rstrip('/').rsplit('/', 1)[-1] or 'git-import',
                 )
                 submissions.append(submission.id)
             import shutil
@@ -604,6 +650,88 @@ class JuniorClearView(APIView):
         from .models import JuniorSubmission
         JuniorSubmission.objects.filter(user=request.user).delete()
         return Response({'message': 'All junior submissions cleared.'})
+
+
+class SeniorSubmissionListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
+
+    def get(self, request):
+        from .models import JuniorSubmission
+        from .serializers import JuniorSubmissionSerializer
+        status_filter = request.query_params.get('status', '')
+        qs = JuniorSubmission.objects.all().select_related('user').order_by('-created_at')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return Response(JuniorSubmissionSerializer(qs, many=True).data)
+
+
+class SeniorFeedbackCreateView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
+
+    def post(self, request, submission_id):
+        from .models import JuniorSubmission, CodeReviewFeedback
+        from .serializers import CodeReviewFeedbackCreateSerializer
+        try:
+            submission = JuniorSubmission.objects.get(id=submission_id)
+        except JuniorSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CodeReviewFeedbackCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        feedback = CodeReviewFeedback.objects.create(
+            submission=submission,
+            reviewer=request.user,
+            line_start=serializer.validated_data['line_start'],
+            line_end=serializer.validated_data.get('line_end'),
+            comment=serializer.validated_data['comment'],
+        )
+
+        # Notify the junior via WebSocket
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        try:
+            async_to_sync(get_channel_layer().group_send)(
+                f'notifications_user_{submission.user.id}',
+                {
+                    'type': 'feedback_added',
+                    'submission_id': submission.id,
+                    'file_name': submission.filename,
+                    'feedback_id': feedback.id,
+                    'line_start': feedback.line_start,
+                    'line_end': feedback.line_end,
+                    'reviewer_username': request.user.username,
+                },
+            )
+        except Exception:
+            logger.warning('Failed to send feedback notification', exc_info=True)
+
+        from .serializers import CodeReviewFeedbackSerializer
+        return Response(CodeReviewFeedbackSerializer(feedback).data, status=status.HTTP_201_CREATED)
+
+
+class JuniorFeedbackListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import JuniorSubmission, CodeReviewFeedback
+        from .serializers import CodeReviewFeedbackSerializer
+        feedbacks = CodeReviewFeedback.objects.filter(
+            submission__user=request.user
+        ).select_related('reviewer', 'submission').order_by('-created_at')
+        return Response(CodeReviewFeedbackSerializer(feedbacks, many=True).data)
+
+
+class SubmissionFeedbackListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, submission_id):
+        from .models import CodeReviewFeedback
+        from .serializers import CodeReviewFeedbackSerializer
+        feedbacks = CodeReviewFeedback.objects.filter(submission_id=submission_id)
+        return Response(CodeReviewFeedbackSerializer(feedbacks, many=True).data)
 
 
 class LogoutView(APIView):

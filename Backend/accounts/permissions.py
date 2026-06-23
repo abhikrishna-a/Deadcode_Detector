@@ -17,17 +17,17 @@ class IsMFAVerified(BasePermission):
         return True
 
 
-class IsAdminWithVerifiedMFA(BasePermission):
+class IsSeniorWithVerifiedMFA(BasePermission):
     """
     Returns True only if:
     1. request.user.is_authenticated
-    2. request.user.role == 'admin'
+    2. request.user.role == 'senior'
     3. request.auth.payload.get("mfa_verified_for_session") is True
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        if request.user.role != 'admin':
+        if request.user.role != 'senior':
             return False
         if not request.auth:
             return False

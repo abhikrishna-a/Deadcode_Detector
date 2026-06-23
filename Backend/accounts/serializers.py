@@ -4,7 +4,7 @@ import threading
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
-from .models import JuniorSubmission
+from .models import JuniorSubmission, CodeReviewFeedback
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -42,7 +42,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["username", "email", "password"]
 
     def create(self, validated_data):
-        validated_data["role"] = "viewer"
+        validated_data["role"] = "junior"
         return User.objects.create_user(**validated_data)
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -128,12 +128,30 @@ class CustomTokenRefreshSerializer(TokenRefreshSerializer):
 
 
 class JuniorSubmissionSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+
     class Meta:
         model = JuniorSubmission
-        fields = ['id', 'file_name', 'language', 'status', 'submitted_at', 'analysis_id', 'scan_id']
+        fields = ['id', 'filename', 'language', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds']
 
 
 class JuniorSubmissionDetailSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+
     class Meta:
         model = JuniorSubmission
         fields = '__all__'
+
+
+class CodeReviewFeedbackSerializer(serializers.ModelSerializer):
+    reviewer_username = serializers.CharField(source='reviewer.username', read_only=True)
+
+    class Meta:
+        model = CodeReviewFeedback
+        fields = ['id', 'submission_id', 'reviewer', 'reviewer_username', 'line_start', 'line_end', 'comment', 'created_at', 'resolved']
+
+
+class CodeReviewFeedbackCreateSerializer(serializers.Serializer):
+    line_start = serializers.IntegerField()
+    line_end = serializers.IntegerField(required=False, allow_null=True)
+    comment = serializers.CharField()

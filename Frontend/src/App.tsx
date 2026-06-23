@@ -13,6 +13,7 @@ import ChatTab from './components/tabs/ChatTab';
 import AdminTab from './components/tabs/AdminTab';
 import HistoryTab from './components/tabs/HistoryTab';
 import JuniorTab from './components/tabs/JuniorTab';
+import SubmissionsReviewPanel from './components/tabs/SubmissionsReviewPanel';
 import AIAssistTab from './components/tabs/AIAssistTab';
 import TeamChatTab from './components/tabs/TeamChatTab';
 import SettingsTab from './components/tabs/SettingsTab';
@@ -187,6 +188,16 @@ export default function App() {
                       {activeTab === 'junior' && (
                         <JuniorTab
                           key="junior"
+                          currentUser={currentUser}
+                          history={history}
+                          onShowToast={showToast}
+                        />
+                      )}
+
+                      {activeTab === 'review' && currentUser.role === 'senior' && (
+                        <SubmissionsReviewPanel
+                          key="review"
+                          currentUser={currentUser}
                           onShowToast={showToast}
                         />
                       )}
@@ -212,7 +223,7 @@ export default function App() {
                         />
                       )}
 
-                      {activeTab === 'admin' && currentUser.role === 'admin' && (
+                      {activeTab === 'admin' && currentUser.role === 'senior' && (
                         <AdminTab
                           key="admin"
                           currentUser={currentUser}

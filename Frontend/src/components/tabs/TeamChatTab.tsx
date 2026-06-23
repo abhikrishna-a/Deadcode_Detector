@@ -1,10 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import {
-  MessageSquare, Send, CheckCircle, User, Bot, Loader2,
+  MessageSquare, Send, CheckCircle, User, Bot, Loader2, ExternalLink,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
+
+function renderContentWithCitations(text: string): React.ReactNode {
+  const parts = text.split(/(\[(?:File|Source|Line|L)\s*:?\s*[^\]]+\])/g);
+  return parts.map((part, i) => {
+    const match = part.match(/\[(?:File|Source|Line|L)\s*:?\s*([^\]]+)\]/i);
+    if (match) {
+      return (
+        <span key={i}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 border border-cyan-400/20 text-cyan-400 cursor-help mx-0.5"
+          title={match[1].trim()}
+        >
+          <ExternalLink size={8} />
+          {match[1].trim()}
+        </span>
+      );
+    }
+    return part;
+  });
+}
 
 interface TeamChatTabProps {
   currentUser: UserType;
@@ -19,8 +38,8 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
 
   const load = async () => {
     try {
-      const data = await analysisAPI.listThreads(false);
-      setThreads(data.threads);
+      const data = await analysisAPI.listThreads();
+      setThreads(Array.isArray(data) ? data : data.threads || []);
     } catch { /* ignore */ }
   };
 
@@ -35,7 +54,7 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
     if (!active || !text || sending) return;
     setSending(true);
     try {
-      await analysisAPI.postMessage(active.id, text);
+      await analysisAPI.postMessage(String(active.id), text);
       setReplyText('');
       await load();
     } catch { /* ignore */ }
@@ -43,7 +62,7 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
   };
 
   const handleResolve = async (id: number) => {
-    await analysisAPI.resolveThread(id);
+    await analysisAPI.resolveThread(String(id));
     setActiveId(null);
     await load();
   };
@@ -126,7 +145,9 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
                         <Bot size={9} /> AI SUGGESTED ANSWER
                       </div>
                     )}
-                    <p className="whitespace-pre-wrap text-zinc-300 leading-relaxed">{m.content}</p>
+                    <p className="whitespace-pre-wrap text-zinc-300 leading-relaxed">
+                      {m.is_ai_hint ? renderContentWithCitations(m.content) : m.content}
+                    </p>
                   </div>
                 </div>
               ))}
