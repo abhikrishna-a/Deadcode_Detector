@@ -8,6 +8,7 @@ from celery import shared_task
 from celery.signals import task_failure
 from channels.layers import get_channel_layer
 from django.conf import settings
+from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
 
@@ -246,20 +247,24 @@ def analyze_junior_submission(self, submission_id: int):
     user = submission.user
     rag_url = getattr(settings, 'RAG_ANALYZE_URL', 'http://localhost:8004/rag/analyze')
     try:
+        refresh = RefreshToken.for_user(user)
+        refresh['mfa_verified_for_session'] = True
+        access_token = str(refresh.access_token)
+        headers = {'Authorization': f'Bearer {access_token}'}
         resp = requests.post(
             rag_url,
-            json={
-                'filename': submission.filename,
-                'content': submission.file_content,
-                'user_id': user.id,
-                'language': submission.language,
+            files={'file': (submission.filename, submission.file_content, 'text/plain')},
+            data={
+                'scan_folder': submission.scan_folder or '',
+                'scan_type': 'single',
             },
+            headers=headers,
             timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
         submission.result = data.get('analysis', data)
-        submission.status = 'completed'
+        submission.status = 'done'
         submission.save(update_fields=['result', 'status'])
         _notify_user(user.id, {
             'type': 'junior.analysis_complete',

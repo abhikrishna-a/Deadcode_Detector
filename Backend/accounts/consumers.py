@@ -90,7 +90,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
 
     async def junior_analysis_complete(self, event):
         await self.send_json({
-            'type': 'junior.analysis_complete',
+            'type': 'submission_update',
             'submission_id': event.get('submission_id'),
             'file_name': event.get('file_name'),
             'result': event.get('result'),
@@ -98,7 +98,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
 
     async def junior_analysis_failed(self, event):
         await self.send_json({
-            'type': 'junior.analysis_failed',
+            'type': 'submission_update',
             'submission_id': event.get('submission_id'),
             'file_name': event.get('file_name'),
         })

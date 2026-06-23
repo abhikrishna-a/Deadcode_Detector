@@ -488,19 +488,22 @@ class JuniorSubmissionUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        from django.utils import timezone
         from .models import JuniorSubmission
         file = request.FILES.get('file')
         if not file:
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-        content = file.read().decode('utf-8', errors='replace')
+        content = file.read().decode('utf-8', errors='replace').replace('\x00', '')
         name = file.name
         lang = name.rsplit('.', 1)[-1] if '.' in name else ''
+        scheduled_at = request.data.get('scheduled_at', timezone.now())
         submission = JuniorSubmission.objects.create(
             user=request.user,
             filename=name,
             language=lang,
             file_content=content,
             scan_folder=request.data.get('scan_folder', ''),
+            scheduled_at=scheduled_at,
         )
         from .serializers import JuniorSubmissionSerializer
         return Response(JuniorSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
@@ -511,15 +514,17 @@ class JuniorSubmissionBatchUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        from django.utils import timezone
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionSerializer
         files = request.FILES.getlist('files')
         if not files:
             return Response({'error': 'No files provided.'}, status=status.HTTP_400_BAD_REQUEST)
         scan_folder = request.data.get('scan_folder', '')
+        scheduled_at = request.data.get('scheduled_at', timezone.now())
         submissions = []
         for f in files:
-            content = f.read().decode('utf-8', errors='replace')
+            content = f.read().decode('utf-8', errors='replace').replace('\x00', '')
             name = f.name
             lang = name.rsplit('.', 1)[-1] if '.' in name else ''
             sub = JuniorSubmission.objects.create(
@@ -528,6 +533,7 @@ class JuniorSubmissionBatchUploadView(APIView):
                 language=lang,
                 file_content=content,
                 scan_folder=scan_folder,
+                scheduled_at=scheduled_at,
             )
             submissions.append(sub)
         return Response(
