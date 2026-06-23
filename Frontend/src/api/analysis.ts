@@ -346,12 +346,12 @@ export const analysisAPI = {
   },
 
   // Chat Threads
-  createThread: async (documentId: string, title: string): Promise<any> => {
+  createThread: async (analysisId: string, filename: string, issueId: string): Promise<any> => {
     const token_ = await getAccessToken();
     const response = await fetch(`/api/chat/threads/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
-      body: JSON.stringify({ document_id: documentId, title }),
+      body: JSON.stringify({ analysis_id: analysisId, filename, issue_id: issueId }),
     });
     return response.json();
   },
@@ -378,7 +378,7 @@ export const analysisAPI = {
   resolveThread: async (threadId: string): Promise<any> => {
     const token_ = await getAccessToken();
     const response = await fetch(`/api/chat/threads/${threadId}/resolve/`, {
-      method: 'POST',
+      method: 'PATCH',
       headers: { Authorization: `Bearer ${token_}` },
     });
     return response.json();

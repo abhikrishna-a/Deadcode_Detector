@@ -72,7 +72,6 @@ export default function App() {
         const result = await analysisAPI.ragHistory(50);
         const store = useAnalysisStore.getState();
         if (!result.items || result.items.length === 0) {
-          store.resetAll();
           return;
         }
         for (const item of result.items) {
@@ -155,7 +154,6 @@ export default function App() {
                         <OverviewTab
                           key="overview"
                           history={history}
-                          onViewResult={() => onNavigate('analyzer')}
                           onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
                             handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
                           }}
@@ -205,13 +203,16 @@ export default function App() {
                       {activeTab === 'assist' && (
                         <AIAssistTab
                           key="assist"
+                          currentUser={user!}
+                          history={history}
+                          onShowToast={showToast}
                         />
                       )}
 
                       {activeTab === 'team' && (
                         <TeamChatTab
                           key="team"
-                          onShowToast={showToast}
+                          currentUser={currentUser}
                         />
                       )}
 

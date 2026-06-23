@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine } from 'lucide-react';
+import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
 
@@ -119,12 +119,13 @@ interface HistoryTreeNodeProps {
   expandedTreePaths: Record<string, boolean>;
   onToggle: (path: string, depth: number) => void;
   onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
+  onNavigateToChat: (docId: string, filename: string) => void;
   healthColor: (score: number) => string;
 }
 
 function HistoryTreeNode({
   node, depth, parentPath, expandedTreePaths, onToggle,
-  onNavigateToWorkspace, healthColor,
+  onNavigateToWorkspace, onNavigateToChat, healthColor,
 }: HistoryTreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
   const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
@@ -150,7 +151,14 @@ function HistoryTreeNode({
         <span className={`text-[10px] font-mono ${item.total_issues > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
           {item.total_issues > 0 ? `${item.total_issues} issues` : 'Clean'}
         </span>
-        <span className="text-[8px] font-mono text-zinc-700 ml-auto hidden sm:inline">
+        <button
+          onClick={(e) => { e.stopPropagation(); onNavigateToChat(item.analysis_id, item.filename); }}
+          className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer ml-auto hidden sm:block"
+          title="Open in Chat"
+        >
+          <MessageSquare size={11} />
+        </button>
+        <span className="text-[8px] font-mono text-zinc-700 hidden sm:inline">
           {new Date(item.created_at).toLocaleDateString()}
         </span>
       </div>
@@ -199,6 +207,7 @@ function HistoryTreeNode({
                 expandedTreePaths={expandedTreePaths}
                 onToggle={onToggle}
                 onNavigateToWorkspace={onNavigateToWorkspace}
+                onNavigateToChat={onNavigateToChat}
                 healthColor={healthColor}
               />
             ))}
@@ -231,6 +240,8 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
 
   useEffect(() => {
     loadHistory(search);
+    const interval = setInterval(() => loadHistory(search), 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -397,6 +408,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                     expandedTreePaths={expandedTreePaths}
                     onToggle={toggleTreePath}
                     onNavigateToWorkspace={onNavigateToWorkspace}
+                    onNavigateToChat={onNavigateToChat}
                     healthColor={healthColor}
                   />
                 ))}

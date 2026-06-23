@@ -5,9 +5,11 @@ import os
 import requests
 from asgiref.sync import async_to_sync
 from celery import shared_task
+from celery.exceptions import MaxRetriesExceededError
 from celery.signals import task_failure
 from channels.layers import get_channel_layer
 from django.conf import settings
+from requests import HTTPError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
@@ -261,6 +263,9 @@ def analyze_junior_submission(self, submission_id: int):
             headers=headers,
             timeout=120,
         )
+        if not resp.ok:
+            logger.error('RAG returned %d for submission %d (%s): %s',
+                         resp.status_code, submission_id, submission.filename, resp.text[:500])
         resp.raise_for_status()
         data = resp.json()
         submission.result = data.get('analysis', data)
@@ -273,6 +278,31 @@ def analyze_junior_submission(self, submission_id: int):
             'result': submission.result,
         })
         logger.info('Junior analysis complete for submission %d', submission_id)
+    except HTTPError as exc:
+        is_unsupported = 'Unsupported file type' in exc.response.text if exc.response is not None else False
+        if exc.response is not None and exc.response.status_code == 400 and is_unsupported:
+            submission.status = 'failed'
+            submission.save(update_fields=['status'])
+            logger.warning('Permanently failing submission %d (%s) — unsupported file type',
+                           submission_id, submission.filename)
+            _notify_user(user.id, {
+                'type': 'junior.analysis_failed',
+                'submission_id': submission.id,
+                'file_name': submission.filename,
+            })
+            return
+        submission.status = 'failed'
+        submission.save(update_fields=['status'])
+        logger.exception('Junior analysis failed for submission %d', submission_id)
+        _notify_user(user.id, {
+            'type': 'junior.analysis_failed',
+            'submission_id': submission.id,
+            'file_name': submission.filename,
+        })
+        try:
+            raise self.retry(exc=exc)
+        except MaxRetriesExceededError:
+            logger.error('Max retries exceeded for submission %d', submission_id)
     except Exception as exc:
         submission.status = 'failed'
         submission.save(update_fields=['status'])
@@ -282,7 +312,10 @@ def analyze_junior_submission(self, submission_id: int):
             'submission_id': submission.id,
             'file_name': submission.filename,
         })
-        raise self.retry(exc=exc)
+        try:
+            raise self.retry(exc=exc)
+        except MaxRetriesExceededError:
+            logger.error('Max retries exceeded for submission %d', submission_id)
 
 
 @shared_task

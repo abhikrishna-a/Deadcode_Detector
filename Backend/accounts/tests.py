@@ -286,11 +286,11 @@ class GitEndpointsTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_git_file_fetch_rejects_more_than_10_paths(self):
+    def test_git_file_fetch_rejects_more_than_1000_paths(self):
         self._get_mfa_token()
         response = self.client.post(
             "/api/git/files/",
-            {"session_id": "any", "paths": [f"file{i}.py" for i in range(11)]},
+            {"session_id": "any", "paths": [f"file{i}.py" for i in range(1001)]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

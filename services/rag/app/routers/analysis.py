@@ -39,6 +39,18 @@ SUPPORTED_EXTENSIONS = {
     ".sql",
     ".md", ".txt",
     ".mjs", ".cjs", ".mts", ".cts",
+    ".ini", ".cfg", ".conf",
+    ".rst", ".csv", ".tsv",
+    ".ps1", ".bat", ".cmd",
+    ".scala", ".groovy",
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
+    ".cs", ".fs", ".vb",
+    ".pl", ".pm", ".lua", ".r",
+    ".m", ".mm",
+    ".graphql", ".gql",
+    ".astro",
+    ".tf", ".hcl",
+    ".dockerignore", ".gitignore", ".editorconfig", ".env", ".properties",
 }
 
 _bg_semaphore = Semaphore(3)
@@ -421,20 +433,29 @@ async def batch_analyze(
             n_chunks = len(chunks)
             file_embeddings = all_embeddings[embedding_idx:embedding_idx + n_chunks]
             embedding_idx += n_chunks
-        doc_id = await store_analysis(
-            db, user["user_id"], filename, language, source, analysis,
-            scan_folder=req.scan_folder, scan_type=req.scan_type,
-            scan_id=batch_scan_id,
-            chunks=chunks, embeddings=file_embeddings,
-        )
-        results.append(BatchFileResult(
-            filename=filename,
-            analysis=analysis,
-            document_id=doc_id,
-            error=None,
-        ))
-
-    await db.commit()
+        try:
+            doc_id = await store_analysis(
+                db, user["user_id"], filename, language, source, analysis,
+                scan_folder=req.scan_folder, scan_type=req.scan_type,
+                scan_id=batch_scan_id,
+                chunks=chunks, embeddings=file_embeddings,
+            )
+            await db.commit()
+            results.append(BatchFileResult(
+                filename=filename,
+                analysis=analysis,
+                document_id=doc_id,
+                error=None,
+            ))
+        except Exception as e:
+            await db.rollback()
+            logger.error("Failed to store analysis for %s: %s", filename, e, exc_info=True)
+            results.append(BatchFileResult(
+                filename=filename,
+                analysis={},
+                document_id="",
+                error=str(e),
+            ))
     elapsed = int((asyncio.get_event_loop().time() - start) * 1000)
     logger.info("Batch analyzed and stored %d files in %d ms", len(filtered), elapsed)
 

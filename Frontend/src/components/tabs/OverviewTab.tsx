@@ -77,11 +77,10 @@ interface OverviewTabProps {
   key?: string;
   user?: any;
   history: AnalysisResult[];
-  onViewResult: (res: AnalysisResult) => void;
   onNavigateToWorkspace?: (analysisId: string, filename: string, scanFolder?: string) => void;
 }
 
-export default function OverviewTab({ history, onViewResult, onNavigateToWorkspace }: OverviewTabProps) {
+export default function OverviewTab({ history, onNavigateToWorkspace }: OverviewTabProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => {
