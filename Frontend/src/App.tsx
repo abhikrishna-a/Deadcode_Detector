@@ -189,6 +189,13 @@ export default function App() {
                           currentUser={currentUser}
                           history={history}
                           onShowToast={showToast}
+                          onNavigateToChat={(docId, filename) => {
+                            setChatTarget({ docId, filename });
+                            onNavigate('chat');
+                          }}
+                          onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                            handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                          }}
                         />
                       )}
 
@@ -204,7 +211,6 @@ export default function App() {
                         <AIAssistTab
                           key="assist"
                           currentUser={user!}
-                          history={history}
                           onShowToast={showToast}
                         />
                       )}

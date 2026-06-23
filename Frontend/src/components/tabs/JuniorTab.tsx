@@ -12,16 +12,20 @@ import { User, AnalysisResult } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
 import { timeAgo } from '../../lib/time';
+import HistoryTab from './HistoryTab';
 
 
 interface JuniorTabProps {
   currentUser: User;
   history: AnalysisResult[];
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+  onNavigateToChat?: (docId: string, filename: string) => void;
+  onNavigateToWorkspace?: (analysisId: string, filename: string, scanFolder?: string) => void;
 }
 
 const SUB_TABS = [
   { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'history' as const, label: 'History', icon: Clock },
   { id: 'upload' as const, label: 'Upload', icon: Upload },
   { id: 'results' as const, label: 'Results', icon: ClipboardList },
   { id: 'feedback' as const, label: 'Feedback', icon: MessageSquareText },
@@ -63,8 +67,8 @@ interface TreeNode {
   key?: string;
 }
 
-export default function JuniorTab({ currentUser, history, onShowToast }: JuniorTabProps) {
-  const [subTab, setSubTab] = useState<'dashboard' | 'upload' | 'results' | 'feedback'>('dashboard');
+export default function JuniorTab({ currentUser, history, onShowToast, onNavigateToChat, onNavigateToWorkspace }: JuniorTabProps) {
+  const [subTab, setSubTab] = useState<'dashboard' | 'history' | 'upload' | 'results' | 'feedback'>('dashboard');
   const [folders, setFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState('');
   const [reports, setReports] = useState<any[]>([]);
@@ -382,7 +386,8 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
       const children: TreeNode[] = items.map((s: any) => ({
         name: s.filename, isDir: false, children: [], item: s,
       }));
-      nodes.push({ name: folderName, isDir: true, children, key: folder, item: {} });
+      const totalFolderIssues = items.reduce((sum: number, s: any) => sum + (s.total_issues ?? 0), 0);
+      nodes.push({ name: folderName, isDir: true, children, key: folder, item: { count: items.length, total_issues: totalFolderIssues } });
     }
     nodes.sort((a, b) => a.name.localeCompare(b.name));
     return nodes;
@@ -450,6 +455,11 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
             </span>
             {node.item?.count !== undefined && (
               <span className="text-[9px] font-mono text-zinc-600">({node.item.count})</span>
+            )}
+            {node.item?.total_issues !== undefined && node.item.total_issues > 0 && (
+              <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded ml-1">
+                {node.item.total_issues} issues
+              </span>
             )}
             {node.item?.hasActive && (
               <Loader2 size={9} className="animate-spin text-cyan-400 flex-shrink-0" />
@@ -781,6 +791,18 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
               )}
             </div>
             )}
+          </motion.div>
+        )}
+
+        {/* ── HISTORY ── */}
+        {subTab === 'history' && (
+          <motion.div key="history" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <HistoryTab
+              key="junior-history"
+              onNavigateToChat={onNavigateToChat || (() => {})}
+              onNavigateToWorkspace={onNavigateToWorkspace || (() => {})}
+              onShowToast={onShowToast}
+            />
           </motion.div>
         )}
 
@@ -1151,14 +1173,22 @@ export default function JuniorTab({ currentUser, history, onShowToast }: JuniorT
                 </div>
                 {renderTree(resultsTree, 0, '', (node, depth) => {
                   const s = node.item;
+                  if (!s) return null;
+                  const issCount = s.total_issues ?? 0;
+                  const hasIssues = issCount > 0;
+                  const iconColor = hasIssues ? 'text-amber-400' : 'text-violet-400/70';
+                  const nameColor = hasIssues ? 'text-amber-300' : 'text-zinc-300';
                   return (
                     <div key={s.id}
                       className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
                       style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                       onClick={() => handleViewResult(s.id)}
                     >
-                      <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
-                      <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{node.name}</span>
+                      <FileCode size={11} className={`${iconColor} flex-shrink-0`} />
+                      <span className={`text-[11px] font-mono ${nameColor} truncate flex-1 group-hover:text-cyan-400 transition-colors`}>{node.name}</span>
+                      {hasIssues && (
+                        <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded flex-shrink-0">{issCount}</span>
+                      )}
                       <span className="text-[8px] font-mono text-zinc-600 flex-shrink-0">{timeAgo(s.created_at)}</span>
                       <ChevronRight size={10} className="text-zinc-600 group-hover:text-cyan-400 flex-shrink-0 transition-colors" />
                     </div>
