@@ -6,9 +6,9 @@ import {
   FileCode, FileText, X, BarChart3, Bug, File, Folder,
   LayoutDashboard, ClipboardList, GitBranch, Users,
   ChevronRight, XCircle, Clock, Trash2,
-  MessageSquareText, Send,
+  MessageSquareText, Send, CheckCheck,
 } from 'lucide-react';
-import { User, AnalysisResult } from '../../types';
+import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
 import { analysisAPI } from '../../api/analysis';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
 import { timeAgo } from '../../lib/time';
@@ -145,6 +145,46 @@ interface TreeNode {
   key?: string;
 }
 
+function buildPathTree<T>(
+  items: T[],
+  getPath: (item: T) => string,
+  getItemKey: (item: T, path: string) => string = (_item, path) => path,
+): TreeNode[] {
+  const root: TreeNode[] = [];
+  for (const item of items) {
+    const path = (getPath(item) || 'untitled').replace(/\\/g, '/');
+    const parts = path.split('/').filter(Boolean);
+    let current = root;
+    let currentPath = '';
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      if (isLast) {
+        if (!current.some(n => !n.isDir && n.key === getItemKey(item, currentPath))) {
+          current.push({ name: part, isDir: false, children: [], item, key: getItemKey(item, currentPath) });
+        }
+      } else {
+        let dir = current.find(n => n.isDir && n.name === part);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], key: currentPath };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  const sortNodes = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) sortNodes(node.children);
+  };
+  sortNodes(root);
+  return root;
+}
+
 export default function JuniorTab({ currentUser, history, onShowToast, onNavigateToChat, onNavigateToWorkspace }: JuniorTabProps) {
   const [subTab, setSubTab] = useState<'dashboard' | 'history' | 'upload' | 'results' | 'teamchat' | 'feedback'>('dashboard');
   const [folders, setFolders] = useState<string[]>([]);
@@ -198,7 +238,10 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   const loadData = async () => {
     setRefreshing(true);
     try {
-      const hist = await analysisAPI.ragHistory(500);
+      const [hist, feedbacks] = await Promise.all([
+        analysisAPI.ragHistory(500),
+        analysisAPI.juniorListFeedback().catch(() => []),
+      ]);
       const items = hist.items;
       const folderSet = new Set<string>();
       for (const item of items) {
@@ -208,6 +251,9 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       setFolders(arr);
       if (arr.length > 0 && !selectedFolder) setSelectedFolder(arr[0]);
       setReports(items);
+      const unresolved = feedbacks.filter((fb: CodeReviewFeedback) => !fb.resolved).length;
+      feedbackNotifsRef.current = unresolved;
+      setFeedbackNotifs(unresolved);
       setLastRefreshed(Date.now());
     } catch (e: any) {
       onShowToast(e?.message || 'Failed to load history reports.', 'error');
@@ -223,7 +269,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const refresh = async () => {
       try {
         const data = await analysisAPI.listSubmissions();
-        setSubmissions(Array.isArray(data) ? data : data.submissions || []);
+        setSubmissions(data);
         setLastRefreshed(Date.now());
       } catch { /* ignore */ }
     };
@@ -316,13 +362,13 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     if (!gitUrl.trim() || gitImporting) return;
     setGitImporting(true);
     try {
-      const result = await analysisAPI.juniorGitImport(gitUrl.trim(), gitBranch, folderName || undefined);
+      const result = await analysisAPI.juniorGitImport(gitUrl.trim(), gitBranch, []);
       setSubmissions(prev => prev); // refresh() below will update
       onShowToast(`Imported ${result.imported} file(s) from ${result.repo_name}.`, 'success');
       setGitUrl('');
       setGitBranch('main');
       const data = await analysisAPI.listSubmissions();
-      setSubmissions(data.submissions);
+      setSubmissions(data);
     } catch (e: any) {
       onShowToast(e?.message || 'Git import failed.', 'error');
     }
@@ -356,7 +402,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       await analysisAPI.triggerSubmissionAnalysis(id);
       onShowToast('Retrying analysis...', 'info');
       const data = await analysisAPI.listSubmissions();
-      setSubmissions(Array.isArray(data) ? data : data.submissions || []);
+      setSubmissions(data);
     } catch (e: any) {
       onShowToast(e?.message || 'Retry failed.', 'error');
     }
@@ -416,6 +462,14 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 
   const doneSubmissions = useMemo(() => submissions.filter(s => s.status === 'done'), [submissions]);
 
+  const recentSubmissionTree = useMemo(() => (
+    buildPathTree(
+      submissions.slice(0, 10),
+      (s: any) => `${s.scan_folder || 'Standalone'}/${s.filename}`,
+      (s: any, path) => String(s.id || path),
+    )
+  ), [submissions]);
+
   // Build folder-based tree for reports
   const reportTree = useMemo(() => {
     const groups = new Map<string, any[]>();
@@ -427,12 +481,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children: TreeNode[] = items.map((r: any) => ({
-        name: r.filename.split('/').pop() || r.filename,
-        isDir: false,
-        children: [],
-        item: r,
-      }));
+      const children = buildPathTree(items, (r: any) => r.filename, (r: any, path) => r.analysis_id || path);
       nodes.push({ name: folderName, isDir: true, children, key: folder, item: { folder } });
     }
     nodes.sort((a, b) => a.name.localeCompare(b.name));
@@ -450,9 +499,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children: TreeNode[] = items.map(s => ({
-        name: s.filename, isDir: false, children: [], item: s,
-      }));
+      const children = buildPathTree(items, (s: any) => s.filename, (s: any, path) => String(s.id || path));
       const hasActive = items.some(s => s.status === 'pending_review' || s.status === 'analysing');
       nodes.push({
         name: folderName, isDir: true, children, key: folder,
@@ -474,9 +521,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children: TreeNode[] = items.map((s: any) => ({
-        name: s.filename, isDir: false, children: [], item: s,
-      }));
+      const children = buildPathTree(items, (s: any) => s.filename, (s: any, path) => String(s.id || path));
       const totalFolderIssues = items.reduce((sum: number, s: any) => sum + (s.total_issues ?? 0), 0);
       nodes.push({ name: folderName, isDir: true, children, key: folder, item: { count: items.length, total_issues: totalFolderIssues } });
     }
@@ -620,7 +665,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
         <div>
           <h2 className="font-bold text-xl text-neutral-200 tracking-tight">Junior Dev Portal</h2>
           <p className="text-zinc-500 text-xs font-sans mt-1">
-            Nightly reports &middot; updated {timeAgo(lastRefreshed)}
+            Nightly reports &middot; updated {timeAgo(String(lastRefreshed))}
             <button onClick={loadData} className="ml-2 text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 cursor-pointer">
               <RefreshCw size={10} className={refreshing ? 'animate-spin' : ''} /> refresh
             </button>
@@ -765,17 +810,23 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {submissions.slice(0, 10).map(s => {
+                        {renderTree(recentSubmissionTree, 1, '__submissions__', (node, depth, isLast) => {
+                          const s = node.item;
                           const badge = statusBadge(s.status);
                           const BadgeIcon = badge.icon;
                           return (
                             <div key={s.id}
                               className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-                              style={{ paddingLeft: '2.5rem' }}
+                              style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                               onClick={() => { setSubTab('results'); handleViewResult(s.id); }}
                             >
+                              {depth > 0 && (
+                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
+                                  {isLast ? '└── ' : '├── '}
+                                </span>
+                              )}
                               <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
-                              <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{s.filename}</span>
+                              <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{node.name}</span>
                               <span className={`text-[8px] font-mono px-1 rounded ${badge.bg} ${badge.color} flex-shrink-0`}>{s.status}</span>
                               <span className="text-[8px] font-mono text-zinc-600 flex-shrink-0">{timeAgo(s.created_at)}</span>
                             </div>
@@ -1383,8 +1434,12 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 }
 
 function FeedbackView({ onShowToast }: { onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [feedbacks, setFeedbacks] = useState<CodeReviewFeedback[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
+  const [resolving, setResolving] = useState<Record<number, boolean>>({});
+  const [showResolved, setShowResolved] = useState(false);
+  const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     (async () => {
@@ -1397,6 +1452,84 @@ function FeedbackView({ onShowToast }: { onShowToast: (msg: string, type: 'succe
       setLoading(false);
     })();
   }, [onShowToast]);
+
+  const handleResolve = async (fbId: number) => {
+    setResolving(prev => ({ ...prev, [fbId]: true }));
+    try {
+      await analysisAPI.resolveFeedback(fbId);
+      setFeedbacks(prev => prev.map(fb => fb.id === fbId ? { ...fb, resolved: true } : fb));
+      onShowToast('Feedback marked as resolved.', 'success');
+    } catch (e: any) {
+      onShowToast(e?.message || 'Failed to resolve feedback.', 'error');
+    }
+    setResolving(prev => ({ ...prev, [fbId]: false }));
+  };
+
+  const grouped = useMemo(() => {
+    const map = new Map<number, CodeReviewFeedback[]>();
+    for (const fb of feedbacks) {
+      const subs = map.get(fb.submission_id) || [];
+      subs.push(fb);
+      map.set(fb.submission_id, subs);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[0] - a[0]);
+  }, [feedbacks]);
+
+  const submissionEntries = useMemo(() => {
+    return grouped.map(([subId, fbs]) => {
+      const first = fbs[0];
+      return {
+        submissionId: subId,
+        filename: first.filename,
+        total: fbs.length,
+        unresolved: fbs.filter(fb => !fb.resolved).length,
+      };
+    });
+  }, [grouped]);
+
+  const selectedFeedbacks = useMemo(() => {
+    if (!selectedSubId) return [];
+    return grouped.find(([id]) => id === selectedSubId)?.[1] || [];
+  }, [grouped, selectedSubId]);
+
+  const codeLines = useMemo(() => {
+    if (selectedFeedbacks.length === 0) return [];
+    return (selectedFeedbacks[0].file_content || '').split('\n');
+  }, [selectedFeedbacks]);
+
+  const feedbackMap = useMemo(() => {
+    const map = new Map<number, CodeReviewFeedback[]>();
+    for (const fb of selectedFeedbacks) {
+      const line = fb.line_start;
+      const arr = map.get(line) || [];
+      arr.push(fb);
+      map.set(line, arr);
+    }
+    return map;
+  }, [selectedFeedbacks]);
+
+  useEffect(() => {
+    if (!selectedSubId && submissionEntries.length > 0) {
+      setSelectedSubId(submissionEntries[0].submissionId);
+    }
+  }, [submissionEntries, selectedSubId]);
+
+  const visibleFeedbacks = useMemo(() => {
+    if (showResolved) return selectedFeedbacks;
+    return selectedFeedbacks.filter(fb => !fb.resolved);
+  }, [selectedFeedbacks, showResolved]);
+
+  const displayFeedbackMap = useMemo(() => {
+    if (showResolved) return feedbackMap;
+    const map = new Map<number, CodeReviewFeedback[]>();
+    for (const fb of visibleFeedbacks) {
+      const line = fb.line_start;
+      const arr = map.get(line) || [];
+      arr.push(fb);
+      map.set(line, arr);
+    }
+    return map;
+  }, [feedbackMap, visibleFeedbacks, showResolved]);
 
   if (loading) {
     return (
@@ -1416,48 +1549,194 @@ function FeedbackView({ onShowToast }: { onShowToast: (msg: string, type: 'succe
     );
   }
 
-  const grouped = feedbacks.reduce((acc: Record<string, any[]>, fb: any) => {
-    const key = fb.submission_id || 'unknown';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(fb);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const totalUnresolved = feedbacks.filter(fb => !fb.resolved).length;
 
   return (
-    <div className="space-y-4">
-      <div className="text-xs font-semibold text-zinc-400">
-        {feedbacks.length} feedback comment{feedbacks.length !== 1 ? 's' : ''} from reviewers
-      </div>
-      {Object.entries(grouped).map(([submissionId, fbs]) => (
-        <div key={submissionId} className="glass-card rounded-2xl p-4">
-          <div className="text-[10px] font-mono text-zinc-500 mb-3">
-            Submission #{submissionId}
+    <div className="flex gap-3 h-[calc(100vh-16rem)]">
+      {/* Sidebar — file list */}
+      <div className="w-52 flex-shrink-0 overflow-y-auto glass-card rounded-2xl py-2">
+        <div className="px-3 pb-2 border-b border-white/[0.04] mb-1">
+          <div className="text-[10px] font-semibold text-zinc-400">
+            {feedbacks.length} comment{feedbacks.length !== 1 ? 's' : ''}
           </div>
-          <div className="space-y-2">
-            {fbs.map((fb: any) => (
-              <div key={fb.id} className="flex items-start gap-3 p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04]">
-                <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                  <MessageSquare size={10} className="text-blue-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold text-blue-400">{fb.reviewer_username}</span>
-                    <span className="text-[8px] font-mono text-zinc-600">
-                      L{fb.line_start}{fb.line_end ? `-${fb.line_end}` : ''}
-                    </span>
-                    <span className="text-[8px] font-mono text-zinc-600 ml-auto">
-                      {timeAgo(fb.created_at)}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-300 mt-1">{fb.comment}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          {totalUnresolved > 0 && (
+            <div className="text-[8px] font-mono text-amber-400">{totalUnresolved} unresolved</div>
+          )}
         </div>
-      ))}
+        {submissionEntries.map(entry => {
+          const isSelected = selectedSubId === entry.submissionId;
+          return (
+            <button
+              key={entry.submissionId}
+              onClick={() => setSelectedSubId(entry.submissionId)}
+              className={`w-full text-left px-3 py-2 transition-colors cursor-pointer ${
+                isSelected ? 'bg-cyan-400/[0.06] border-l-2 border-cyan-400' : 'hover:bg-white/[0.01] border-l-2 border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <FileCode size={10} className="text-cyan-400 flex-shrink-0" />
+                <span className="text-[10px] font-mono text-zinc-300 truncate">{entry.filename}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 ml-5">
+                <span className="text-[8px] font-mono text-zinc-600">{entry.total}</span>
+                {entry.unresolved > 0 && (
+                  <span className="text-[8px] font-mono text-amber-400">{entry.unresolved} new</span>
+                )}
+                {entry.unresolved === 0 && (
+                  <span className="text-[8px] font-mono text-emerald-400">
+                    <CheckCheck size={8} className="inline" /> done
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main — code viewer */}
+      <div className="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden">
+        {selectedFeedbacks.length > 0 ? (
+          <>
+            {/* Header */}
+            <div className="px-4 py-2.5 border-b border-white/[0.04] flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileCode size={13} className="text-cyan-400 flex-shrink-0" />
+                <span className="text-[11px] font-semibold text-zinc-300 truncate">{selectedFeedbacks[0].filename}</span>
+                <span className="text-[8px] text-zinc-500 font-mono bg-white/[0.02] px-1.5 py-0.5 rounded">
+                  {codeLines.length} lines
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowResolved(prev => !prev)}
+                  className={`text-[9px] font-mono px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                    showResolved
+                      ? 'border-emerald-400/30 text-emerald-400 bg-emerald-400/10'
+                      : 'border-white/[0.06] text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {showResolved ? 'Showing all' : 'Unresolved only'}
+                </button>
+              </div>
+            </div>
+
+            {/* Code */}
+            <div className="flex-1 overflow-y-auto font-mono text-[11px] leading-relaxed">
+              <table className="w-full border-collapse">
+                <tbody>
+                  {codeLines.map((line: string, i: number) => {
+                    const lineNum = i + 1;
+                    const fbs = displayFeedbackMap.get(lineNum) || [];
+                    const unfilteredFbs = selectedFeedbacks.filter(fb => fb.line_start === lineNum);
+                    const hasVisible = fbs.length > 0;
+                    const hasResolved = !hasVisible && unfilteredFbs.length > 0 && unfilteredFbs.every(fb => fb.resolved);
+                    const isExpanded = expandedLines[String(lineNum)];
+
+                    return (
+                      <tr key={lineNum}
+                        className={`group transition-colors ${
+                          hasVisible ? 'bg-blue-500/[0.02]' : ''
+                        } ${hasResolved ? 'bg-emerald-500/[0.015]' : ''}`}
+                      >
+                        <td
+                          className={`select-none text-right px-3 py-0 w-12 border-r border-white/[0.03] align-top text-[10px] transition-colors ${
+                            hasVisible || hasResolved
+                              ? 'text-zinc-500 cursor-pointer hover:text-cyan-400'
+                              : 'text-zinc-700'
+                          }`}
+                          onClick={() => {
+                            if (hasVisible || hasResolved) {
+                              setExpandedLines(prev => ({
+                                ...prev,
+                                [String(lineNum)]: !prev[String(lineNum)],
+                              }));
+                            }
+                          }}
+                        >
+                          {lineNum}
+                        </td>
+                        <td className="w-6 px-1 py-0 align-top text-center border-r border-white/[0.03]">
+                          {hasVisible && (
+                            <span className="text-blue-400">{'\u25CF'}</span>
+                          )}
+                          {hasResolved && !hasVisible && (
+                            <span className="text-emerald-500">{'\u25CF'}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-0 text-zinc-300 whitespace-pre-wrap align-top relative">
+                          {line || ' '}
+                          {(hasVisible || hasResolved) && isExpanded && (
+                            <div className="mt-1.5 space-y-1.5">
+                              {unfilteredFbs.map(fb => (
+                                <div
+                                  key={fb.id}
+                                  className={`text-[9px] rounded-lg px-2.5 py-1.5 border ${
+                                    fb.resolved
+                                      ? 'bg-emerald-500/[0.03] border-emerald-500/10 text-zinc-500'
+                                      : 'bg-blue-500/[0.04] border-blue-500/10 text-zinc-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className={`font-medium ${fb.resolved ? 'text-emerald-500' : 'text-blue-400'}`}>
+                                        {fb.reviewer_username}
+                                      </span>
+                                      <span className="text-zinc-600">·</span>
+                                      <span className="text-zinc-600">{timeAgo(fb.created_at)}</span>
+                                    </div>
+                                    {!fb.resolved && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleResolve(fb.id); }}
+                                        disabled={resolving[fb.id]}
+                                        className="text-[8px] px-1.5 py-0.5 rounded border border-emerald-400/20 text-emerald-400 hover:bg-emerald-400/10 transition-all cursor-pointer disabled:opacity-40 flex-shrink-0"
+                                      >
+                                        {resolving[fb.id] ? '...' : 'Resolve'}
+                                      </button>
+                                    )}
+                                    {fb.resolved && (
+                                      <span className="text-[8px] text-emerald-500 flex items-center gap-0.5 flex-shrink-0">
+                                        <CheckCheck size={8} /> Resolved
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className={`mt-1 ${fb.resolved ? 'line-through decoration-zinc-600' : ''}`}>
+                                    {fb.comment}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(hasVisible || hasResolved) && !isExpanded && (
+                            <div className="mt-0.5">
+                              <button
+                                onClick={() => setExpandedLines(prev => ({ ...prev, [String(lineNum)]: true }))}
+                                className="text-[8px] text-zinc-600 hover:text-zinc-400 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <MessageSquare size={8} />
+                                {unfilteredFbs.length} comment{unfilteredFbs.length > 1 ? 's' : ''}
+                                {unfilteredFbs.some(fb => !fb.resolved) && (
+                                  <span className="text-amber-400">· {unfilteredFbs.filter(fb => !fb.resolved).length} new</span>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center flex-1 text-zinc-600 text-xs">
+            <div className="text-center">
+              <MessageSquareText size={24} className="mx-auto mb-2 text-zinc-700" />
+              Select a file to view inline feedback
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-// timeAgo imported from '../../lib/time'

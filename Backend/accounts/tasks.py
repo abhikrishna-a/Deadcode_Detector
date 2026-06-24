@@ -68,7 +68,15 @@ def _store_result(batch_id: str, filename: str, data: dict) -> None:
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=10)
-def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str = '', token: str = '', scan_type: str = 'folder'):
+def batch_analyze_folder(
+    self,
+    files_data: list,
+    batch_id: str,
+    scan_folder: str = '',
+    token: str = '',
+    scan_type: str = 'folder',
+    submission_ids: list | None = None,
+):
     """
     Celery task: sends ALL folder files to RAG /batch-analyze at once.
     Pure in-memory cross-referencing across files — no per-file DB queries, no LLM.
@@ -89,12 +97,40 @@ def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str
 
         results_list = result.get('results', [])
         content_map = {fn: content for fn, content in files_data}
+        submission_map = {}
+        if submission_ids:
+            from .models import JuniorSubmission
+            submissions = JuniorSubmission.objects.select_related('user').filter(id__in=submission_ids)
+            submission_map = {submission.filename: submission for submission in submissions}
         processed = set()
 
         for fr in results_list:
             fn = fr['filename']
             processed.add(fn)
             is_error = bool(fr.get('error'))
+            submission = submission_map.get(fn)
+            if submission:
+                if is_error:
+                    submission.status = 'failed'
+                    submission.error = fr.get('error', 'Unknown error')
+                    submission.save(update_fields=['status', 'error'])
+                    _notify_user(submission.user_id, {
+                        'type': 'junior.analysis_failed',
+                        'submission_id': submission.id,
+                        'file_name': submission.filename,
+                    })
+                else:
+                    submission.analysis_id = fr.get('document_id') or submission.analysis_id
+                    submission.result = fr.get('analysis', {})
+                    submission.status = 'done'
+                    submission.error = ''
+                    submission.save(update_fields=['analysis_id', 'result', 'status', 'error'])
+                    _notify_user(submission.user_id, {
+                        'type': 'junior.analysis_complete',
+                        'submission_id': submission.id,
+                        'file_name': submission.filename,
+                        'result': submission.result,
+                    })
             _store_result(batch_id, fn, {
                 'status': 'error' if is_error else 'completed',
                 'document_id': fr.get('document_id', ''),
@@ -135,6 +171,16 @@ def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str
         # Track ALL submitted files (using list, not dict keys — handles any dupes)
         for fn, _ in files_data:
             if fn not in processed:
+                submission = submission_map.get(fn)
+                if submission:
+                    submission.status = 'failed'
+                    submission.error = 'Skipped by analysis service (unsupported or empty)'
+                    submission.save(update_fields=['status', 'error'])
+                    _notify_user(submission.user_id, {
+                        'type': 'junior.analysis_failed',
+                        'submission_id': submission.id,
+                        'file_name': submission.filename,
+                    })
                 _store_result(batch_id, fn, {
                     'status': 'error',
                     'error': 'Skipped by analysis service (unsupported or empty)',
@@ -164,8 +210,27 @@ def batch_analyze_folder(self, files_data: list, batch_id: str, scan_folder: str
 def handle_batch_failure(sender=None, task_id=None, exception=None, args=None, **kwargs):
     """If the batch task exhausts retries, mark all files as errored so the batch can complete."""
     if args and len(args) >= 3:
-        files_data, batch_id = args[0], args[2]
+        files_data, batch_id = args[0], args[1]
+        submission_ids = args[5] if len(args) > 5 else None
+        submission_map = {}
+        if submission_ids:
+            try:
+                from .models import JuniorSubmission
+                submissions = JuniorSubmission.objects.select_related('user').filter(id__in=submission_ids)
+                submission_map = {submission.filename: submission for submission in submissions}
+            except Exception:
+                logger.warning('Failed to load submissions for failed batch %s', batch_id, exc_info=True)
         for fn, _ in files_data:
+            submission = submission_map.get(fn)
+            if submission:
+                submission.status = 'failed'
+                submission.error = f'Batch analysis failed: {exception}'
+                submission.save(update_fields=['status', 'error'])
+                _notify_user(submission.user_id, {
+                    'type': 'junior.analysis_failed',
+                    'submission_id': submission.id,
+                    'file_name': submission.filename,
+                })
             try:
                 _store_result(batch_id, fn, {
                     'status': 'error',

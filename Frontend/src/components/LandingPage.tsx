@@ -138,6 +138,7 @@ export default function LandingPage({ onStart }: LandingPageProps) {
             </div>
           ))}
         </motion.div>
+
       </main>
 
       {/* Floating neon ambient overlay highlights */}

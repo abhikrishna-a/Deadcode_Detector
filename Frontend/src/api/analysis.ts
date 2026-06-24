@@ -416,7 +416,7 @@ export const analysisAPI = {
     const token_ = await getAccessToken();
     const formData = new FormData();
     for (const f of files) {
-      formData.append('files', f);
+      formData.append('files', f, f.webkitRelativePath || f.name);
     }
     if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`/api/auth/junior/batch-upload/`, {
@@ -490,6 +490,20 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Senior: schedule all pending submissions in a folder
+  juniorScheduleFolder: async (scanFolder: string, scheduledAt: string, timeoutSeconds?: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const body: any = { scan_folder: scanFolder, scheduled_at: scheduledAt };
+    if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
+    const response = await fetch(`/api/auth/junior/schedule-folder/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error('Failed to schedule folder');
+    return response.json();
+  },
+
   // Senior: trigger analysis (optionally scheduled)
   seniorTriggerAnalysis: async (submissionId: number, scheduledAt?: string, timeoutSeconds?: number): Promise<any> => {
     const token_ = await getAccessToken();
@@ -536,6 +550,17 @@ export const analysisAPI = {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch submission feedback');
+    return response.json();
+  },
+
+  // Junior/senior: mark feedback as resolved
+  resolveFeedback: async (feedbackId: number): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/feedback/${feedbackId}/resolve/`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to resolve feedback');
     return response.json();
   },
 };

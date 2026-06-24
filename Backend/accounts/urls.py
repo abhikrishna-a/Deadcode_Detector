@@ -19,10 +19,12 @@ from .views import (
     JuniorClearView,
     JuniorGitImportView,
     JuniorSubmissionBatchUploadView,
+    JuniorFolderScheduleView,
     SeniorSubmissionListView,
     SeniorFeedbackCreateView,
     JuniorFeedbackListView,
     SubmissionFeedbackListView,
+    FeedbackResolveView,
 )
 
 urlpatterns = [
@@ -49,9 +51,11 @@ urlpatterns = [
     path('junior/detail/<int:submission_id>/', JuniorSubmissionDetailView.as_view(), name='junior_detail'),
     path('junior/analyze/<int:submission_id>/', JuniorSubmissionAnalyzeView.as_view(), name='junior_analyze'),
     path('junior/clear/', JuniorClearView.as_view(), name='junior_clear'),
+    path('junior/schedule-folder/', JuniorFolderScheduleView.as_view(), name='junior_schedule_folder'),
     path('junior/git-import/', JuniorGitImportView.as_view(), name='junior_git_import'),
 path('junior/feedback/', JuniorFeedbackListView.as_view(), name='junior_feedback_list'),
 path('junior/feedback/<int:submission_id>/', SubmissionFeedbackListView.as_view(), name='submission_feedback_list'),
 path('senior/submissions/', SeniorSubmissionListView.as_view(), name='senior_submission_list'),
 path('senior/feedback/<int:submission_id>/', SeniorFeedbackCreateView.as_view(), name='senior_feedback_create'),
+path('feedback/<int:feedback_id>/resolve/', FeedbackResolveView.as_view(), name='feedback_resolve'),
 ]

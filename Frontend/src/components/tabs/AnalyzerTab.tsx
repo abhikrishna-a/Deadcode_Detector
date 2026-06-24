@@ -197,6 +197,85 @@ function TreeNode({
   );
 }
 
+interface PathNode {
+  name: string;
+  isDir: boolean;
+  children: PathNode[];
+  path: string;
+}
+
+function buildPathTree(paths: string[]): PathNode[] {
+  const root: PathNode[] = [];
+  for (const rawPath of paths) {
+    const parts = rawPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    let current = root;
+    let currentPath = '';
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      if (isLast) {
+        if (!current.some(node => !node.isDir && node.path === currentPath)) {
+          current.push({ name: part, isDir: false, children: [], path: currentPath });
+        }
+      } else {
+        let dir = current.find(node => node.isDir && node.name === part);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], path: currentPath };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  const sortNodes = (nodes: PathNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) sortNodes(node.children);
+  };
+  sortNodes(root);
+  return root;
+}
+
+function ProgressTreeNode({ node, depth = 0 }: { node: PathNode; depth?: number }) {
+  if (!node.isDir) {
+    return (
+      <div
+        className="flex justify-between items-center py-1 text-[11px]"
+        style={{ paddingLeft: `${depth * 0.9}rem` }}
+      >
+        <span className="font-mono text-zinc-400 truncate flex items-center gap-1.5">
+          <FileCode size={10} className="text-violet-400/70 flex-shrink-0" />
+          {node.name}
+        </span>
+        <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+          <CheckCircle2 size={11} /> DONE
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1.5 py-1 text-[11px]"
+        style={{ paddingLeft: `${depth * 0.9}rem` }}
+      >
+        <Folder size={11} className="text-purple-400 flex-shrink-0" />
+        <span className="font-mono text-zinc-300 truncate">{node.name}/</span>
+        <span className="text-[9px] font-mono text-zinc-600">({node.children.length})</span>
+      </div>
+      <div className="ml-2 border-l border-white/[0.04]">
+        {node.children.map(child => (
+          <ProgressTreeNode key={child.path} node={child} depth={depth + 1} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyzerTab({ onNavigateToChat, isActive = true }: AnalyzerTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -819,6 +898,8 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
     return buildFileTree(processed);
   }, [batchReportsList, batchErrorsList, currentFolderName]);
 
+  const progressTree = useMemo(() => buildPathTree(progressFiles), [progressFiles]);
+
   const RESULTS_CATEGORIES = [
     { key: 'unused_import', label: 'Unused Imports', color: '#8b5cf6' },
     { key: 'unused_function', label: 'Unused Functions', color: '#ec4899' },
@@ -1067,13 +1148,8 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             )}
 
             <div className="max-h-[160px] overflow-y-auto divide-y divide-white/[0.01] pt-3 border-t border-white/[0.03] pr-2 space-y-1">
-              {progressFiles.map((fileCheck, idx) => (
-                <div key={idx} className="flex justify-between items-center py-1 text-[11px]">
-                  <span className="font-mono text-zinc-400 truncate">{fileCheck}</span>
-                  <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> DONE
-                  </span>
-                </div>
+              {progressTree.map(node => (
+                <ProgressTreeNode key={node.path} node={node} />
               ))}
             </div>
           </div>

@@ -151,10 +151,12 @@ class JuniorSubmissionDetailSerializer(serializers.ModelSerializer):
 
 class CodeReviewFeedbackSerializer(serializers.ModelSerializer):
     reviewer_username = serializers.CharField(source='reviewer.username', read_only=True)
+    filename = serializers.CharField(source='submission.filename', read_only=True)
+    file_content = serializers.CharField(source='submission.file_content', read_only=True)
 
     class Meta:
         model = CodeReviewFeedback
-        fields = ['id', 'submission_id', 'reviewer', 'reviewer_username', 'line_start', 'line_end', 'comment', 'created_at', 'resolved']
+        fields = ['id', 'submission_id', 'filename', 'file_content', 'reviewer', 'reviewer_username', 'line_start', 'line_end', 'comment', 'created_at', 'resolved']
 
 
 class CodeReviewFeedbackCreateSerializer(serializers.Serializer):

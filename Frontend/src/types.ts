@@ -9,6 +9,8 @@ export interface User {
 export interface CodeReviewFeedback {
   id: number;
   submission_id: number;
+  filename: string;
+  file_content: string;
   reviewer: number;
   reviewer_username: string;
   line_start: number;

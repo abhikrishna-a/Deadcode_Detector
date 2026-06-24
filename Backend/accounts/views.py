@@ -512,7 +512,6 @@ class JuniorSubmissionUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from django.utils import timezone
         from .models import JuniorSubmission
         file = request.FILES.get('file')
         if not file:
@@ -522,19 +521,14 @@ class JuniorSubmissionUploadView(APIView):
         content = file.read().decode('utf-8', errors='replace').replace('\x00', '')
         name = file.name
         lang = name.rsplit('.', 1)[-1] if '.' in name else ''
-        scheduled_at = request.data.get('scheduled_at', timezone.now())
         submission = JuniorSubmission.objects.create(
             user=request.user,
             filename=name,
             language=lang,
             file_content=content,
             scan_folder=request.data.get('scan_folder', ''),
-            scheduled_at=scheduled_at,
+            scheduled_at=None,
         )
-        from .tasks import analyze_junior_submission
-        submission.status = 'analysing'
-        submission.save(update_fields=['status'])
-        analyze_junior_submission.delay(submission.id)
         from .serializers import JuniorSubmissionSerializer
         return Response(JuniorSubmissionSerializer(submission).data, status=status.HTTP_201_CREATED)
 
@@ -544,7 +538,6 @@ class JuniorSubmissionBatchUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from django.utils import timezone
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionSerializer
         files = request.FILES.getlist('files')
@@ -557,7 +550,6 @@ class JuniorSubmissionBatchUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         scan_folder = request.data.get('scan_folder', '')
-        scheduled_at = request.data.get('scheduled_at', timezone.now())
         submissions = []
         for f in files:
             content = f.read().decode('utf-8', errors='replace').replace('\x00', '')
@@ -569,7 +561,7 @@ class JuniorSubmissionBatchUploadView(APIView):
                 language=lang,
                 file_content=content,
                 scan_folder=scan_folder,
-                scheduled_at=scheduled_at,
+                scheduled_at=None,
             )
             submissions.append(sub)
         return Response(
@@ -608,11 +600,13 @@ class JuniorSubmissionDetailView(APIView):
 
 class JuniorSubmissionAnalyzeView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request, submission_id):
         from .models import JuniorSubmission
         from .tasks import analyze_junior_submission
+        if request.user.role != 'senior':
+            return Response({'error': 'Only senior reviewers can start or schedule analysis.'}, status=status.HTTP_403_FORBIDDEN)
         try:
             submission = JuniorSubmission.objects.get(id=submission_id)
         except JuniorSubmission.DoesNotExist:
@@ -634,6 +628,25 @@ class JuniorSubmissionAnalyzeView(APIView):
         submission.save(update_fields=['status', 'scheduled_at', 'timeout_seconds'])
         analyze_junior_submission.delay(submission.id)
         return Response({'message': 'Analysis started.', 'submission_id': submission.id})
+
+
+class JuniorFolderScheduleView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
+
+    def post(self, request):
+        from .models import JuniorSubmission
+        scan_folder = request.data.get('scan_folder', '').strip()
+        scheduled_at = request.data.get('scheduled_at')
+        timeout_seconds = request.data.get('timeout_seconds', 60)
+        if not scan_folder:
+            return Response({'error': 'scan_folder is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not scheduled_at:
+            return Response({'error': 'scheduled_at is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        count = JuniorSubmission.objects.filter(
+            scan_folder=scan_folder, status='pending_review'
+        ).update(scheduled_at=scheduled_at, timeout_seconds=timeout_seconds)
+        return Response({'message': f'{count} submissions scheduled.', 'scheduled': count})
 
 
 class JuniorGitImportView(APIView):
@@ -752,6 +765,21 @@ class SeniorFeedbackCreateView(APIView):
         return Response(CodeReviewFeedbackSerializer(feedback).data, status=status.HTTP_201_CREATED)
 
 
+class FeedbackResolveView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, feedback_id):
+        from .models import CodeReviewFeedback
+        try:
+            feedback = CodeReviewFeedback.objects.get(id=feedback_id, submission__user=request.user)
+        except CodeReviewFeedback.DoesNotExist:
+            return Response({'error': 'Feedback not found.'}, status=status.HTTP_404_NOT_FOUND)
+        feedback.resolved = True
+        feedback.save(update_fields=['resolved'])
+        return Response({'status': 'resolved'})
+
+
 class JuniorFeedbackListView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -770,9 +798,18 @@ class SubmissionFeedbackListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, submission_id):
-        from .models import CodeReviewFeedback
+        from .models import CodeReviewFeedback, JuniorSubmission
         from .serializers import CodeReviewFeedbackSerializer
-        feedbacks = CodeReviewFeedback.objects.filter(submission_id=submission_id)
+        try:
+            if request.user.role == 'senior':
+                JuniorSubmission.objects.get(id=submission_id)
+            else:
+                JuniorSubmission.objects.get(id=submission_id, user=request.user)
+        except JuniorSubmission.DoesNotExist:
+            return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
+        feedbacks = CodeReviewFeedback.objects.filter(
+            submission_id=submission_id
+        ).select_related('reviewer', 'submission').order_by('line_start', 'created_at')
         return Response(CodeReviewFeedbackSerializer(feedbacks, many=True).data)
 
 

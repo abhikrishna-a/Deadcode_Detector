@@ -5,6 +5,7 @@ import {
   AlertCircle, Info, CheckCircle, XCircle, Search,
   User, Calendar, Timer, MessageSquare,
   Send, ChevronDown, ChevronUp, Activity,
+  Play, CalendarClock, Folder, ChevronRight,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
@@ -55,6 +56,50 @@ const severityIcon = (sev: string) => {
   }
 };
 
+interface ReviewTreeNode {
+  name: string;
+  isDir: boolean;
+  children: ReviewTreeNode[];
+  key: string;
+  submission?: Submission;
+}
+
+function buildReviewTree(submissions: Submission[]): ReviewTreeNode[] {
+  const root: ReviewTreeNode[] = [];
+  for (const submission of submissions) {
+    const path = `${submission.scan_folder || 'Standalone'}/${submission.filename || 'untitled'}`.replace(/\\/g, '/');
+    const parts = path.split('/').filter(Boolean);
+    let current = root;
+    let currentPath = '';
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      if (isLast) {
+        if (!current.some(n => !n.isDir && n.key === String(submission.id))) {
+          current.push({ name: part, isDir: false, children: [], key: String(submission.id), submission });
+        }
+      } else {
+        let dir = current.find(node => node.isDir && node.name === part);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], key: currentPath };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  const sortNodes = (nodes: ReviewTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) sortNodes(node.children);
+  };
+  sortNodes(root);
+  return root;
+}
+
 export default function SubmissionsReviewPanel({ currentUser, onShowToast }: SubmissionsReviewPanelProps) {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +114,17 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({});
   const [codeReviewOpen, setCodeReviewOpen] = useState(false);
   const [schedulerCountdown, setSchedulerCountdown] = useState(60);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleTargetId, setScheduleTargetId] = useState<number | null>(null);
+  const [scheduleTargetFolder, setScheduleTargetFolder] = useState<string | null>(null);
+  const [scheduleAt, setScheduleAt] = useState(() => {
+    const scheduled = new Date(Date.now() + 15 * 60 * 1000);
+    const offset = scheduled.getTimezoneOffset() * 60000;
+    return new Date(scheduled.getTime() - offset).toISOString().slice(0, 16);
+  });
+  const [timeoutSeconds, setTimeoutSeconds] = useState(60);
+  const [schedulerBusy, setSchedulerBusy] = useState(false);
+  const [expandedReviewPaths, setExpandedReviewPaths] = useState<Record<string, boolean>>({});
 
   const { connect } = useNotificationSocket();
 
@@ -133,6 +189,198 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     setSubmittingComment(false);
   };
 
+  const pendingSubmissions = useMemo(
+    () => submissions.filter(s => s.status === 'pending_review'),
+    [submissions],
+  );
+
+  const selectedSubmission = useMemo(
+    () => submissions.find(s => s.id === scheduleTargetId) || null,
+    [scheduleTargetId, submissions],
+  );
+
+  const runNow = async (submissionId: number) => {
+    setSchedulerBusy(true);
+    try {
+      await analysisAPI.seniorTriggerAnalysis(submissionId, undefined, timeoutSeconds);
+      onShowToast?.('Analysis started.', 'success');
+      await load();
+      if (selectedId === submissionId) await loadDetail(submissionId);
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to start analysis.', 'error');
+    }
+    setSchedulerBusy(false);
+  };
+
+  const scheduleOne = async (submissionId: number) => {
+    setSchedulerBusy(true);
+    try {
+      await analysisAPI.seniorTriggerAnalysis(
+        submissionId,
+        new Date(scheduleAt).toISOString(),
+        timeoutSeconds,
+      );
+      onShowToast?.('Analysis scheduled.', 'success');
+      setScheduleOpen(false);
+      await load();
+      if (selectedId === submissionId) await loadDetail(submissionId);
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to schedule analysis.', 'error');
+    }
+    setSchedulerBusy(false);
+  };
+
+  const scheduleFolder = async (scanFolder: string) => {
+    setSchedulerBusy(true);
+    try {
+      await analysisAPI.juniorScheduleFolder(scanFolder, new Date(scheduleAt).toISOString(), timeoutSeconds);
+      onShowToast?.('Folder scheduled.', 'success');
+      setScheduleOpen(false);
+      await load();
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to schedule folder.', 'error');
+    }
+    setSchedulerBusy(false);
+  };
+
+  const openScheduler = (submissionId: number) => {
+    setScheduleTargetId(submissionId);
+    setScheduleTargetFolder(null);
+    setScheduleOpen(true);
+  };
+
+  const openFolderScheduler = (scanFolder: string) => {
+    setScheduleTargetFolder(scanFolder);
+    setScheduleTargetId(null);
+    setScheduleOpen(true);
+  };
+
+  const toggleReviewPath = (path: string, depth: number) => {
+    setExpandedReviewPaths(prev => ({
+      ...prev,
+      [path]: path in prev ? !prev[path] : !(depth < 1),
+    }));
+  };
+
+  const renderSubmissionTree = (nodes: ReviewTreeNode[], depth = 0, parentPath = '') => (
+    nodes.map(node => {
+      const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+      if (node.isDir) {
+        const isExpanded = expandedReviewPaths[fullPath] ?? (depth < 1);
+        const childCount = node.children.reduce((count, child) => count + (child.isDir ? child.children.length : 1), 0);
+        const hasPending = node.children.some(child => !child.isDir && child.submission?.status === 'pending_review');
+        return (
+          <div key={node.key}>
+            <div className="flex items-center gap-1 pr-1">
+            <button
+              onClick={() => toggleReviewPath(fullPath, depth)}
+              className="flex items-center gap-1.5 py-1.5 rounded-lg text-left text-[10px] font-mono text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.015] transition-colors cursor-pointer flex-1 min-w-0"
+              style={{ paddingLeft: `${depth * 0.85}rem` }}
+            >
+              <ChevronRight size={9} className={`text-zinc-600 transition-transform ${isExpanded ? 'rotate-90' : ''} flex-shrink-0`} />
+              <Folder size={10} className="text-purple-400 flex-shrink-0" />
+              <span className="truncate">{node.name}/</span>
+              <span className="text-[8px] text-zinc-600 flex-shrink-0">({childCount})</span>
+            </button>
+            {hasPending && (
+              <button
+                onClick={(e) => { e.stopPropagation(); openFolderScheduler(node.key); }}
+                disabled={schedulerBusy}
+                className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer flex-shrink-0"
+              >
+                <CalendarClock size={8} />
+                Schedule
+              </button>
+            )}
+            </div>
+            <AnimatePresence initial={false}>
+              {isExpanded && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="overflow-hidden ml-2 border-l border-white/[0.03] pl-2"
+                >
+                  {renderSubmissionTree(node.children, depth + 1, fullPath)}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        );
+      }
+
+      const s = node.submission!;
+      return (
+        <motion.div
+          key={s.id}
+          layoutId={`card-${s.id}`}
+          className={`w-full p-2.5 rounded-xl border transition-all cursor-pointer ${
+            selectedId === s.id
+              ? 'bg-white/[0.03] border-white/[0.1]'
+              : 'bg-white/[0.01] border-white/[0.04] hover:bg-white/[0.02] hover:border-white/[0.08]'
+          }`}
+          style={{ marginLeft: `${depth * 0.35}rem` }}
+          onClick={() => loadDetail(s.id)}
+        >
+          <div className="flex items-center gap-1">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-mono text-zinc-200 font-medium truncate leading-tight">
+                {node.name}
+              </div>
+            </div>
+            {s.status === 'analysing' && (
+              <Loader2 size={9} className="animate-spin text-cyan-400 flex-shrink-0" />
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <User size={8} className="text-zinc-600" />
+            <span className="text-[8px] font-mono text-zinc-500 truncate">{s.username || 'unknown'}</span>
+            {s.scan_folder && (
+              <span className="text-[7px] font-mono text-zinc-600 truncate max-w-[60px] bg-white/[0.02] px-1 py-0.5 rounded">
+                {s.scan_folder}
+              </span>
+            )}
+            <span className="text-[8px] font-mono text-zinc-600 ml-auto">
+              {timeAgo(s.created_at)}
+            </span>
+          </div>
+          {s.status === 'pending_review' && (
+            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/[0.03]">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  runNow(s.id);
+                }}
+                disabled={schedulerBusy}
+                className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
+              >
+                <Play size={8} />
+                Now
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openScheduler(s.id);
+                }}
+                disabled={schedulerBusy}
+                className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
+              >
+                <CalendarClock size={8} />
+                Schedule
+              </button>
+              {s.scheduled_at && (
+                <span className="ml-auto text-[7px] font-mono text-indigo-300 truncate">
+                  {new Date(s.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          )}
+        </motion.div>
+      );
+    })
+  );
+
   const filtered = useMemo(() => {
     if (!searchQuery) return submissions;
     const q = searchQuery.toLowerCase();
@@ -185,7 +433,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     count: groupedByStatus[s.key]?.length || 0,
   }));
 
-  const pendingCount = useMemo(() => submissions.filter(s => s.status === 'pending_review').length, [submissions]);
+  const pendingCount = pendingSubmissions.length;
 
   return (
     <motion.div
@@ -209,13 +457,15 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
             />
           </div>
         </div>
-        <div className="flex items-center gap-2 text-[9px] font-mono text-zinc-500">
+        <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2 text-[9px] font-mono text-zinc-500">
           <Activity size={10} className="text-emerald-400" />
           <span>Scheduler active</span>
           <span className="text-zinc-600">— next check in ~{schedulerCountdown}s</span>
           {pendingCount > 0 && (
             <span className="text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">{pendingCount} pending</span>
           )}
+          </div>
         </div>
       </div>
 
@@ -275,6 +525,37 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                         {timeAgo(s.created_at)}
                       </span>
                     </div>
+                    {s.status === 'pending_review' && (
+                      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/[0.03]">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            runNow(s.id);
+                          }}
+                          disabled={schedulerBusy}
+                          className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
+                        >
+                          <Play size={8} />
+                          Now
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openScheduler(s.id);
+                          }}
+                          disabled={schedulerBusy}
+                          className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
+                        >
+                          <CalendarClock size={8} />
+                          Schedule
+                        </button>
+                        {s.scheduled_at && (
+                          <span className="ml-auto text-[7px] font-mono text-indigo-300 truncate">
+                            {new Date(s.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </motion.div>
                 ))}
               </div>
@@ -337,9 +618,36 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                   </div>
 
                   {detail.status === 'pending_review' ? (
-                    <div className="flex items-center justify-center py-8 text-zinc-500 text-xs gap-2">
+                    <div className="flex flex-col items-center justify-center py-8 text-zinc-500 text-xs gap-3">
+                      {detail.scheduled_at && (
+                        <div className="text-[10px] font-mono text-indigo-300">
+                          Scheduled for {new Date(detail.scheduled_at).toLocaleString()}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
                       <Clock size={14} className="text-amber-400" />
-                      Waiting for scheduled analysis — next check in ~{schedulerCountdown}s
+                      {detail.scheduled_at
+                        ? `Waiting for scheduled analysis — next check in ~${schedulerCountdown}s`
+                        : 'Pending senior review — run now or schedule this file'}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => runNow(detail.id)}
+                          disabled={schedulerBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 disabled:opacity-40 text-[10px] font-mono cursor-pointer"
+                        >
+                          <Play size={11} />
+                          Run Now
+                        </button>
+                        <button
+                          onClick={() => openScheduler(detail.id)}
+                          disabled={schedulerBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 text-[10px] font-mono cursor-pointer"
+                        >
+                          <CalendarClock size={11} />
+                          Schedule Analysis
+                        </button>
+                      </div>
                     </div>
                   ) : detail.status === 'analysing' ? (
                     <div className="flex items-center justify-center py-8 text-zinc-500 text-xs gap-2">
@@ -490,6 +798,98 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                 </div>
               )}
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {scheduleOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => !schedulerBusy && setScheduleOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 8 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 8 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0b0b10] shadow-2xl p-5"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-indigo-300">
+                    <CalendarClock size={15} />
+                    <h3 className="text-sm font-semibold text-zinc-100">Schedule Analysis</h3>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-1 font-mono">
+                    {scheduleTargetFolder
+                      ? `Queue all files in "${scheduleTargetFolder}" for scheduled analysis.`
+                      : selectedSubmission
+                      ? `Queue ${selectedSubmission.filename} for scheduled analysis.`
+                      : 'Select a pending submission before scheduling.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setScheduleOpen(false)}
+                  disabled={schedulerBusy}
+                  className="text-zinc-600 hover:text-zinc-300 disabled:opacity-40 cursor-pointer"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+
+              <div className="grid gap-3 mt-5">
+                <label className="grid gap-1.5">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Run at</span>
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    onChange={e => setScheduleAt(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] text-sm text-zinc-200 outline-none focus:border-indigo-400/60"
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Timeout seconds</span>
+                  <input
+                    type="number"
+                    min={10}
+                    max={600}
+                    value={timeoutSeconds}
+                    onChange={e => setTimeoutSeconds(Number(e.target.value) || 60)}
+                    className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] text-sm text-zinc-200 outline-none focus:border-indigo-400/60"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-[10px] text-zinc-500 font-mono flex items-start gap-2">
+                <Timer size={12} className="text-amber-400 mt-0.5 flex-shrink-0" />
+                <span>Celery beat checks scheduled reviews every minute; queued cards stay pending until their run time.</span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 mt-5">
+                <button
+                  onClick={() => setScheduleOpen(false)}
+                  disabled={schedulerBusy}
+                  className="px-3 py-2 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-zinc-300 disabled:opacity-40 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (scheduleTargetFolder) scheduleFolder(scheduleTargetFolder);
+                    else if (selectedSubmission) scheduleOne(selectedSubmission.id);
+                  }}
+                  disabled={schedulerBusy || (!scheduleTargetFolder && !selectedSubmission)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-mono cursor-pointer"
+                >
+                  {schedulerBusy ? <Loader2 size={11} className="animate-spin" /> : <Calendar size={11} />}
+                  {scheduleTargetFolder ? 'Schedule Folder' : 'Schedule Submission'}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
