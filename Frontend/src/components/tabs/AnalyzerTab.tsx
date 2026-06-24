@@ -384,7 +384,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           seenFiles.add(f.filename);
           if (f.status === 'completed' && f.analysis) {
             setActiveFileName(f.filename);
-            setProgressFiles(prev => [f.filename, ...prev]);
+            setProgressFiles(prev => prev.includes(f.filename) ? prev : [f.filename, ...prev]);
             const report = mapToAnalysisResult({ ...f, batch_id: batchId }, f.filename);
             report._source_content = f.source_content || '';
             addHistoryReport(report);
@@ -653,7 +653,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         onFileComplete: (msg) => {
           if (abortRef.current?.signal.aborted) return;
           setActiveFileName(msg.filename);
-          setProgressFiles(prev => [msg.filename, ...prev]);
+          setProgressFiles(prev => prev.includes(msg.filename) ? prev : [msg.filename, ...prev]);
           const report = mapToAnalysisResult(
             {
               ...msg.analysis,
@@ -803,7 +803,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         onFileComplete: (msg) => {
           if (abortRef.current?.signal.aborted) return;
           setActiveFileName(msg.filename);
-          setProgressFiles(prev => [msg.filename, ...prev]);
+          setProgressFiles(prev => prev.includes(msg.filename) ? prev : [msg.filename, ...prev]);
           const report = mapToAnalysisResult(
             {
               ...msg.analysis,
