@@ -23,6 +23,12 @@ class ChatRequest(BaseModel):
     history: List[dict] = []
 
 
+class FolderChatRequest(BaseModel):
+    scan_folder: str
+    question: str
+    history: List[dict] = []
+
+
 class SourceCitation(BaseModel):
     line_start: int
     line_end: int

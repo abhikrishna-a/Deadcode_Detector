@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.auth import get_current_user
-from app.models.schemas import ChatRequest, ChatQuery, ChatReply
-from app.services.rag import retrieve, retrieve_similar, build_prompt, build_chat_context_prompt, stream_answer, answer_question
+from app.models.schemas import ChatRequest, FolderChatRequest, ChatQuery, ChatReply
+from app.services.rag import retrieve, retrieve_by_folder, retrieve_similar, build_prompt, build_folder_prompt, build_chat_context_prompt, stream_answer, answer_question
 
 router = APIRouter()
 
@@ -46,6 +46,48 @@ async def chat_endpoint(
         ]
     else:
         messages = build_prompt(body.question, context_chunks, analysis_json)
+
+    history_messages = []
+    for msg in body.history:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            history_messages.append(msg)
+
+    if history_messages:
+        messages = messages[:-1] + history_messages + [messages[-1]]
+
+    async def event_stream():
+        async for event in stream_answer(messages, context_chunks or []):
+            yield f"data: {event}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/chat-folder")
+async def chat_folder_endpoint(
+    body: FolderChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    if not body.scan_folder.strip():
+        raise HTTPException(status_code=400, detail="scan_folder cannot be empty.")
+
+    context_chunks = await retrieve_by_folder(db, user["user_id"], body.scan_folder, body.question)
+
+    if not context_chunks:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are GhostCode Assistant — a code quality expert. "
+                    "No code context was found for the requested folder. "
+                    "Explain that there is no analyzed code available for this folder yet."
+                ),
+            },
+            {"role": "user", "content": body.question},
+        ]
+    else:
+        messages = build_folder_prompt(body.question, context_chunks)
 
     history_messages = []
     for msg in body.history:

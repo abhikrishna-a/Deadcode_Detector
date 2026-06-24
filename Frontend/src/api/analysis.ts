@@ -272,6 +272,59 @@ export const analysisAPI = {
     }
   },
 
+  // RAG: Folder-level chat with streaming response
+  ragFolderChat: async function* (
+    scanFolder: string,
+    question: string,
+    history: { role: string; content: string }[] = []
+  ): AsyncGenerator<string> {
+    const token = await getAccessToken();
+    const response = await fetch(`${RAG_BASE}/chat-folder`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ scan_folder: scanFolder, question, history }),
+    });
+    if (response.status === 401) {
+      throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before chatting.');
+    }
+    if (response.status === 403) {
+      throw new Error('MFA verification is required before using RAG chat.');
+    }
+    if (!response.ok) {
+      const detail = await readErrorDetail(response, `Folder chat failed (HTTP ${response.status})`);
+      console.error('Folder chat failed:', { status: response.status, detail });
+      throw new Error(detail);
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === 'data: [DONE]') continue;
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const parsed = JSON.parse(trimmed.slice(6));
+            if (parsed.delta) yield parsed.delta;
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+    }
+  },
+
   // Git: clone a repo and return file manifest (synchronous)
   gitClone: async (repoUrl: string, branch: string, token?: string): Promise<GitManifest> => {
     const token_ = await getAccessToken();

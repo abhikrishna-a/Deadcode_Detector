@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard, Shield,
-  LogOut, Clock, Settings, GitPullRequest, Users,
+  LogOut, Clock, Settings, GitPullRequest, Users, Bot,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { User } from '../types';
@@ -20,6 +20,7 @@ const NAV_ITEMS: DashNavItem[] = [
   { id: 'junior', label: 'My Submissions', icon: UploadIcon, roles: ['junior'] },
   { id: 'history', label: 'History', icon: Clock, roles: ['senior'] },
   { id: 'team', label: 'Team Chat', icon: Users, roles: ['senior'] },
+  { id: 'ai-inspector', label: 'AI Inspector', icon: Bot, roles: ['senior'] },
   { id: 'admin', label: 'Admin', icon: Shield, roles: ['senior'] },
 ];
 

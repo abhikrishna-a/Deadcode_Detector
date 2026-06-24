@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.embedder import embed_texts
 from app.services.grok_client import groq_key_manager, gemini_key_manager, get_gemini_client
+from app.db import IS_SQLITE, cosine_similarity
 from app.services.storage import find_similar
 
 
@@ -46,6 +47,52 @@ async def retrieve(document_id: str, question: str, db: AsyncSession) -> List[di
     ]
 
 
+async def retrieve_by_folder(
+    db: AsyncSession,
+    user_id: int,
+    scan_folder: str,
+    question: str,
+) -> List[dict]:
+    question_embeddings = await embed_texts([question])
+    query_vector = question_embeddings[0]
+    if IS_SQLITE:
+        result = await db.execute(
+            text("""
+                SELECT e.chunk_text, e.embedding, e.analysis_id, a.filename
+                FROM embeddings e
+                JOIN analyses a ON a.id = e.analysis_id
+                WHERE a.user_id = :uid AND a.scan_folder = :folder
+            """),
+            {"uid": user_id, "folder": scan_folder},
+        )
+        rows = result.fetchall()
+        scored = []
+        for row in rows:
+            emb = json.loads(row[1])
+            score = cosine_similarity(query_vector, emb)
+            scored.append({"content": row[0], "filename": row[3], "analysis_id": row[2], "score": score})
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:TOP_K]
+    else:
+        result = await db.execute(
+            text("""
+                SELECT c.content, c.metadata, 1 - (c.embedding <=> CAST(:query AS vector)) AS score,
+                       d.id AS analysis_id, d.filename
+                FROM rag_chunks c
+                JOIN rag_documents d ON d.id = c.document_id
+                WHERE d.user_id = :uid AND d.scan_folder = :folder
+                ORDER BY c.embedding <=> CAST(:query AS vector)
+                LIMIT :top_k
+            """),
+            {"query": str(query_vector), "uid": user_id, "folder": scan_folder, "top_k": TOP_K * 3},
+        )
+        rows = result.fetchall()
+        return [
+            {"content": row[0], "metadata": row[1], "score": float(row[2]), "analysis_id": str(row[3]), "filename": row[4]}
+            for row in rows
+        ]
+
+
 async def retrieve_similar(
     db: AsyncSession,
     user_id: int,
@@ -77,6 +124,39 @@ def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) 
         {"role": "system", "content": system},
         {"role": "user", "content": f"Here is the code context:\n\n{context}"},
         {"role": "assistant", "content": "Understood. I have reviewed the code context and analysis. Ask me anything about it."},
+        {"role": "user", "content": question},
+    ]
+
+
+def build_folder_prompt(question: str, context_chunks: List[dict]) -> List[dict]:
+    context_parts = []
+    for i, chunk in enumerate(context_chunks):
+        filename = chunk.get("filename", "unknown")
+        meta = chunk.get("metadata", {})
+        header = f"[File: {filename}, Chunk {i + 1}]"
+        if meta.get("chunk_type"):
+            header += f" {meta['chunk_type']}"
+        if meta.get("name"):
+            header += f" - {meta['name']}"
+        if meta.get("line_start") is not None:
+            header += f" (line {meta['line_start']})"
+        text = chunk.get("content", chunk.get("chunk_text", ""))
+        context_parts.append(f"{header}\n```\n{text}\n```")
+    context = "\n\n".join(context_parts)
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are GhostCode Assistant — a code quality expert. "
+                "You have access to code files from a project folder. "
+                "Answer the user's question using ONLY the provided code context. "
+                "If the answer is not in the context, say so honestly. "
+                "Be concise, technical, and actionable. "
+                "Cite specific filenames and approximate line numbers when possible."
+            ),
+        },
+        {"role": "user", "content": f"Here is the code context for the folder:\n\n{context}"},
+        {"role": "assistant", "content": "Understood. I have reviewed the code context from all files in this folder. Ask me anything about it."},
         {"role": "user", "content": question},
     ]
 

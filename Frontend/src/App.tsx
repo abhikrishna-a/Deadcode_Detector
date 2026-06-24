@@ -14,6 +14,7 @@ import JuniorTab from './components/tabs/JuniorTab';
 import SubmissionsReviewPanel from './components/tabs/SubmissionsReviewPanel';
 import TeamChatTab from './components/tabs/TeamChatTab';
 import SettingsTab from './components/tabs/SettingsTab';
+import AIInspectorTab from './components/tabs/AIInspectorTab';
 import Toast from './components/ui/Toast';
 
 export default function App() {
@@ -201,6 +202,14 @@ export default function App() {
                     {activeTab === 'settings' && (
                       <SettingsTab
                         key="settings"
+                        currentUser={currentUser}
+                        onShowToast={showToast}
+                      />
+                    )}
+
+                    {activeTab === 'ai-inspector' && currentUser.role === 'senior' && (
+                      <AIInspectorTab
+                        key="ai-inspector"
                         currentUser={currentUser}
                         onShowToast={showToast}
                       />
