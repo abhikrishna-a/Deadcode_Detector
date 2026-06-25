@@ -28,7 +28,12 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
     loadedRef.current = true;
     (async () => {
       try {
-        const hist = await analysisAPI.ragHistory(500);
+        let hist;
+        try {
+          hist = await analysisAPI.analysisHistory(500);
+        } catch {
+          hist = await analysisAPI.ragHistory(500);
+        }
         const folderSet = new Set<string>();
         for (const item of hist.items) {
           if (item.scan_folder) folderSet.add(item.scan_folder);

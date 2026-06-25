@@ -124,6 +124,54 @@ export const analysisAPI = {
     return response.json();
   },
 
+  // Django: Analysis history (fallback when RAG is incomplete)
+  analysisHistory: async (limit: number = 50, offset: number = 0, search: string = ''): Promise<{
+    items: Array<{
+      analysis_id: string;
+      filename: string;
+      language: string;
+      health_score: number;
+      total_issues: number;
+      created_at: string;
+      scan_folder?: string;
+      scan_type?: string;
+    }>;
+    total: number;
+  }> => {
+    const token = await getAccessToken();
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (search) params.set('search', search);
+    const response = await fetch(`/api/auth/analysis-history/?${params}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch analysis history');
+    return response.json();
+  },
+
+  // Django: Analyses by folder (fallback when RAG is incomplete)
+  analysisByFolder: async (scanFolder: string): Promise<{
+    scan_folder: string;
+    items: Array<{
+      analysis_id: string;
+      filename: string;
+      language: string;
+      analysis: any;
+      health_score: number;
+      total_issues: number;
+      created_at: string;
+    }>;
+    count: number;
+  }> => {
+    const token = await getAccessToken();
+    const response = await fetch(
+      `/api/auth/analysis-by-folder/${encodeURIComponent(scanFolder)}/`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!response.ok) throw new Error('Failed to fetch folder analyses');
+    return response.json();
+  },
+
   // RAG: Paginated history
   ragHistory: async (limit: number = 20, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
@@ -614,6 +662,52 @@ export const analysisAPI = {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to resolve feedback');
+    return response.json();
+  },
+
+  // Global schedule config
+  getGlobalSchedule: async (): Promise<{
+    scheduled_at: string | null;
+    triggered: boolean;
+    updated_at: string | null;
+    pending_count: number;
+  }> => {
+    const token_ = await getAccessToken();
+    const response = await fetch('/api/auth/scheduler/config/', {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch schedule config');
+    return response.json();
+  },
+
+  setGlobalSchedule: async (scheduledAt: string): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch('/api/auth/scheduler/config/', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      body: JSON.stringify({ scheduled_at: scheduledAt }),
+    });
+    if (!response.ok) throw new Error('Failed to set global schedule');
+    return response.json();
+  },
+
+  cancelGlobalSchedule: async (): Promise<any> => {
+    const token_ = await getAccessToken();
+    const response = await fetch('/api/auth/scheduler/config/', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to cancel global schedule');
+    return response.json();
+  },
+
+  triggerGlobalSchedule: async (): Promise<{ message: string; processed: number }> => {
+    const token_ = await getAccessToken();
+    const response = await fetch('/api/auth/scheduler/trigger/', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Failed to trigger scheduler');
     return response.json();
   },
 };

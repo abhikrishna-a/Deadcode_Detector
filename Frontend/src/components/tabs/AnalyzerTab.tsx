@@ -435,7 +435,12 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
     (async () => {
       try {
         if (scanFolder) {
-          const folderData = await analysisAPI.ragGetAnalysesByFolder(scanFolder);
+          let folderData;
+          try {
+            folderData = await analysisAPI.ragGetAnalysesByFolder(scanFolder);
+          } catch {
+            folderData = await analysisAPI.analysisByFolder(scanFolder);
+          }
           if (abortCtrl.signal.aborted) return;
           const reports: AnalysisResult[] = folderData.items.map(item =>
             mapToAnalysisResult({ ...item, document_id: item.analysis_id }, item.filename)

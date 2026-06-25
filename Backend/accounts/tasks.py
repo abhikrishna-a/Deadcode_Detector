@@ -320,7 +320,7 @@ def analyze_junior_submission(self, submission_id: int):
         headers = {'Authorization': f'Bearer {access_token}'}
         resp = requests.post(
             rag_url,
-            files={'file': (submission.filename, submission.file_content, 'text/plain')},
+            files={'file': (submission.relative_path or submission.filename, submission.file_content, 'text/plain')},
             data={
                 'scan_folder': submission.scan_folder or '',
                 'scan_type': 'single',

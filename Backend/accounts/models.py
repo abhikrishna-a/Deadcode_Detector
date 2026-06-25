@@ -125,6 +125,7 @@ class JuniorSubmission(models.Model):
     filename = models.CharField(max_length=500)
     file_content = models.TextField(blank=True, default='')
     language = models.CharField(max_length=50, blank=True, default='')
+    relative_path = models.CharField(max_length=1000, blank=True, default='')
     scan_folder = models.CharField(max_length=500, blank=True, default='')
     analysis_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_review')
@@ -139,6 +140,22 @@ class JuniorSubmission(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.user.username})"
+
+
+class GlobalAnalysisSchedule(models.Model):
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    triggered = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        CustomUser, null=True, on_delete=models.SET_NULL
+    )
+
+    class Meta:
+        verbose_name = 'Global analysis schedule'
+        verbose_name_plural = 'Global analysis schedule'
+
+    def __str__(self):
+        return str(self.scheduled_at or 'Not scheduled')
 
 
 class CodeReviewFeedback(models.Model):

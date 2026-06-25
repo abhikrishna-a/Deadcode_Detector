@@ -8,8 +8,6 @@ from .views import (
     MFAInitialVerifyView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
-    AdminUserListView,
-    AdminUserRoleUpdateView,
     SessionCheckView,
     LogoutView,
     JuniorSubmissionUploadView,
@@ -21,10 +19,16 @@ from .views import (
     JuniorSubmissionBatchUploadView,
     JuniorFolderScheduleView,
     SeniorSubmissionListView,
+    SeniorAnalysisHistoryView,
+    SeniorAnalysisByFolderView,
     SeniorFeedbackCreateView,
     JuniorFeedbackListView,
     SubmissionFeedbackListView,
     FeedbackResolveView,
+    GlobalScheduleView,
+    SchedulerTriggerView,
+    AdminUserListView,
+    AdminUserRoleUpdateView,
 )
 
 urlpatterns = [
@@ -55,7 +59,11 @@ urlpatterns = [
     path('junior/git-import/', JuniorGitImportView.as_view(), name='junior_git_import'),
 path('junior/feedback/', JuniorFeedbackListView.as_view(), name='junior_feedback_list'),
 path('junior/feedback/<int:submission_id>/', SubmissionFeedbackListView.as_view(), name='submission_feedback_list'),
+path('analysis-history/', SeniorAnalysisHistoryView.as_view(), name='analysis_history'),
+path('analysis-by-folder/<path:scan_folder>/', SeniorAnalysisByFolderView.as_view(), name='analysis_by_folder'),
 path('senior/submissions/', SeniorSubmissionListView.as_view(), name='senior_submission_list'),
 path('senior/feedback/<int:submission_id>/', SeniorFeedbackCreateView.as_view(), name='senior_feedback_create'),
 path('feedback/<int:feedback_id>/resolve/', FeedbackResolveView.as_view(), name='feedback_resolve'),
+path('scheduler/config/', GlobalScheduleView.as_view(), name='scheduler_config'),
+path('scheduler/trigger/', SchedulerTriggerView.as_view(), name='scheduler_trigger'),
 ]

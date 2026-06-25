@@ -230,11 +230,17 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
   const loadHistory = async (currentSearch: string) => {
     setLoading(true);
     try {
-      const result = await analysisAPI.ragHistory(MAX_ITEMS, 0, currentSearch);
+      const result = await analysisAPI.analysisHistory(MAX_ITEMS, 0, currentSearch);
       setItems(result.items);
       setHasLoadedOnce(true);
     } catch {
-      onShowToast('Unable to load history. Refresh the page and try again.', 'error');
+      try {
+        const result = await analysisAPI.ragHistory(MAX_ITEMS, 0, currentSearch);
+        setItems(result.items);
+        setHasLoadedOnce(true);
+      } catch {
+        onShowToast('Unable to load history. Refresh the page and try again.', 'error');
+      }
     } finally {
       setLoading(false);
     }

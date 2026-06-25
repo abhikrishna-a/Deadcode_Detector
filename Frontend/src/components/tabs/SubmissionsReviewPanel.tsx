@@ -6,6 +6,7 @@ import {
   User, Calendar, Timer, MessageSquare,
   Send, ChevronDown, ChevronUp, Activity,
   Play, CalendarClock, Folder, ChevronRight,
+  CalendarDays, Settings,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
@@ -20,6 +21,7 @@ interface SubmissionsReviewPanelProps {
 interface Submission {
   id: number;
   filename: string;
+  relative_path?: string;
   username?: string;
   status: string;
   language?: string;
@@ -67,7 +69,8 @@ interface ReviewTreeNode {
 function buildReviewTree(submissions: Submission[]): ReviewTreeNode[] {
   const root: ReviewTreeNode[] = [];
   for (const submission of submissions) {
-    const path = `${submission.scan_folder || 'Standalone'}/${submission.filename || 'untitled'}`.replace(/\\/g, '/');
+    const displayPath = submission.relative_path || submission.filename || 'untitled';
+    const path = `${submission.scan_folder || 'Standalone'}/${displayPath}`.replace(/\\/g, '/');
     const parts = path.split('/').filter(Boolean);
     let current = root;
     let currentPath = '';
@@ -124,6 +127,10 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   });
   const [timeoutSeconds, setTimeoutSeconds] = useState(60);
   const [schedulerBusy, setSchedulerBusy] = useState(false);
+  const [scheduleConfigOpen, setScheduleConfigOpen] = useState(false);
+  const [globalScheduleAt, setGlobalScheduleAt] = useState('');
+  const [globalScheduleExisting, setGlobalScheduleExisting] = useState<string | null>(null);
+  const [schedulerProcessing, setSchedulerProcessing] = useState(false);
   const [expandedReviewPaths, setExpandedReviewPaths] = useState<Record<string, boolean>>({});
 
   const { connect } = useNotificationSocket();
@@ -253,6 +260,58 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     setScheduleTargetFolder(scanFolder);
     setScheduleTargetId(null);
     setScheduleOpen(true);
+  };
+
+  // Global schedule
+  const loadGlobalSchedule = useCallback(async () => {
+    try {
+      const cfg = await analysisAPI.getGlobalSchedule();
+      setGlobalScheduleExisting(cfg.scheduled_at);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => { loadGlobalSchedule(); }, [loadGlobalSchedule]);
+
+  const handleSetGlobalSchedule = async () => {
+    if (!globalScheduleAt) return;
+    setSchedulerProcessing(true);
+    try {
+      const iso = new Date(globalScheduleAt).toISOString();
+      await analysisAPI.setGlobalSchedule(iso);
+      setGlobalScheduleExisting(iso);
+      setScheduleConfigOpen(false);
+      onShowToast?.('Global schedule set.', 'success');
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to set global schedule.', 'error');
+    }
+    setSchedulerProcessing(false);
+  };
+
+  const handleCancelGlobalSchedule = async () => {
+    setSchedulerProcessing(true);
+    try {
+      await analysisAPI.cancelGlobalSchedule();
+      setGlobalScheduleExisting(null);
+      setScheduleConfigOpen(false);
+      onShowToast?.('Global schedule cancelled.', 'success');
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to cancel global schedule.', 'error');
+    }
+    setSchedulerProcessing(false);
+  };
+
+  const handleTriggerNow = async () => {
+    setSchedulerProcessing(true);
+    try {
+      const res = await analysisAPI.triggerGlobalSchedule();
+      onShowToast?.(res.message || 'Scheduler triggered.', 'success');
+      await load();
+    } catch (e: any) {
+      onShowToast?.(e?.message || 'Failed to trigger scheduler.', 'error');
+    }
+    setSchedulerProcessing(false);
   };
 
   const toggleReviewPath = (path: string, depth: number) => {
@@ -385,7 +444,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     if (!searchQuery) return submissions;
     const q = searchQuery.toLowerCase();
     return submissions.filter(s =>
-      s.filename.toLowerCase().includes(q) || (s.username || '').toLowerCase().includes(q)
+      s.filename.toLowerCase().includes(q) || (s.relative_path || '').toLowerCase().includes(q) || (s.username || '').toLowerCase().includes(q)
     );
   }, [submissions, searchQuery]);
 
@@ -457,7 +516,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
             />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2">
           <div className="hidden md:flex items-center gap-2 text-[9px] font-mono text-zinc-500">
           <Activity size={10} className="text-emerald-400" />
           <span>Scheduler active</span>
@@ -465,8 +524,84 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
           {pendingCount > 0 && (
             <span className="text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">{pendingCount} pending</span>
           )}
+          {globalScheduleExisting && (
+            <span className="text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded text-[8px]">
+              Global: {new Date(globalScheduleExisting).toLocaleString()}
+            </span>
+          )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                const d = new Date(Date.now() + 15 * 60 * 1000);
+                setGlobalScheduleAt(d.toISOString().slice(0, 16));
+                setScheduleConfigOpen(true);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-mono text-zinc-500 hover:text-cyan-400 hover:bg-cyan-400/10 border border-white/[0.04] hover:border-cyan-400/20 transition-all cursor-pointer"
+              title="Schedule global analysis"
+            >
+              <CalendarDays size={10} />
+              <span className="hidden md:inline">Schedule Global</span>
+            </button>
+            <button
+              onClick={handleTriggerNow}
+              disabled={schedulerProcessing}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-mono text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10 border border-white/[0.04] hover:border-emerald-400/20 transition-all cursor-pointer disabled:opacity-40"
+              title="Run now"
+            >
+              <Play size={10} />
+              <span className="hidden md:inline">Run Now</span>
+            </button>
           </div>
         </div>
+
+        {/* Global schedule modal */}
+        <AnimatePresence>
+          {scheduleConfigOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute top-full right-0 mt-2 z-50 w-72 p-4 rounded-2xl glass-card border border-white/[0.06] shadow-xl"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Settings size={12} className="text-cyan-400" />
+                <span className="text-[10px] font-mono font-semibold text-zinc-200">Global Analysis Schedule</span>
+              </div>
+              <label className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 mb-1 block">Schedule date & time</label>
+              <input
+                type="datetime-local"
+                value={globalScheduleAt}
+                onChange={e => setGlobalScheduleAt(e.target.value)}
+                className="w-full px-3 py-1.5 text-[10px] bg-white/[0.01] border border-white/[0.06] rounded-lg outline-none text-zinc-300 focus:border-cyan-400/30 transition-all mb-3"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSetGlobalSchedule}
+                  disabled={schedulerProcessing || !globalScheduleAt}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-[10px] font-mono font-semibold bg-cyan-400/10 border border-cyan-400/20 text-cyan-300 hover:bg-cyan-400/20 transition-all cursor-pointer disabled:opacity-40"
+                >
+                  {schedulerProcessing ? '...' : 'Set Schedule'}
+                </button>
+                {globalScheduleExisting && (
+                  <button
+                    onClick={handleCancelGlobalSchedule}
+                    disabled={schedulerProcessing}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-mono text-rose-400 hover:bg-rose-500/10 border border-white/[0.04] hover:border-rose-500/20 transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  onClick={() => setScheduleConfigOpen(false)}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-zinc-300 border border-white/[0.04] hover:border-white/[0.08] transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Kanban — full width */}
@@ -506,7 +641,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                     <div className="flex items-center gap-1">
                       <div className="flex-1 min-w-0">
                         <div className="text-[10px] font-mono text-zinc-200 font-medium truncate leading-tight">
-                          {s.filename}
+                          {s.relative_path || s.filename}
                         </div>
                       </div>
                       {s.status === 'analysing' && (

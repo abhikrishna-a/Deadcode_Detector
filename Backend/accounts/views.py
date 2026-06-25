@@ -524,6 +524,7 @@ class JuniorSubmissionUploadView(APIView):
         submission = JuniorSubmission.objects.create(
             user=request.user,
             filename=name,
+            relative_path=name,
             language=lang,
             file_content=content,
             scan_folder=request.data.get('scan_folder', ''),
@@ -538,6 +539,7 @@ class JuniorSubmissionBatchUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        import os as path_os
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionSerializer
         files = request.FILES.getlist('files')
@@ -553,11 +555,13 @@ class JuniorSubmissionBatchUploadView(APIView):
         submissions = []
         for f in files:
             content = f.read().decode('utf-8', errors='replace').replace('\x00', '')
-            name = f.name
+            rel_path = f.name.replace('\\', '/')
+            name = path_os.path.basename(rel_path)
             lang = name.rsplit('.', 1)[-1] if '.' in name else ''
             sub = JuniorSubmission.objects.create(
                 user=request.user,
                 filename=name,
+                relative_path=rel_path,
                 language=lang,
                 file_content=content,
                 scan_folder=scan_folder,
@@ -677,6 +681,7 @@ class JuniorGitImportView(APIView):
                 submission = JuniorSubmission.objects.create(
                     user=request.user,
                     filename=name,
+                    relative_path=rel_path.replace('\\', '/'),
                     language=lang,
                     file_content=content,
                     scan_folder=repo_url.rstrip('/').rsplit('/', 1)[-1] or 'git-import',
@@ -707,6 +712,62 @@ class JuniorClearView(APIView):
         return Response({'message': 'All junior submissions cleared.'})
 
 
+class GlobalScheduleView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
+
+    def get(self, request):
+        from .models import GlobalAnalysisSchedule, JuniorSubmission
+        config = GlobalAnalysisSchedule.objects.first()
+        data = {
+            'scheduled_at': config.scheduled_at.isoformat() if config and config.scheduled_at else None,
+            'triggered': config.triggered if config else False,
+            'updated_at': config.updated_at.isoformat() if config and config.updated_at else None,
+            'pending_count': JuniorSubmission.objects.filter(status='pending_review').count(),
+        }
+        return Response(data)
+
+    def put(self, request):
+        from django.utils.dateparse import parse_datetime
+        from .models import GlobalAnalysisSchedule, CustomUser
+        scheduled_at_str = request.data.get('scheduled_at')
+        if not scheduled_at_str:
+            return Response({'error': 'scheduled_at is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        dt = parse_datetime(scheduled_at_str.replace('Z', '+00:00'))
+        if dt is None:
+            return Response({'error': 'Invalid datetime format.'}, status=status.HTTP_400_BAD_REQUEST)
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt)
+        config = GlobalAnalysisSchedule.objects.first()
+        if not config:
+            config = GlobalAnalysisSchedule()
+        config.scheduled_at = dt
+        config.triggered = False
+        config.updated_by = request.user
+        config.save()
+        return Response({'message': 'Global schedule set.', 'scheduled_at': config.scheduled_at.isoformat()})
+
+    def delete(self, request):
+        from .models import GlobalAnalysisSchedule
+        config = GlobalAnalysisSchedule.objects.first()
+        if config:
+            config.scheduled_at = None
+            config.triggered = False
+            config.updated_by = request.user
+            config.save()
+        return Response({'message': 'Global schedule cancelled.'})
+
+
+class SchedulerTriggerView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
+
+    def post(self, request):
+        from .scheduler import process_scheduled_analyses
+        count = process_scheduled_analyses()
+        return Response({'message': f'Scheduler triggered. {count} submissions processed.', 'processed': count})
+
+
 class SeniorSubmissionListView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
@@ -719,6 +780,74 @@ class SeniorSubmissionListView(APIView):
         if status_filter:
             qs = qs.filter(status=status_filter)
         return Response(JuniorSubmissionSerializer(qs, many=True).data)
+
+
+class SeniorAnalysisHistoryView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+        from .models import JuniorSubmission
+
+        limit = int(request.query_params.get('limit', 50))
+        offset = int(request.query_params.get('offset', 0))
+        search = request.query_params.get('search', '')
+
+        qs = JuniorSubmission.objects.filter(
+            user=request.user, status='done'
+        ).select_related('user').order_by('-created_at')
+
+        if search:
+            qs = qs.filter(
+                Q(filename__icontains=search) | Q(scan_folder__icontains=search)
+            )
+
+        total = qs.count()
+        items = qs[offset:offset + limit]
+
+        result_items = []
+        for s in items:
+            summary = (s.result or {}).get('summary', {})
+            result_items.append({
+                'analysis_id': s.analysis_id or '',
+                'filename': s.filename,
+                'language': s.language,
+                'health_score': summary.get('health_score', 100),
+                'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
+                'created_at': s.created_at.isoformat(),
+                'scan_folder': s.scan_folder or None,
+                'scan_type': 'folder' if s.scan_folder else 'single',
+            })
+
+        return Response({'items': result_items, 'total': total})
+
+
+class SeniorAnalysisByFolderView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, scan_folder):
+        from .models import JuniorSubmission
+
+        qs = JuniorSubmission.objects.filter(
+            user=request.user, scan_folder=scan_folder, status='done'
+        ).order_by('filename')
+
+        items = []
+        for s in qs:
+            summary = (s.result or {}).get('summary', {})
+            items.append({
+                'analysis_id': s.analysis_id or '',
+                'filename': s.filename,
+                'language': s.language,
+                'analysis': s.result or {},
+                'health_score': summary.get('health_score', 100),
+                'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
+                'created_at': s.created_at.isoformat(),
+            })
+
+        return Response({'scan_folder': scan_folder, 'items': items, 'count': len(items)})
 
 
 class SeniorFeedbackCreateView(APIView):
