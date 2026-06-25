@@ -132,6 +132,8 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const [globalScheduleExisting, setGlobalScheduleExisting] = useState<string | null>(null);
   const [schedulerProcessing, setSchedulerProcessing] = useState(false);
   const [expandedReviewPaths, setExpandedReviewPaths] = useState<Record<string, boolean>>({});
+  const selectedIdRef = useRef<number | null>(null);
+  selectedIdRef.current = selectedId;
 
   const { connect } = useNotificationSocket();
 
@@ -149,7 +151,12 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
 
   useEffect(() => {
     connect(msg => {
-      if (msg.type === 'submission_update' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') load();
+      if (msg.type === 'submission_update' || msg.type === 'junior.analysis_started' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') {
+        load();
+        if (msg.submission_id === selectedIdRef.current && msg.result) {
+          setDetail(prev => prev ? { ...prev, status: 'done', result: msg.result } : prev);
+        }
+      }
     });
   }, [connect, load]);
 
@@ -283,6 +290,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
       setGlobalScheduleExisting(iso);
       setScheduleConfigOpen(false);
       onShowToast?.('Global schedule set.', 'success');
+      await load();
     } catch (e: any) {
       onShowToast?.(e?.message || 'Failed to set global schedule.', 'error');
     }
@@ -296,6 +304,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
       setGlobalScheduleExisting(null);
       setScheduleConfigOpen(false);
       onShowToast?.('Global schedule cancelled.', 'success');
+      await load();
     } catch (e: any) {
       onShowToast?.(e?.message || 'Failed to cancel global schedule.', 'error');
     }
@@ -660,37 +669,6 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
                         {timeAgo(s.created_at)}
                       </span>
                     </div>
-                    {s.status === 'pending_review' && (
-                      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-white/[0.03]">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runNow(s.id);
-                          }}
-                          disabled={schedulerBusy}
-                          className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
-                        >
-                          <Play size={8} />
-                          Now
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openScheduler(s.id);
-                          }}
-                          disabled={schedulerBusy}
-                          className="flex items-center gap-1 px-1.5 py-1 rounded-md bg-indigo-400/10 text-indigo-300 hover:bg-indigo-400/15 disabled:opacity-40 text-[8px] font-mono cursor-pointer"
-                        >
-                          <CalendarClock size={8} />
-                          Schedule
-                        </button>
-                        {s.scheduled_at && (
-                          <span className="ml-auto text-[7px] font-mono text-indigo-300 truncate">
-                            {new Date(s.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </motion.div>
                 ))}
               </div>
