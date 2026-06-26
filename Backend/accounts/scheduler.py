@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def process_scheduled_analyses():
     try:
         from .models import JuniorSubmission, GlobalAnalysisSchedule
-        from .tasks import analyze_junior_submission
+        from .tasks import analyze_junior_submission, _notify_user
 
         now = timezone.now()
 
@@ -27,10 +27,16 @@ def process_scheduled_analyses():
                     sub.scheduled_at = None
                     sub.save(update_fields=['status', 'scheduled_at'])
                     analyze_junior_submission.delay(sub.id)
+                    _notify_user(sub.user_id, {
+                        'type': 'junior.analysis_started',
+                        'submission_id': sub.id,
+                        'file_name': sub.filename,
+                    })
                     triggered += 1
                     logger.info('Global schedule triggered analysis for submission %d', sub.id)
-                config.triggered = True
-                config.save(update_fields=['triggered'])
+                if triggered > 0:
+                    config.triggered = True
+                    config.save(update_fields=['triggered'])
                 logger.info('Global schedule: triggered %d submissions', triggered)
                 return triggered
 
@@ -43,6 +49,11 @@ def process_scheduled_analyses():
             sub.scheduled_at = None
             sub.save(update_fields=['status', 'scheduled_at'])
             analyze_junior_submission.delay(sub.id)
+            _notify_user(sub.user_id, {
+                'type': 'junior.analysis_started',
+                'submission_id': sub.id,
+                'file_name': sub.filename,
+            })
             count += 1
             logger.info('Scheduled analysis triggered for submission %d', sub.id)
 

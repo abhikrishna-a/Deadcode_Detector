@@ -429,6 +429,26 @@ async def delete_document(
     return result.rowcount > 0
 
 
+async def update_document_filename(
+    db: AsyncSession,
+    document_id: str,
+    user_id: int,
+    new_filename: str,
+) -> bool:
+    if IS_SQLITE:
+        result = await db.execute(
+            text("UPDATE analyses SET filename = :fn WHERE id = :id AND user_id = :uid"),
+            {"fn": new_filename, "id": document_id, "uid": user_id},
+        )
+    else:
+        result = await db.execute(
+            text("UPDATE rag_documents SET filename = :fn WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
+            {"fn": new_filename, "id": document_id, "uid": user_id},
+        )
+    await db.commit()
+    return result.rowcount > 0
+
+
 async def cleanup_stale_documents(
     db: AsyncSession,
     user_id: int,

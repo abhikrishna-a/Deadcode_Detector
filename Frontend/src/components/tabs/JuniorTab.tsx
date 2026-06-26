@@ -145,6 +145,18 @@ interface TreeNode {
   key?: string;
 }
 
+function connectorSpan(prefix: string): React.ReactNode {
+  return (
+    <span className="font-mono text-zinc-600 text-[10px] select-none flex-shrink-0 leading-none">
+      {prefix}
+    </span>
+  );
+}
+
+function childConnectorPrefix(parentPrefix: string, parentIsLast: boolean): string {
+  return parentPrefix + (parentIsLast ? '    ' : '│   ');
+}
+
 function buildPathTree<T>(
   items: T[],
   getPath: (item: T) => string,
@@ -564,47 +576,27 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     nodes: TreeNode[],
     depth: number,
     parentPath: string,
-    renderFile: (node: TreeNode, depth: number, isLast: boolean) => React.ReactNode,
-    siblingIndex?: number,
-    totalSiblings?: number,
+    renderFile: (node: TreeNode, depth: number, isLast: boolean, connectorPrefix: string) => React.ReactNode,
+    connectorPrefix = '',
   ) {
     return nodes.map((node, idx) => {
       const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
       const treeKey = node.key || fullPath;
       const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
       const nodeIsLast = idx === nodes.length - 1;
+      const branch = nodeIsLast ? '└── ' : '├── ';
 
       if (!node.isDir) {
-        return renderFile(node, depth, nodeIsLast);
+        return renderFile(node, depth, nodeIsLast, connectorPrefix);
       }
-
-      const guideLine = depth > 0 && (
-        <div className="flex-shrink-0 self-stretch flex" style={{ width: `${depth * 16}px` }}>
-          {Array.from({ length: depth }).map((_, gi) => {
-            const parentIsLast = gi === depth - 1 ? (siblingIndex !== undefined && nodeIsLast) : false;
-            return (
-              <div key={gi} className="w-4 h-full relative">
-                <div className="absolute left-[7px] top-0 bottom-0 w-px bg-white/[0.06]" />
-              </div>
-            );
-          })}
-        </div>
-      );
 
       return (
         <div key={treeKey}>
           <div
             onClick={() => toggleTreePath(fullPath)}
             className="flex items-center gap-1.5 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-            style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
           >
-            {depth > 0 && (
-              <div className="flex items-center h-full">
-                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                  {nodeIsLast ? '└── ' : '├── '}
-                </span>
-              </div>
-            )}
+            {connectorSpan(connectorPrefix + branch)}
             <ChevronRight
               size={10}
               className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
@@ -638,7 +630,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                 transition={{ duration: 0.15 }}
                 className="overflow-hidden"
               >
-                {node.children.map(child => renderTree([child], depth + 1, fullPath, renderFile))}
+                {node.children.map(child => renderTree([child], depth + 1, fullPath, renderFile, childConnectorPrefix(connectorPrefix, nodeIsLast)))}
               </motion.div>
             )}
           </AnimatePresence>
@@ -810,28 +802,23 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {renderTree(recentSubmissionTree, 1, '__submissions__', (node, depth, isLast) => {
+                        {renderTree(recentSubmissionTree, 1, '__submissions__', (node, depth, isLast, connectorPrefix) => {
                           const s = node.item;
                           const badge = statusBadge(s.status);
                           const BadgeIcon = badge.icon;
                           return (
                             <div key={s.id}
                               className="flex items-center gap-2 py-1.5 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-                              style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                               onClick={() => { setSubTab('results'); handleViewResult(s.id); }}
                             >
-                              {depth > 0 && (
-                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                                  {isLast ? '└── ' : '├── '}
-                                </span>
-                              )}
+                              {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                               <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
                               <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{node.name}</span>
                               <span className={`text-[8px] font-mono px-1 rounded ${badge.bg} ${badge.color} flex-shrink-0`}>{s.status}</span>
                               <span className="text-[8px] font-mono text-zinc-600 flex-shrink-0">{timeAgo(s.created_at)}</span>
                             </div>
                           );
-                        })}
+                        }, '')}
                         {submissions.length > 10 && (
                           <div className="text-[9px] font-mono text-cyan-400 px-10 py-1 hover:text-cyan-300 cursor-pointer"
                             onClick={() => setSubTab('results')}>
@@ -868,7 +855,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {renderTree(reportTree, 1, '__reports__', (node, depth, isLast) => {
+                        {renderTree(reportTree, 1, '__reports__', (node, depth, isLast, connectorPrefix) => {
                           const r = node.item;
                           const health = r.health_score ?? 100;
                           const issues = r.total_issues ?? 0;
@@ -876,17 +863,12 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                           return (
                             <div key={node.name}
                               className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-                              style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                               onClick={() => {
                                 setSelectedFolder(r.scan_folder || '');
                                 toggleTreePath('__issues__');
                               }}
                             >
-                              {depth > 0 && (
-                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                                  {isLast ? '└── ' : '├── '}
-                                </span>
-                              )}
+                              {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                               <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
                               <span className="text-[11px] font-mono text-zinc-300 truncate flex-1 group-hover:text-cyan-400 transition-colors">{node.name}</span>
                               <div className="flex items-center gap-2 flex-shrink-0">
@@ -897,7 +879,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                               </div>
                             </div>
                           );
-                        })}
+                        }, '')}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -930,20 +912,15 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        {renderTree(issuesTree, 1, '__issues__', (node, depth, isLast) => {
+                        {renderTree(issuesTree, 1, '__issues__', (node, depth, isLast, connectorPrefix) => {
                           const { report, issue, severity, color } = node.item;
                           const key = `${report.analysis_id}:${issue.id}`;
                           const Icon = severity === 'high' ? AlertTriangle : severity === 'medium' ? AlertCircle : Info;
                           return (
                             <div key={key}
                               className="flex items-center gap-2 py-1 px-3 hover:bg-white/[0.015] transition-colors"
-                              style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                             >
-                              {depth > 0 && (
-                                <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                                  {isLast ? '└── ' : '├── '}
-                                </span>
-                              )}
+                              {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                               <Icon size={10} className={`${color} flex-shrink-0`} />
                               <div className="flex-1 min-w-0">
                                 <span className="text-[10px] text-zinc-300 truncate block">{issue.description}</span>
@@ -962,7 +939,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                               </div>
                             </div>
                           );
-                        })}
+                        }, '')}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -1018,19 +995,14 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                   >
                     {(() => {
                       const uploadTree = buildUploadTree(uploadFiles);
-                      const renderUploadFile = (node: TreeNode, depth: number, isLast: boolean) => {
+                      const renderUploadFile = (node: TreeNode, depth: number, isLast: boolean, connectorPrefix: string) => {
                         const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
                         const idx = uploadFiles.indexOf(node.item as File);
                         return (
                           <div key={node.key}
                             className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors group"
-                            style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                           >
-                            {depth > 0 && (
-                              <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                                {isLast ? '└── ' : '├── '}
-                              </span>
-                            )}
+                            {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                             <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
                             <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{node.name}</span>
                             {node.item && (
@@ -1040,7 +1012,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                           </div>
                         );
                       };
-                      return renderTree(uploadTree, 0, '', renderUploadFile);
+                      return renderTree(uploadTree, 0, '', renderUploadFile, '');
                     })()}
                   </div>
                   <div className="flex gap-2 pt-3">
@@ -1148,7 +1120,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                 }}
                 className="rounded-2xl overflow-hidden backdrop-blur-md py-2"
               >
-                {renderTree(submissionTree, 0, '', (node, depth, isLast) => {
+                {renderTree(submissionTree, 0, '', (node, depth, isLast, connectorPrefix) => {
                   const s = node.item;
                   const badge = statusBadge(s.status);
                   const BadgeIcon = badge.icon;
@@ -1156,13 +1128,8 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                   return (
                     <div key={s.id}
                       className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors"
-                      style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                     >
-                      {depth > 0 && (
-                        <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                          {isLast ? '└── ' : '├── '}
-                        </span>
-                      )}
+                      {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                       <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
                       <FileIcon size={10} className={`${iconColor} flex-shrink-0`} />
                       <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{s.filename}</span>
@@ -1176,7 +1143,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                       <span className="text-[8px] font-mono text-zinc-600">{timeAgo(s.created_at)}</span>
                     </div>
                   );
-                })}
+                }, '')}
               </div>
             )}
           </motion.div>
@@ -1382,7 +1349,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                     )}
                   </div>
                 </div>
-                {renderTree(resultsTree, 0, '', (node, depth, isLast) => {
+                {renderTree(resultsTree, 0, '', (node, depth, isLast, connectorPrefix) => {
                   const s = node.item;
                   if (!s) return null;
                   const issCount = s.total_issues ?? 0;
@@ -1392,14 +1359,9 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                   return (
                     <div key={s.id}
                       className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-                      style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
                       onClick={() => handleViewResult(s.id)}
                     >
-                      {depth > 0 && (
-                        <span className="text-zinc-700 font-mono text-[10px] leading-none flex-shrink-0">
-                          {isLast ? '└── ' : '├── '}
-                        </span>
-                      )}
+                      {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                       <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
                       <span className={`text-[11px] font-mono ${nameColor} truncate flex-1 group-hover:text-cyan-400 transition-colors`}>{node.name}</span>
                       {hasIssues && (
@@ -1409,7 +1371,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                       <ChevronRight size={10} className="text-zinc-600 group-hover:text-cyan-400 flex-shrink-0 transition-colors" />
                     </div>
                   );
-                })}
+                }, '')}
               </div>
             )}
           </motion.div>

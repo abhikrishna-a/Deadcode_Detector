@@ -1,9 +1,11 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, PieChartIcon, ExternalLink } from 'lucide-react';
+import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, PieChartIcon, ExternalLink, FileCode, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AnalysisResult } from '../../types';
 import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+import CodeViewer from '../CodeViewer';
+import { analysisAPI } from '../../api/analysis';
 
 const FOLDER_COLORS = ['#06b6d4', '#8b5cf6', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#84cc16'];
 
@@ -15,8 +17,27 @@ const CATEGORIES = [
   { key: 'commented_code', label: 'Commented Snippets', color: '#10b981' },
 ];
 
-function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number; onClick: (res: AnalysisResult) => void }) {
+function connectorSpan(prefix: string): React.ReactNode {
+  return (
+    <span className="font-mono text-zinc-600 text-[10px] select-none flex-shrink-0 leading-none">
+      {prefix}
+    </span>
+  );
+}
+
+function childConnectorPrefix(parentPrefix: string, parentIsLast: boolean): string {
+  return parentPrefix + (parentIsLast ? '    ' : '│   ');
+}
+
+function TreeNode({ node, depth, onClick, connectorPrefix = '', isLast = true }: {
+  node: TreeNodeData;
+  depth: number;
+  onClick: (res: AnalysisResult) => void;
+  connectorPrefix?: string;
+  isLast?: boolean;
+}) {
   const [expanded, setExpanded] = useState(depth < 2);
+  const branch = isLast ? '└── ' : '├── ';
 
   if (!node.isDir) {
     const health = node.file?.summary?.health_score ?? 100;
@@ -27,7 +48,7 @@ function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number;
         className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-1 h-1 rounded-full bg-violet-500 flex-shrink-0" />
+          {connectorSpan(connectorPrefix + branch)}
           <span className="font-mono text-[11px] text-zinc-400 truncate max-w-[160px] group-hover:text-zinc-200 transition-colors">
             {node.name}
           </span>
@@ -46,6 +67,7 @@ function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number;
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
       >
+        {connectorSpan(connectorPrefix + branch)}
         <ChevronRight
           size={10}
           className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${expanded ? 'rotate-90' : ''}`}
@@ -61,10 +83,17 @@ function TreeNode({ node, depth, onClick }: { node: TreeNodeData; depth: number;
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden ml-4 border-l border-white/[0.03] pl-2"
+            className="overflow-hidden"
           >
-            {node.children.map((child, i) => (
-              <TreeNode key={i} node={child} depth={depth + 1} onClick={onClick} />
+            {node.children.map((child, i, arr) => (
+              <TreeNode
+                key={i}
+                node={child}
+                depth={depth + 1}
+                onClick={onClick}
+                connectorPrefix={childConnectorPrefix(connectorPrefix, isLast)}
+                isLast={i === arr.length - 1}
+              />
             ))}
           </motion.div>
         )}
@@ -82,6 +111,10 @@ interface OverviewTabProps {
 
 export default function OverviewTab({ history, onNavigateToWorkspace }: OverviewTabProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
+  const [selectedFileLoading, setSelectedFileLoading] = useState(false);
+  const [selectedFileError, setSelectedFileError] = useState<string | null>(null);
+  const selectedFileRef = useRef<string | null>(null);
 
   const stats = useMemo(() => {
     const singles = history.filter(r => r.scan_type === 'single').length;
@@ -99,6 +132,11 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
       compliantRuns: folderSessions,
       statementsScanned: repoSessions,
       sourceDirectives: totalIssues,
+      totalSessions: total,
+      standaloneSessionCount: singles,
+      folderSessionCount: folderSessions,
+      repoSessionCount: repoSessions,
+      totalIssuesFound: totalIssues,
     };
   }, [history]);
 
@@ -158,6 +196,45 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
     }));
   };
 
+  const handleSelectFile = useCallback((file: AnalysisResult) => {
+    const localMatch = history.find(item => item.document_id === file.document_id) || file;
+    setSelectedFile(localMatch);
+    setSelectedFileLoading(false);
+
+    if (localMatch._source_content && localMatch._source_content.trim()) {
+      setSelectedFileError(null);
+      return;
+    }
+
+    if (!localMatch.document_id) {
+      setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
+      return;
+    }
+
+    const docId = localMatch.document_id;
+    selectedFileRef.current = docId;
+    setSelectedFileLoading(true);
+    setSelectedFileError(null);
+
+    analysisAPI.ragGetAnalysis(docId).then(data => {
+      if (selectedFileRef.current !== docId) return;
+      if (data && data._source_content) {
+        setSelectedFile(prev => prev?.document_id === docId
+          ? { ...prev, _source_content: data._source_content }
+          : prev
+        );
+        setSelectedFileError(null);
+      } else {
+        setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
+      }
+    }).catch(() => {
+      if (selectedFileRef.current !== docId) return;
+      setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
+    }).finally(() => {
+      if (selectedFileRef.current === docId) setSelectedFileLoading(false);
+    });
+  }, [history]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -173,11 +250,11 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
-          { icon: BarChart3, value: stats.auditRuns, label: 'Total Analyses', color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
-          { icon: Bug, value: stats.orphanedTokens, label: 'Standalone Files', color: 'text-purple-300', bg: 'bg-purple-500/10' },
-          { icon: CheckCircle, value: stats.compliantRuns, label: 'Folder Analyses', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-          { icon: File, value: stats.statementsScanned.toLocaleString(), label: 'Repo Analyses', color: 'text-amber-200', bg: 'bg-amber-200/10' },
-          { icon: Folder, value: stats.sourceDirectives, label: 'Total Issues', color: 'text-rose-400', bg: 'bg-rose-400/10' }
+          { icon: BarChart3, value: stats.totalSessions, label: 'Total Analyses', color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
+          { icon: Bug, value: stats.standaloneSessionCount, label: 'Standalone Files', color: 'text-purple-300', bg: 'bg-purple-500/10' },
+          { icon: CheckCircle, value: stats.folderSessionCount, label: 'Folder Analyses', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+          { icon: File, value: stats.repoSessionCount, label: 'Repo Analyses', color: 'text-amber-200', bg: 'bg-amber-200/10' },
+          { icon: Folder, value: stats.totalIssuesFound.toLocaleString(), label: 'Total Issues', color: 'text-rose-400', bg: 'bg-rose-400/10' }
         ].map((item, idx) => {
           const Icon = item.icon;
           return (
@@ -252,7 +329,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
                 }}
                 labelStyle={{ color: '#e4e4e7', marginBottom: 4 }}
               />
-              {folderList.map(folder => {
+            {[...new Set(folderList)].map(folder => {
                 if (folder === '(Single Files)') return null;
                 return (
                     <Line
@@ -273,9 +350,9 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
         {/* Folder legend with click navigation */}
         {folderList.length > 1 && (
           <div className="flex flex-wrap gap-3 pt-1">
-            {folderList.map(folder => {
-              if (folder === '(Single Files)') return null;
-              return (
+              {[...new Set(folderList)].map(folder => {
+                if (folder === '(Single Files)') return null;
+                return (
                 <button
                   key={folder}
                   onClick={() => handleFolderNavigate(folder)}
@@ -318,7 +395,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
             {(Object.entries(groupedScans) as [string, AnalysisResult[]][]).map(([folderName, files]) => {
               const isExpanded = !!expandedFolders[folderName];
               const issuesInFolder = files.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
-              const treeNodes = buildFileTree(files);
+              const treeNodes = buildFileTree(files, folderName === '(root)' ? undefined : folderName);
               return (
                 <div key={folderName}>
                   <div
@@ -344,14 +421,16 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden ml-5 border-l border-white/[0.04] pl-3"
+                        className="overflow-hidden"
                       >
-                        {treeNodes.map((node, ni) => (
+                        {treeNodes.map((node, ni, arr) => (
                           <TreeNode
                             key={ni}
                             node={node}
                             depth={0}
-                            onClick={(res) => onNavigateToWorkspace?.(res.document_id, res.filename, res.scan_folder)}
+                            onClick={(res) => handleSelectFile(res)}
+                            connectorPrefix=""
+                            isLast={ni === arr.length - 1}
                           />
                         ))}
                       </motion.div>
@@ -362,6 +441,53 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
             })}
           </div>
         )}
+
+        <AnimatePresence initial={false}>
+          {selectedFile && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="pt-4 border-t border-white/[0.04] space-y-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileCode size={14} className="text-cyan-400 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs font-semibold text-zinc-200 truncate">
+                      {selectedFile.filename}
+                    </div>
+                    <div className="text-[10px] font-mono text-zinc-500">
+                      {selectedFile.summary.total_issues} issue{selectedFile.summary.total_issues === 1 ? '' : 's'} • {selectedFile.summary.health_score}% health
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {selectedFileError && (
+                <div className="text-[11px] font-mono text-amber-300 bg-amber-500/5 border border-amber-400/10 rounded-lg px-3 py-2">
+                  {selectedFileError}
+                </div>
+              )}
+
+              {selectedFileLoading ? (
+                <div className="h-[420px] rounded-xl border border-white/[0.035] bg-black/20 flex items-center justify-center text-zinc-500">
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                  Loading code viewer...
+                </div>
+              ) : (
+                <div className="h-[420px]">
+                  <CodeViewer
+                    source={selectedFile._source_content || ''}
+                    issues={selectedFile.issues || []}
+                    filename={selectedFile.filename}
+                  />
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );

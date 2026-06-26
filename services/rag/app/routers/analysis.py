@@ -17,7 +17,7 @@ from app.services.chunker import chunk_code, chunk_issues, detect_language
 from app.services.embedder import embed_texts
 from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
 from app.services.cross_reference import batch_check_references
-from app.services.storage import store_analysis, get_history, get_document, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history, delete_all_user_documents
+from app.services.storage import store_analysis, get_history, get_document, update_document_filename, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history, delete_all_user_documents
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
 
 logger = logging.getLogger("ghostcode-rag.analysis")
@@ -575,6 +575,34 @@ async def list_documents(
              "created_at": r[3].isoformat(), "chunk_count": r[4]}
             for r in rows
         ]
+
+
+@router.get("/documents/by-hash/{file_hash}")
+async def lookup_document_by_hash(
+    file_hash: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    doc = await check_hash(db, user["user_id"], file_hash)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@router.patch("/documents/{document_id}")
+async def update_document_filename_endpoint(
+    document_id: str,
+    body: dict,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    new_filename = body.get("filename")
+    if not new_filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+    ok = await update_document_filename(db, document_id, user["user_id"], new_filename)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": "ok", "document_id": document_id, "filename": new_filename}
 
 
 @router.delete("/documents/{document_id}")

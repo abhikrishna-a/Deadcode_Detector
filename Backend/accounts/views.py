@@ -552,10 +552,11 @@ class JuniorSubmissionBatchUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         scan_folder = request.data.get('scan_folder', '')
+        paths = request.data.getlist('paths')
         submissions = []
-        for f in files:
+        for i, f in enumerate(files):
             content = f.read().decode('utf-8', errors='replace').replace('\x00', '')
-            rel_path = f.name.replace('\\', '/')
+            rel_path = (paths[i] if i < len(paths) else f.name).replace('\\', '/')
             name = path_os.path.basename(rel_path)
             lang = name.rsplit('.', 1)[-1] if '.' in name else ''
             sub = JuniorSubmission.objects.create(
@@ -600,6 +601,19 @@ class JuniorSubmissionDetailView(APIView):
         except JuniorSubmission.DoesNotExist:
             return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(JuniorSubmissionDetailSerializer(submission).data)
+
+
+class SubmissionByAnalysisIdView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, analysis_id):
+        from .models import JuniorSubmission
+        try:
+            sub = JuniorSubmission.objects.get(analysis_id=analysis_id, user=request.user)
+            return Response({'submission_id': sub.id, 'filename': sub.filename})
+        except JuniorSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class JuniorSubmissionAnalyzeView(APIView):
@@ -763,9 +777,24 @@ class SchedulerTriggerView(APIView):
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request):
-        from .scheduler import process_scheduled_analyses
-        count = process_scheduled_analyses()
-        return Response({'message': f'Scheduler triggered. {count} submissions processed.', 'processed': count})
+        from .models import JuniorSubmission
+        from .tasks import analyze_junior_submission, _notify_user
+        pending = JuniorSubmission.objects.filter(status='pending_review')
+        count = pending.count()
+        for sub in pending:
+            sub.status = 'analysing'
+            sub.scheduled_at = None
+            sub.save(update_fields=['status', 'scheduled_at'])
+            analyze_junior_submission.delay(sub.id)
+            _notify_user(sub.user_id, {
+                'type': 'junior.analysis_started',
+                'submission_id': sub.id,
+                'file_name': sub.filename,
+            })
+        return Response({
+            'message': f'Analysis triggered for {count} submission(s).',
+            'processed': count,
+        })
 
 
 class SeniorSubmissionListView(APIView):
@@ -811,13 +840,15 @@ class SeniorAnalysisHistoryView(APIView):
             summary = (s.result or {}).get('summary', {})
             result_items.append({
                 'analysis_id': s.analysis_id or '',
-                'filename': s.filename,
+                'submission_id': s.id,
+                'filename': s.relative_path or s.filename,
                 'language': s.language,
                 'health_score': summary.get('health_score', 100),
                 'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
                 'created_at': s.created_at.isoformat(),
                 'scan_folder': s.scan_folder or None,
                 'scan_type': 'folder' if s.scan_folder else 'single',
+                'source_content': s.file_content or '',
             })
 
         return Response({'items': result_items, 'total': total})
@@ -839,12 +870,13 @@ class SeniorAnalysisByFolderView(APIView):
             summary = (s.result or {}).get('summary', {})
             items.append({
                 'analysis_id': s.analysis_id or '',
-                'filename': s.filename,
+                'filename': s.relative_path or s.filename,
                 'language': s.language,
                 'analysis': s.result or {},
                 'health_score': summary.get('health_score', 100),
                 'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
                 'created_at': s.created_at.isoformat(),
+                'source_content': s.file_content or '',
             })
 
         return Response({'scan_folder': scan_folder, 'items': items, 'count': len(items)})

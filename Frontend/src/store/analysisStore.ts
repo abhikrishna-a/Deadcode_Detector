@@ -57,8 +57,12 @@ export const useAnalysisStore = create<AnalysisState>()(
       historyMode: false,
 
       addHistoryReport: (report) => set(state => {
-        const exists = state.history.some(r => r.document_id === report.document_id);
-        if (exists) return state;
+        const idx = state.history.findIndex(r => r.document_id === report.document_id);
+        if (idx >= 0) {
+          const next = [...state.history];
+          next[idx] = report;
+          return { history: next };
+        }
         return { history: [report, ...state.history] };
       }),
 

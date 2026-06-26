@@ -8,11 +8,23 @@ export interface TreeNodeData {
   totalIssues: number;
 }
 
-export function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
+export function buildFileTree(files: AnalysisResult[], stripPrefix?: string): TreeNodeData[] {
   const root: TreeNodeData[] = [];
+  const seenFullPaths = new Set<string>();
 
   for (const file of files) {
-    const parts = file.filename.replace(/\\/g, '/').split('/');
+    let filepath = file.filename.replace(/\\/g, '/');
+    if (stripPrefix) {
+      const prefix = stripPrefix.replace(/\\/g, '/').replace(/\/?$/, '/');
+      if (filepath.startsWith(prefix)) {
+        filepath = filepath.slice(prefix.length);
+      }
+    }
+    const parts = filepath.split('/');
+    const fullPath = parts.join('/');
+    if (seenFullPaths.has(fullPath)) continue;
+    seenFullPaths.add(fullPath);
+
     let current = root;
 
     for (let i = 0; i < parts.length; i++) {
@@ -20,7 +32,6 @@ export function buildFileTree(files: AnalysisResult[]): TreeNodeData[] {
       const isLast = i === parts.length - 1;
 
       if (isLast) {
-        if (current.some(n => !n.isDir && n.name === part)) continue;
         current.push({
           name: part,
           isDir: false,

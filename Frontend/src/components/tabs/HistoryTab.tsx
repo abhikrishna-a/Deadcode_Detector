@@ -1,16 +1,26 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare } from 'lucide-react';
+import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare, Send } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
-import CodeViewer from '../CodeViewer';
-import type { Issue } from '../../types';
+import type { Issue, User } from '../../types';
 
 interface HistoryTabProps {
   key?: string;
+  currentUser: User;
   onNavigateToChat: (docId: string, filename: string) => void;
   onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+}
+
+interface FeedbackItem {
+  id: number;
+  line_start: number;
+  line_end?: number;
+  comment: string;
+  reviewer_username?: string;
+  resolved?: boolean;
+  created_at?: string;
 }
 
 interface HistoryItem {
@@ -52,7 +62,14 @@ const healthColor = (score: number) => {
 function buildHistoryTree(files: HistoryItem[], defaultScanFolder?: string): HistoryTreeNode[] {
   const root: HistoryTreeNode[] = [];
   for (const file of files) {
-    const parts = file.filename.replace(/\\/g, '/').split('/');
+    let path = file.filename.replace(/\\/g, '/');
+    if (defaultScanFolder) {
+      const prefix = defaultScanFolder.replace(/\\/g, '/').replace(/\/?$/, '/');
+      if (path.startsWith(prefix)) {
+        path = path.slice(prefix.length);
+      }
+    }
+    const parts = path.split('/');
     let current = root;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -124,22 +141,38 @@ interface HistoryTreeNodeProps {
   onNavigateToChat: (docId: string, filename: string) => void;
   onInspectFile: (item: HistoryItem) => void;
   healthColor: (score: number) => string;
+  connectorPrefix?: string;
+  isLast?: boolean;
+}
+
+function connectorSpan(prefix: string): React.ReactNode {
+  return (
+    <span className="font-mono text-zinc-600 text-[10px] select-none flex-shrink-0 leading-none">
+      {prefix}
+    </span>
+  );
+}
+
+function childConnectorPrefix(parentPrefix: string, parentIsLast: boolean): string {
+  return parentPrefix + (parentIsLast ? '    ' : '│   ');
 }
 
 function HistoryTreeNode({
   node, depth, parentPath, expandedTreePaths, onToggle,
   onNavigateToWorkspace, onNavigateToChat, onInspectFile, healthColor,
+  connectorPrefix = '', isLast = true,
 }: HistoryTreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
   const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+  const branch = isLast ? '└── ' : '├── ';
 
   if (!node.isDir && node.file) {
     const item = node.file;
     return (
       <div
         className="flex items-center gap-2 px-6 py-2 hover:bg-white/[0.01] transition-colors border-t border-white/[0.02]"
-        style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
       >
+        {connectorSpan(connectorPrefix + branch)}
         <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
         <button
           onClick={() => onInspectFile(item)}
@@ -173,8 +206,8 @@ function HistoryTreeNode({
       <button
         onClick={() => onToggle(fullPath, depth)}
         className="flex items-center gap-1.5 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
-        style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
       >
+        {connectorSpan(connectorPrefix + branch)}
         <ChevronRight
           size={10}
           onClick={(e) => { e.stopPropagation(); onToggle(fullPath, depth); }}
@@ -196,9 +229,9 @@ function HistoryTreeNode({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="overflow-hidden ml-[3.5rem] border-l border-white/[0.03]"
+            className="overflow-hidden"
           >
-            {node.children.map(child => (
+            {node.children.map((child, i, arr) => (
               <HistoryTreeNode
                 key={child.file?.analysis_id || child.name}
                 node={child}
@@ -210,6 +243,8 @@ function HistoryTreeNode({
                 onNavigateToChat={onNavigateToChat}
                 onInspectFile={onInspectFile}
                 healthColor={healthColor}
+                connectorPrefix={childConnectorPrefix(connectorPrefix, isLast)}
+                isLast={i === arr.length - 1}
               />
             ))}
           </motion.div>
@@ -219,7 +254,7 @@ function HistoryTreeNode({
   );
 }
 
-export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, onShowToast }: HistoryTabProps) {
+export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateToWorkspace, onShowToast }: HistoryTabProps) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
@@ -235,6 +270,11 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
     loading: boolean;
     error: string | null;
   } | null>(null);
+  const [submissionId, setSubmissionId] = useState<number | null>(null);
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
+  const [commentLine, setCommentLine] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
   const inspectedFileRef = useRef<string | null>(null);
 
   const handleInspectFile = useCallback(async (item: HistoryItem) => {
@@ -248,6 +288,10 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
       loading: true,
       error: null,
     });
+    setFeedbacks([]);
+    setSubmissionId(null);
+    setCommentLine(null);
+    setCommentText('');
     try {
       const data = await analysisAPI.ragGetAnalysis(id);
       if (inspectedFileRef.current !== id) return;
@@ -275,6 +319,16 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
         loading: false,
         error: null,
       });
+      try {
+        const lookup = await analysisAPI.lookupSubmissionByAnalysis(id);
+        if (inspectedFileRef.current !== id) return;
+        setSubmissionId(lookup.submission_id);
+        const fb = await analysisAPI.listSubmissionFeedback(lookup.submission_id);
+        if (inspectedFileRef.current !== id) return;
+        setFeedbacks(fb);
+      } catch {
+        // lookup or feedback fetch is best-effort
+      }
     } catch {
       if (inspectedFileRef.current !== id) return;
       setInspectedFile({
@@ -287,6 +341,21 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
       });
     }
   }, []);
+
+  const addComment = useCallback(async () => {
+    if (!submissionId || !commentText.trim() || commentLine === null) return;
+    setSubmittingComment(true);
+    try {
+      const fb = await analysisAPI.seniorAddFeedback(submissionId, commentLine, commentText.trim());
+      setFeedbacks(prev => [...prev, fb]);
+      setCommentText('');
+      setCommentLine(null);
+      onShowToast?.('Feedback added.', 'success');
+    } catch {
+      onShowToast?.('Failed to add feedback.', 'error');
+    }
+    setSubmittingComment(false);
+  }, [submissionId, commentLine, commentText, onShowToast]);
 
   const loadHistory = async (currentSearch: string) => {
     setLoading(true);
@@ -514,7 +583,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                   </span>
                 </button>
 
-                {expandedFolders.has(group.name) && group.tree.map(node => (
+                {expandedFolders.has(group.name) && group.tree.map((node, i, arr) => (
                   <HistoryTreeNode
                     key={node.file?.analysis_id || node.name}
                     node={node}
@@ -526,6 +595,8 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                     onNavigateToChat={onNavigateToChat}
                     onInspectFile={handleInspectFile}
                     healthColor={healthColor}
+                    connectorPrefix=""
+                    isLast={i === arr.length - 1}
                   />
                 ))}
               </div>
@@ -572,15 +643,133 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                   <div className="h-full flex items-center justify-center text-amber-300 text-xs font-mono">
                     {inspectedFile.error}
                   </div>
-                ) : (
-                  <div className="h-full">
-                    <CodeViewer
-                      source={inspectedFile.source_content}
-                      issues={inspectedFile.issues}
-                      filename={inspectedFile.filename}
-                    />
-                  </div>
-                )}
+                ) : (() => {
+                  const lines = inspectedFile.source_content.split('\n');
+                  const lineIssues = new Map<number, Issue[]>();
+                  inspectedFile.issues.forEach(iss => {
+                    const ln = iss.line_start || iss.line || 1;
+                    if (!lineIssues.has(ln)) lineIssues.set(ln, []);
+                    lineIssues.get(ln)!.push(iss);
+                  });
+                  const lineFeedbacks = new Map<number, FeedbackItem[]>();
+                  feedbacks.forEach(fb => {
+                    if (!lineFeedbacks.has(fb.line_start)) lineFeedbacks.set(fb.line_start, []);
+                    lineFeedbacks.get(fb.line_start)!.push(fb);
+                  });
+                  const isSenior = currentUser.role === 'senior';
+                  return (
+                    <div className="h-full overflow-auto font-mono text-[13px] leading-relaxed">
+                      <table className="w-full border-collapse">
+                        <tbody>
+                          {lines.map((lineContent, idx) => {
+                            const lineNum = idx + 1;
+                            const issues = lineIssues.get(lineNum);
+                            const fbList = lineFeedbacks.get(lineNum);
+                            const isCommenting = commentLine === lineNum;
+                            return (
+                              <Fragment key={lineNum}>
+                                <tr
+                                  className={`group ${issues ? 'bg-rose-500/[0.02]' : ''} ${isCommenting ? 'bg-cyan-500/[0.03]' : ''}`}
+                                >
+                                  <td
+                                    onClick={() => {
+                                      if (!isSenior) return;
+                                      setCommentLine(isCommenting ? null : lineNum);
+                                      setCommentText('');
+                                    }}
+                                    className={`w-12 text-right px-3 py-0 select-none text-zinc-600 text-[11px] border-r-2 ${
+                                      issues ? 'border-rose-500/30 text-rose-400/60' : 'border-white/[0.03]'
+                                    } ${isSenior ? 'cursor-pointer hover:text-cyan-400' : ''}`}
+                                  >
+                                    {lineNum}
+                                  </td>
+                                  <td className="px-4 py-0 text-zinc-300 whitespace-pre-wrap min-w-0 break-all">
+                                    <div className="flex items-start gap-2">
+                                      <span className="flex-1">{lineContent || ' '}</span>
+                                      {isSenior && (
+                                        <span
+                                          onClick={() => {
+                                            setCommentLine(isCommenting ? null : lineNum);
+                                            setCommentText('');
+                                          }}
+                                          className={`opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0 mt-0.5 ${
+                                            isCommenting ? 'opacity-100' : ''
+                                          }`}
+                                          title="Add inline comment"
+                                        >
+                                          <MessageSquare size={12} className="text-cyan-400 hover:text-cyan-300" />
+                                        </span>
+                                      )}
+                                    </div>
+                                    {issues && issues.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-0.5 mb-0.5">
+                                        {issues.map(iss => (
+                                          <span
+                                            key={iss.id}
+                                            className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300/70 font-mono uppercase tracking-wider"
+                                          >
+                                            {iss.type}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isCommenting && (
+                                  <tr>
+                                    <td colSpan={2} className="px-4 pb-2">
+                                      <div className="flex gap-2 items-start">
+                                        <textarea
+                                          autoFocus
+                                          value={commentText}
+                                          onChange={e => setCommentText(e.target.value)}
+                                          placeholder="Write a comment..."
+                                          className="flex-1 bg-zinc-900/60 border border-white/[0.06] rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-cyan-400/40 resize-none"
+                                          rows={2}
+                                        />
+                                        <button
+                                          onClick={() => { setCommentLine(null); setCommentText(''); }}
+                                          className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-zinc-300 border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={addComment}
+                                          disabled={!commentText.trim() || submittingComment}
+                                          className="px-3 py-1.5 rounded-lg text-[10px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-500/20 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                        >
+                                          {submittingComment ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+                                          Send
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                                {fbList && fbList.length > 0 && (
+                                  <tr>
+                                    <td colSpan={2} className="px-4 pb-1">
+                                      {fbList.map(fb => (
+                                        <div
+                                          key={fb.id}
+                                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/[0.04] border border-blue-500/[0.06] mb-1 last:mb-0"
+                                        >
+                                          <span className="text-blue-300 font-semibold text-[10px]">
+                                            {fb.reviewer_username || 'Reviewer'}:
+                                          </span>{' '}
+                                          <span className="text-zinc-300">{fb.comment}</span>
+                                        </div>
+                                      ))}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           </motion.div>

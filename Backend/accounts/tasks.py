@@ -298,7 +298,15 @@ def cleanup_temp_git_dirs():
 
 def _notify_user(user_id: int, message: dict) -> None:
     try:
-        async_to_sync(get_channel_layer().group_send)(f'notifications_user_{user_id}', message)
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(f'notifications_user_{user_id}', message)
+        # Also notify all senior users so the senior UI stays in sync
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        for senior in User.objects.filter(role='senior').iterator():
+            async_to_sync(channel_layer.group_send)(
+                f'notifications_user_{senior.id}', message,
+            )
     except Exception:
         logger.warning('Failed to notify user %d', user_id, exc_info=True)
 
@@ -335,7 +343,10 @@ def analyze_junior_submission(self, submission_id: int):
         data = resp.json()
         submission.result = data.get('analysis', data)
         submission.status = 'done'
-        submission.save(update_fields=['result', 'status'])
+        doc_id = data.get('document_id')
+        if doc_id:
+            submission.rag_document_id = doc_id
+        submission.save(update_fields=['result', 'status', 'rag_document_id'])
         _notify_user(user.id, {
             'type': 'junior.analysis_complete',
             'submission_id': submission.id,

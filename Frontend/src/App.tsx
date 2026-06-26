@@ -15,6 +15,7 @@ import SubmissionsReviewPanel from './components/tabs/SubmissionsReviewPanel';
 import TeamChatTab from './components/tabs/TeamChatTab';
 import SettingsTab from './components/tabs/SettingsTab';
 import AIInspectorTab from './components/tabs/AIInspectorTab';
+import AnalyzerTab from './components/tabs/AnalyzerTab';
 import Toast from './components/ui/Toast';
 
 export default function App() {
@@ -58,7 +59,7 @@ export default function App() {
 
   const handleNavigateToWorkspace = useCallback((analysisId: string, filename: string, scanFolder?: string, onNavigate?: (tab: string) => void) => {
     setViewTarget({ analysisId, filename, scanFolder });
-    onNavigate?.('junior');
+    onNavigate?.('workspace');
   }, [setViewTarget]);
 
   // Hydrate history from backend once dashboard is active
@@ -66,12 +67,23 @@ export default function App() {
     if (screen !== 'dashboard') return;
     (async () => {
       try {
-        const result = await analysisAPI.ragHistory(50);
-        const store = useAnalysisStore.getState();
-        if (!result.items || result.items.length === 0) {
-          return;
+        const PAGE_SIZE = 50;
+        const first = await analysisAPI.analysisHistory(PAGE_SIZE);
+        let allItems = first.items || [];
+        const total = first.total || 0;
+        if (total > PAGE_SIZE) {
+          const pages = Math.ceil(total / PAGE_SIZE);
+          const promises = [];
+          for (let p = 1; p < pages; p++) {
+            promises.push(analysisAPI.analysisHistory(PAGE_SIZE, p * PAGE_SIZE));
+          }
+          const extras = await Promise.all(promises);
+          for (const r of extras) {
+            allItems = allItems.concat(r.items);
+          }
         }
-        for (const item of result.items) {
+        const store = useAnalysisStore.getState();
+        for (const item of allItems) {
           store.addHistoryReport({
             document_id: item.analysis_id,
             filename: item.filename,
@@ -87,6 +99,7 @@ export default function App() {
             scan_folder: item.scan_folder,
             scan_type: item.scan_type || 'single',
             scan_id: item.scan_id || item.analysis_id,
+            _source_content: item.source_content || '',
           } as AnalysisResult);
         }
       } catch {
@@ -159,6 +172,7 @@ export default function App() {
                     {activeTab === 'history' && (
                       <HistoryTab
                         key="history"
+                        currentUser={currentUser}
                         onNavigateToChat={(docId, filename) => {
                           setChatTarget({ docId, filename });
                         }}
@@ -220,6 +234,14 @@ export default function App() {
                         key="admin"
                         currentUser={currentUser}
                         onShowToast={showToast}
+                      />
+                    )}
+
+                    {activeTab === 'workspace' && (
+                      <AnalyzerTab
+                        key="workspace"
+                        onNavigateToChat={(docId, filename) => setChatTarget({ docId, filename })}
+                        isActive={true}
                       />
                     )}
                   </AnimatePresence>

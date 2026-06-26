@@ -95,7 +95,8 @@ export const analysisAPI = {
       const detail = await readErrorDetail(response, `Failed to fetch analysis (HTTP ${response.status})`);
       throw new Error(detail);
     }
-    return response.json();
+    const json = await response.json();
+    return { ...json, _source_content: json.source_content || '' };
   },
 
   // RAG: Get all analyses for a scan folder
@@ -135,6 +136,7 @@ export const analysisAPI = {
       created_at: string;
       scan_folder?: string;
       scan_type?: string;
+      source_content?: string;
     }>;
     total: number;
   }> => {
@@ -160,6 +162,7 @@ export const analysisAPI = {
       health_score: number;
       total_issues: number;
       created_at: string;
+      source_content?: string;
     }>;
     count: number;
   }> => {
@@ -333,7 +336,7 @@ export const analysisAPI = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ scan_folder: scanFolder, question, history }),
+      body: JSON.stringify({ scan_folder: scanFolder, question, history, force_sync_llm: true }),
     });
     if (response.status === 401) {
       throw new Error('Your session is invalid or expired. Please sign in again and complete MFA before chatting.');
@@ -517,7 +520,9 @@ export const analysisAPI = {
     const token_ = await getAccessToken();
     const formData = new FormData();
     for (const f of files) {
-      formData.append('files', f, f.webkitRelativePath || f.name);
+      const relPath = f.webkitRelativePath || f.name;
+      formData.append('paths', relPath);
+      formData.append('files', f);
     }
     if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`/api/auth/junior/batch-upload/`, {
@@ -651,6 +656,16 @@ export const analysisAPI = {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch submission feedback');
+    return response.json();
+  },
+
+  // Lookup junior submission by RAG analysis_id
+  lookupSubmissionByAnalysis: async (analysisId: string): Promise<{ submission_id: number; filename: string }> => {
+    const token_ = await getAccessToken();
+    const response = await fetch(`/api/auth/submission-by-analysis/${analysisId}/`, {
+      headers: { Authorization: `Bearer ${token_}` },
+    });
+    if (!response.ok) throw new Error('Submission not found for this analysis');
     return response.json();
   },
 

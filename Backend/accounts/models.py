@@ -134,6 +134,7 @@ class JuniorSubmission(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     scheduled_at = models.DateTimeField(blank=True, null=True, db_index=True)
     timeout_seconds = models.IntegerField(default=60)
+    rag_document_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

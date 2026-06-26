@@ -93,6 +93,13 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
     async def nightly_report_ready(self, event):
         await self.send_json({'type': 'nightly_report_ready'})
 
+    async def junior_analysis_started(self, event):
+        await self.send_json({
+            'type': 'submission_update',
+            'submission_id': event.get('submission_id'),
+            'file_name': event.get('file_name'),
+        })
+
     async def junior_analysis_complete(self, event):
         await self.send_json({
             'type': 'submission_update',

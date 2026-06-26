@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { MessageSquare, Send, Folder, Trash2, Bot, User } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { MessageSquare, Send, Folder, Trash2, Bot, User, AlertCircle } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { User as UserType } from '../../types';
 
@@ -20,6 +20,7 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const loadedRef = useRef(false);
 
@@ -30,9 +31,9 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
       try {
         let hist;
         try {
-          hist = await analysisAPI.analysisHistory(500);
-        } catch {
           hist = await analysisAPI.ragHistory(500);
+        } catch {
+          hist = await analysisAPI.analysisHistory(500);
         }
         const folderSet = new Set<string>();
         for (const item of hist.items) {
@@ -53,6 +54,7 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
 
   const handleFolderChange = (folder: string) => {
     setSelectedFolder(folder);
+    setError(null);
     setMessages([{
       role: 'assistant',
       content: `Folder "${folder}" selected. I have access to all analyzed code in this folder. Ask me anything about the code, dead code issues, or suggestions for improvement.`,
@@ -62,10 +64,12 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
   const handleClear = () => {
     setMessages([]);
     setInputText('');
+    setError(null);
   };
 
   const triggerStreamingResponse = async (userPrompt: string) => {
     if (!selectedFolder) return;
+    setError(null);
     setIsTyping(true);
 
     setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
@@ -74,7 +78,9 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
     const chatHistory = messages.map(m => ({ role: m.role, content: m.content }));
 
     try {
+      let chunkCount = 0;
       for await (const chunk of analysisAPI.ragFolderChat(selectedFolder, userPrompt, chatHistory)) {
+        chunkCount++;
         setMessages(prev => {
           const list = [...prev];
           if (list.length > 0) {
@@ -83,6 +89,9 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
           }
           return list;
         });
+      }
+      if (chunkCount === 0) {
+        setError('The analysis returned no response. The AI model may be unavailable. Please try again.');
       }
     } catch {
       setMessages(prev => {
@@ -95,6 +104,7 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
         }
         return list;
       });
+      setError('Request failed. Check your connection and try again.');
     } finally {
       setIsTyping(false);
     }
@@ -213,6 +223,21 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Error banner */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-400/20 text-[10px] font-mono text-rose-300"
+                  >
+                    <AlertCircle size={12} className="flex-shrink-0" />
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Input */}
               <form onSubmit={handleSend} className="flex gap-2">
