@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
+import CodeViewer from '../CodeViewer';
+import type { Issue } from '../../types';
 
 interface HistoryTabProps {
   key?: string;
@@ -120,12 +122,13 @@ interface HistoryTreeNodeProps {
   onToggle: (path: string, depth: number) => void;
   onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
   onNavigateToChat: (docId: string, filename: string) => void;
+  onInspectFile: (item: HistoryItem) => void;
   healthColor: (score: number) => string;
 }
 
 function HistoryTreeNode({
   node, depth, parentPath, expandedTreePaths, onToggle,
-  onNavigateToWorkspace, onNavigateToChat, healthColor,
+  onNavigateToWorkspace, onNavigateToChat, onInspectFile, healthColor,
 }: HistoryTreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
   const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
@@ -139,7 +142,7 @@ function HistoryTreeNode({
       >
         <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
         <button
-          onClick={() => onNavigateToWorkspace(item.analysis_id, item.filename, item.scan_folder)}
+          onClick={() => onInspectFile(item)}
           className="text-xs font-mono text-zinc-300 hover:text-cyan-400 truncate max-w-[160px] text-left cursor-pointer transition-colors"
           title={item.filename}
         >
@@ -168,10 +171,7 @@ function HistoryTreeNode({
   return (
     <div>
       <button
-        onClick={() => {
-          const first = findFirstFile(node);
-          if (first) onNavigateToWorkspace(first.analysis_id, first.filename, first.scan_folder);
-        }}
+        onClick={() => onToggle(fullPath, depth)}
         className="flex items-center gap-1.5 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
         style={{ paddingLeft: `${3.5 + depth * 1.5}rem` }}
       >
@@ -208,6 +208,7 @@ function HistoryTreeNode({
                 onToggle={onToggle}
                 onNavigateToWorkspace={onNavigateToWorkspace}
                 onNavigateToChat={onNavigateToChat}
+                onInspectFile={onInspectFile}
                 healthColor={healthColor}
               />
             ))}
@@ -226,17 +227,105 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['Single Files']));
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
+  const [inspectedFile, setInspectedFile] = useState<{
+    id: string;
+    filename: string;
+    source_content: string;
+    issues: Issue[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const inspectedFileRef = useRef<string | null>(null);
+
+  const handleInspectFile = useCallback(async (item: HistoryItem) => {
+    const id = item.analysis_id;
+    inspectedFileRef.current = id;
+    setInspectedFile({
+      id,
+      filename: item.filename,
+      source_content: '',
+      issues: [],
+      loading: true,
+      error: null,
+    });
+    try {
+      const data = await analysisAPI.ragGetAnalysis(id);
+      if (inspectedFileRef.current !== id) return;
+      const rawIssues: any[] = data.analysis?.issues || [];
+      const normalizedIssues: Issue[] = rawIssues.map(i => ({
+        id: i.id || '',
+        type: i.type || i.category || 'unknown',
+        name: i.name || null,
+        file: i.file || data.filename,
+        line: i.line || i.line_start || 1,
+        line_start: i.line_start || i.line || 1,
+        line_end: i.line_end,
+        description: i.description || '',
+        code_snippet: i.code_snippet || '',
+        suggestion: i.suggestion || '',
+        severity: i.severity || 'medium',
+        confidence: i.confidence ?? 0,
+        safe_to_remove: i.safe_to_remove,
+      }));
+      setInspectedFile({
+        id,
+        filename: data.filename,
+        source_content: data._source_content || '',
+        issues: normalizedIssues,
+        loading: false,
+        error: null,
+      });
+    } catch {
+      if (inspectedFileRef.current !== id) return;
+      setInspectedFile({
+        id,
+        filename: item.filename,
+        source_content: '',
+        issues: [],
+        loading: false,
+        error: 'Failed to load file details. The source may no longer be available.',
+      });
+    }
+  }, []);
 
   const loadHistory = async (currentSearch: string) => {
     setLoading(true);
     try {
-      const result = await analysisAPI.analysisHistory(MAX_ITEMS, 0, currentSearch);
-      setItems(result.items);
+      const PAGE_SIZE = MAX_ITEMS;
+      const first = await analysisAPI.ragHistory(PAGE_SIZE, 0, currentSearch);
+      const total = first.total || 0;
+      let allItems = [...first.items];
+      if (total > PAGE_SIZE) {
+        const pages = Math.ceil(total / PAGE_SIZE);
+        const promises = [];
+        for (let p = 1; p < pages; p++) {
+          promises.push(analysisAPI.ragHistory(PAGE_SIZE, p * PAGE_SIZE, currentSearch));
+        }
+        const extras = await Promise.all(promises);
+        for (const r of extras) {
+          allItems = allItems.concat(r.items);
+        }
+      }
+      setItems(allItems);
       setHasLoadedOnce(true);
     } catch {
       try {
-        const result = await analysisAPI.ragHistory(MAX_ITEMS, 0, currentSearch);
-        setItems(result.items);
+        const PAGE_SIZE = MAX_ITEMS;
+        const first = await analysisAPI.analysisHistory(PAGE_SIZE, 0, currentSearch);
+        const total = first.total || 0;
+        let allItems = [...first.items];
+        if (total > PAGE_SIZE) {
+          const pages = Math.ceil(total / PAGE_SIZE);
+          const promises = [];
+          for (let p = 1; p < pages; p++) {
+            promises.push(analysisAPI.analysisHistory(PAGE_SIZE, p * PAGE_SIZE, currentSearch));
+          }
+          const extras = await Promise.all(promises);
+          for (const r of extras) {
+            allItems = allItems.concat(r.items);
+          }
+        }
+        setItems(allItems);
         setHasLoadedOnce(true);
       } catch {
         onShowToast('Unable to load history. Refresh the page and try again.', 'error');
@@ -435,6 +524,7 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
                     onToggle={toggleTreePath}
                     onNavigateToWorkspace={onNavigateToWorkspace}
                     onNavigateToChat={onNavigateToChat}
+                    onInspectFile={handleInspectFile}
                     healthColor={healthColor}
                   />
                 ))}
@@ -443,6 +533,59 @@ export default function HistoryTab({ onNavigateToChat, onNavigateToWorkspace, on
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {inspectedFile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setInspectedFile(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={e => e.stopPropagation()}
+              className="w-[90vw] h-[85vh] bg-[#0a0a0d] border border-white/[0.04] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.04]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileCode size={14} className="text-cyan-400 flex-shrink-0" />
+                  <span className="text-sm font-mono text-zinc-200 truncate">{inspectedFile.filename}</span>
+                </div>
+                <button
+                  onClick={() => setInspectedFile(null)}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.04] transition-all cursor-pointer flex-shrink-0"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 p-4">
+                {inspectedFile.loading ? (
+                  <div className="h-full flex items-center justify-center text-zinc-500">
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                    Loading file...
+                  </div>
+                ) : inspectedFile.error ? (
+                  <div className="h-full flex items-center justify-center text-amber-300 text-xs font-mono">
+                    {inspectedFile.error}
+                  </div>
+                ) : (
+                  <div className="h-full">
+                    <CodeViewer
+                      source={inspectedFile.source_content}
+                      issues={inspectedFile.issues}
+                      filename={inspectedFile.filename}
+                    />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -147,18 +147,29 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     setLoading(false);
   }, [onShowToast]);
 
+  // Global schedule (must be declared before WebSocket effect)
+  const loadGlobalSchedule = useCallback(async () => {
+    try {
+      const cfg = await analysisAPI.getGlobalSchedule();
+      setGlobalScheduleExisting(cfg.scheduled_at);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     connect(msg => {
       if (msg.type === 'submission_update' || msg.type === 'junior.analysis_started' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') {
         load();
+        loadGlobalSchedule();
         if (msg.submission_id === selectedIdRef.current && msg.result) {
           setDetail(prev => prev ? { ...prev, status: 'done', result: msg.result } : prev);
         }
       }
     });
-  }, [connect, load]);
+  }, [connect, load, loadGlobalSchedule]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -269,16 +280,6 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     setScheduleOpen(true);
   };
 
-  // Global schedule
-  const loadGlobalSchedule = useCallback(async () => {
-    try {
-      const cfg = await analysisAPI.getGlobalSchedule();
-      setGlobalScheduleExisting(cfg.scheduled_at);
-    } catch {
-      // silent
-    }
-  }, []);
-
   useEffect(() => { loadGlobalSchedule(); }, [loadGlobalSchedule]);
 
   const handleSetGlobalSchedule = async () => {
@@ -298,6 +299,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   };
 
   const handleCancelGlobalSchedule = async () => {
+    if (!window.confirm('Cancel this global schedule? Existing pending submissions will not be auto-analysed.')) return;
     setSchedulerProcessing(true);
     try {
       await analysisAPI.cancelGlobalSchedule();
@@ -386,17 +388,25 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
           className={`w-full p-2.5 rounded-xl border transition-all cursor-pointer ${
             selectedId === s.id
               ? 'bg-white/[0.03] border-white/[0.1]'
-              : 'bg-white/[0.01] border-white/[0.04] hover:bg-white/[0.02] hover:border-white/[0.08]'
+              : s.status === 'failed'
+                ? 'bg-rose-500/5 border-rose-400/20 hover:bg-rose-500/10 hover:border-rose-400/30'
+                : 'bg-white/[0.01] border-white/[0.04] hover:bg-white/[0.02] hover:border-white/[0.08]'
           }`}
           style={{ marginLeft: `${depth * 0.35}rem` }}
           onClick={() => loadDetail(s.id)}
         >
           <div className="flex items-center gap-1">
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-mono text-zinc-200 font-medium truncate leading-tight">
+              <div className={`text-[10px] font-mono font-medium truncate leading-tight ${s.status === 'failed' ? 'text-rose-400' : 'text-zinc-200'}`}>
                 {node.name}
               </div>
             </div>
+            {s.status === 'failed' && (
+              <span className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[7px] font-mono text-rose-300 bg-rose-500/10 border border-rose-400/20 flex-shrink-0">
+                <XCircle size={7} />
+                Failed
+              </span>
+            )}
             {s.status === 'analysing' && (
               <Loader2 size={9} className="animate-spin text-cyan-400 flex-shrink-0" />
             )}

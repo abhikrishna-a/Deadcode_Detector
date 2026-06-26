@@ -77,7 +77,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename, scrollTo
           const isHovered = hoveredLine === lineNum;
 
           // Color tags
-          const hasUnused = listIssues.some(i => i.type.includes('unused') || i.type === 'unreachable_code');
+          const hasUnused = listIssues.some(i => i.type && (i.type.includes('unused') || i.type === 'unreachable_code'));
 
           let gutterBorder = 'border-transparent';
           let lineBg = 'transparent';
