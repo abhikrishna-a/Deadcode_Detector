@@ -660,7 +660,8 @@ async def rag_get_analyses_by_folder(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    docs = await get_documents_by_scan_folder(db, user["user_id"], scan_folder)
+    uid = None if user.get("role") == "senior" else user["user_id"]
+    docs = await get_documents_by_scan_folder(db, scan_folder, user_id=uid)
     return {
         "scan_folder": scan_folder,
         "items": docs,

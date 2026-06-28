@@ -10,6 +10,7 @@ import DashboardShell from './components/DashboardShell';
 import OverviewTab from './components/tabs/OverviewTab';
 import AdminTab from './components/tabs/AdminTab';
 import HistoryTab from './components/tabs/HistoryTab';
+import SeniorHistoryTab from './components/tabs/SeniorHistoryTab';
 import JuniorTab from './components/tabs/JuniorTab';
 import SubmissionsReviewPanel from './components/tabs/SubmissionsReviewPanel';
 import TeamChatTab from './components/tabs/TeamChatTab';
@@ -169,7 +170,20 @@ export default function App() {
                       />
                     )}
 
-                    {activeTab === 'history' && (
+                    {activeTab === 'history' && currentUser.role === 'senior' && (
+                      <SeniorHistoryTab
+                        key="senior-history"
+                        currentUser={currentUser}
+                        onNavigateToChat={(docId, filename) => {
+                          setChatTarget({ docId, filename });
+                        }}
+                        onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
+                          handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
+                        }}
+                        onShowToast={showToast}
+                      />
+                    )}
+                    {activeTab === 'history' && currentUser.role !== 'senior' && (
                       <HistoryTab
                         key="history"
                         currentUser={currentUser}

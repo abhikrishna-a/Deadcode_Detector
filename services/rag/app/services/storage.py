@@ -322,18 +322,23 @@ async def get_document(
 
 async def get_documents_by_scan_folder(
     db: AsyncSession,
-    user_id: int,
     scan_folder: str,
+    user_id: int | None = None,
 ) -> list[dict]:
     if IS_SQLITE:
+        where = "scan_folder = :folder"
+        params = {"folder": scan_folder}
+        if user_id is not None:
+            where = "user_id = :uid AND scan_folder = :folder"
+            params["uid"] = user_id
         rows = (await db.execute(
-            text("""
+            text(f"""
                 SELECT id, filename, language, analysis_json, health_score, total_issues, created_at, source, scan_id
                 FROM analyses
-                WHERE user_id = :uid AND scan_folder = :folder
+                WHERE {where}
                 ORDER BY filename
             """),
-            {"uid": user_id, "folder": scan_folder},
+            params,
         )).fetchall()
         return [
             {
@@ -347,16 +352,21 @@ async def get_documents_by_scan_folder(
             for r in rows
         ]
     else:
+        where = "scan_folder = :folder"
+        params = {"folder": scan_folder}
+        if user_id is not None:
+            where = "user_id = :uid AND scan_folder = :folder"
+            params["uid"] = user_id
         rows = (await db.execute(
-            text("""
+            text(f"""
                 SELECT id, filename, language, analysis, created_at, source, scan_id,
                        COALESCE((analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((analysis->'summary'->>'total_issues')::int, 0) AS total_issues
                 FROM rag_documents
-                WHERE user_id = :uid AND scan_folder = :folder
+                WHERE {where}
                 ORDER BY filename
             """),
-            {"uid": user_id, "folder": scan_folder},
+            params,
         )).fetchall()
         return [
             {

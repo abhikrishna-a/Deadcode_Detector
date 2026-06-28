@@ -839,15 +839,15 @@ class SeniorAnalysisHistoryView(APIView):
         for s in items:
             summary = (s.result or {}).get('summary', {})
             result_items.append({
-                'analysis_id': s.analysis_id or '',
+                'analysis_id': str(s.rag_document_id or s.analysis_id or ''),
                 'submission_id': s.id,
-                'filename': s.relative_path or s.filename,
+                'filename': f"{s.scan_folder}/{s.relative_path or s.filename}" if s.scan_folder else (s.relative_path or s.filename),
                 'language': s.language,
                 'health_score': summary.get('health_score', 100),
                 'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
                 'created_at': s.created_at.isoformat(),
                 'scan_folder': s.scan_folder or None,
-                'scan_type': 'folder' if s.scan_folder else 'single',
+                'scan_type': 'folder' if s.scan_folder else 'folder',
                 'source_content': s.file_content or '',
             })
 
