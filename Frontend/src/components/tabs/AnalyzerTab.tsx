@@ -11,7 +11,7 @@ import { AnalysisResult, Issue } from '../../types';
 import { GitManifest } from '../../api/types';
 import { analysisAPI } from '../../api/analysis';
 import { useAnalysisSocket } from '../../hooks/useAnalysisSocket';
-import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+import { TreeNodeData, buildFileTree, groupByTopLevelDir } from '../../lib/fileTree';
 import { useAnalysisStore } from '../../store/analysisStore';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
@@ -299,6 +299,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const [scanScope, setScanScope] = useState<'full' | 'subdir'>('full');
   const [selectedSubdir, setSelectedSubdir] = useState('');
   const [subdirDropdownOpen, setSubdirDropdownOpen] = useState(false);
+  const [expandedAppGroups, setExpandedAppGroups] = useState<Record<string, boolean>>({});
   const subdirButtonRef = useRef<HTMLButtonElement>(null);
   const pendingFilesRef = useRef<File[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -900,7 +901,13 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             : item.filename,
         }))
       : items;
-    return buildFileTree(processed);
+    const appGroups = groupByTopLevelDir(processed);
+    return {
+      appGroups: appGroups.map(ag => ({
+        appName: ag.appName,
+        tree: buildFileTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName),
+      })),
+    };
   }, [batchReportsList, batchErrorsList, currentFolderName]);
 
   const progressTree = useMemo(() => buildPathTree(progressFiles), [progressFiles]);
@@ -1175,25 +1182,57 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             </div>
 
             <div className="space-y-0.5">
-              {treeRoot.length === 0 ? (
+              {treeRoot.appGroups.length === 0 ? (
                 <div className="text-center py-8 text-neutral-600 font-mono text-[10px]">
                   No files scanned yet
                 </div>
               ) : (
-                treeRoot.map((node, i) => (
-                  <TreeNode
-                    key={i}
-                    node={node}
-                    depth={0}
-                    parentPath=""
-                    expandedFolders={expandedFolders}
-                    onToggle={toggleFolder}
-                    selectedFile={selectedFile}
-                    onSelectFile={(file) => { setSelectedFile(file); setSelectedFolder(null); }}
-                    onNavigateToChat={onNavigateToChat}
-                    currentFolderName={currentFolderName}
-                  />
-                ))
+                treeRoot.appGroups.map(ag => {
+                  const isAppExpanded = !!expandedAppGroups[ag.appName];
+                  return (
+                    <div key={ag.appName}>
+                      <div
+                        onClick={() => setExpandedAppGroups(prev => ({ ...prev, [ag.appName]: !prev[ag.appName] }))}
+                        className="flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
+                      >
+                        <ChevronRight
+                          size={10}
+                          className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isAppExpanded ? 'rotate-90' : ''}`}
+                        />
+                        <Folder size={12} className="text-amber-400 flex-shrink-0" />
+                        <span className="font-mono text-[11px] text-zinc-400 truncate group-hover:text-zinc-200 transition-colors">
+                          {ag.appName}/
+                        </span>
+                        <span className="font-mono text-[9px] text-zinc-600 ml-auto">{ag.tree.length} files</span>
+                      </div>
+                      <AnimatePresence initial={false}>
+                        {isAppExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden ml-2 border-l border-white/[0.03] pl-2 space-y-0.5"
+                          >
+                            {ag.tree.map((node, i) => (
+                              <TreeNode
+                                key={i}
+                                node={node}
+                                depth={0}
+                                parentPath=""
+                                expandedFolders={expandedFolders}
+                                onToggle={toggleFolder}
+                                selectedFile={selectedFile}
+                                onSelectFile={(file) => { setSelectedFile(file); setSelectedFolder(null); }}
+                                onNavigateToChat={onNavigateToChat}
+                                currentFolderName={currentFolderName}
+                              />
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

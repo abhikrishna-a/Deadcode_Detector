@@ -34,18 +34,20 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
     if (mode === 'mfa_setup' && preAuthToken && !mfaQRImage) {
       (async () => {
         setLoading(true);
         try {
           const response = await authAPI.setupMFA(preAuthToken);
-          setMfaQRImage(response.qr_code_image);
+          if (mounted) setMfaQRImage(response.qr_code_image);
         } catch {
-          showError('Unable to generate QR code. Please try again.');
+          if (mounted) showError('Unable to generate QR code. Please try again.');
         }
-        setLoading(false);
+        if (mounted) setLoading(false);
       })();
     }
+    return () => { mounted = false; };
   }, [mode, preAuthToken]);
 
   const showError = (msg: string) => {
@@ -70,6 +72,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         storeLogin(response);
         if (response.mfa_required) {
           setPreAuthToken(response.pre_auth_token);
+          setMfaQRImage('');
           setMode(response.is_mfa_enabled ? 'mfa_verify' : 'mfa_setup');
         } else {
           onSuccess?.();
@@ -352,7 +355,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => { setMode('login'); setResetSent(false); setErrorMsg(''); }}
+                onClick={() => { setMode('login'); setMfaQRImage(''); setResetSent(false); setErrorMsg(''); }}
                 className="text-xs text-zinc-400 hover:text-cyan-400 transition-colors cursor-pointer"
               >
                 Back to Sign In
@@ -372,14 +375,15 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
               <div className="bg-white p-3 rounded-xl inline-block shadow-inner mx-auto">
                 <img src={mfaQRImage} alt="MFA QR" className="w-[140px] h-[140px]" />
               </div>
+            ) : loading ? (
+              <div className="text-zinc-500 text-xs py-8">Loading...</div>
             ) : (
               <button
                 type="button"
                 onClick={handleMfaSetup}
-                disabled={loading}
-                className="px-6 py-3 bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 rounded-xl text-xs font-semibold hover:bg-cyan-400/20 transition-all cursor-pointer disabled:opacity-40"
+                className="px-6 py-3 bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 rounded-xl text-xs font-semibold hover:bg-cyan-400/20 transition-all cursor-pointer"
               >
-                {loading ? 'Generating...' : 'Generate QR Code'}
+                Generate QR Code
               </button>
             )}
 
@@ -401,7 +405,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
                     disabled={loading || mfaCode.length !== 6}
                     className="w-full py-2.5 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold text-xs rounded-xl hover:opacity-95 transition-all cursor-pointer disabled:opacity-40"
                   >
-                    {loading ? 'Verifying...' : 'Confirm & Activate'}
+                    {loading ? 'Verifying...' : 'Activate →'}
                   </button>
                 </div>
               </>
@@ -410,7 +414,7 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
             <div className="pt-4 text-center">
               <button
                 type="button"
-                onClick={() => setMode('login')}
+                onClick={() => { setMode('login'); setMfaQRImage(''); }}
                 className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer"
               >
                 Back to Sign In
@@ -447,8 +451,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
 
               <button
                 type="button"
-                onClick={() => setMode('login')}
-                className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+                onClick={() => { setMode('login'); setMfaQRImage(''); }}
+                className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer"
               >
                 Back to Sign In
               </button>

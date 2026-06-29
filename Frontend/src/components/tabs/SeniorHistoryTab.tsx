@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare, Send } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
+import { groupByTopLevelDir } from '../../lib/fileTree';
 import type { Issue, User } from '../../types';
 
 interface SeniorHistoryTabProps {
@@ -59,10 +60,13 @@ const healthColor = (score: number) => {
   return 'text-rose-400';
 };
 
-function buildHistoryTree(files: HistoryItem[]): HistoryTreeNode[] {
+function buildHistoryTree(files: HistoryItem[], basePath?: string): HistoryTreeNode[] {
   const root: HistoryTreeNode[] = [];
   for (const file of files) {
     let path = file.filename.replace(/\\/g, '/');
+    if (basePath && path.startsWith(basePath + '/')) {
+      path = path.slice(basePath.length + 1);
+    }
     const parts = path.split('/');
     let current = root;
     for (let i = 0; i < parts.length; i++) {
@@ -80,6 +84,16 @@ function buildHistoryTree(files: HistoryItem[]): HistoryTreeNode[] {
       }
     }
   }
+  const sortNodes = (nodes: HistoryTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      if (node.children.length > 0) sortNodes(node.children);
+    }
+  };
+  sortNodes(root);
   return root;
 }
 
@@ -144,7 +158,8 @@ function HistoryTreeNode({
   connectorPrefix = '', isLast = true,
 }: HistoryTreeNodeProps) {
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
-  const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+  const isExpanded = expandedTreePaths[fullPath] ?? false;
+
   const branch = isLast ? '└── ' : '├── ';
 
   if (!node.isDir && node.file) {
@@ -243,6 +258,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set([]));
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
+  const [expandedApps, setExpandedApps] = useState<Set<string>>(new Set([]));
   const [inspectedFile, setInspectedFile] = useState<{
     id: string;
     filename: string;
@@ -437,8 +453,17 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
 
   const toggleTreePath = (path: string, depth: number = 0) => {
     setExpandedTreePaths(prev => {
-      if (!(path in prev)) return { ...prev, [path]: !(depth < 1) };
+      if (!(path in prev)) return { ...prev, [path]: true };
       return { ...prev, [path]: !prev[path] };
+    });
+  };
+
+  const toggleAppGroup = (key: string) => {
+    setExpandedApps(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
   };
 
@@ -449,11 +474,18 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
 
   const tree = useMemo(() => {
     const groups = buildTree(filtered);
-    return groups.map(g => ({
-      ...g,
-      scanFolder: g.files[0]?.scan_folder,
-      tree: buildHistoryTree(g.files),
-    }));
+    return groups.map(g => {
+      const appGroups = groupByTopLevelDir(g.files);
+      return {
+        ...g,
+        scanFolder: g.files[0]?.scan_folder,
+        appGroups: appGroups.map(ag => ({
+          appName: ag.appName,
+          files: ag.items,
+          tree: buildHistoryTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName),
+        })),
+      };
+    });
   }, [filtered]);
 
   return (
@@ -578,21 +610,41 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
                   </span>
                 </button>
 
-                {expandedFolders.has(group.name) && group.tree.map((node, i, arr) => (
-                  <HistoryTreeNode
-                    key={node.file?.analysis_id || node.name}
-                    node={node}
-                    depth={0}
-                    parentPath=""
-                    expandedTreePaths={expandedTreePaths}
-                    onToggle={toggleTreePath}
-                    onNavigateToWorkspace={onNavigateToWorkspace}
-                    onNavigateToChat={onNavigateToChat}
-                    onInspectFile={handleInspectFile}
-                    healthColor={healthColor}
-                    connectorPrefix=""
-                    isLast={i === arr.length - 1}
-                  />
+                {expandedFolders.has(group.name) && group.appGroups.map((appGroup, agIdx, agArr) => (
+                  <div key={appGroup.appName}>
+                    <button
+                      onClick={() => toggleAppGroup(`${group.name}:${appGroup.appName}`)}
+                      className="flex items-center gap-1.5 w-full px-6 py-2 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
+                    >
+                      <ChevronRight
+                        size={10}
+                        className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${expandedApps.has(`${group.name}:${appGroup.appName}`) ? 'rotate-90' : ''}`}
+                      />
+                      {expandedApps.has(`${group.name}:${appGroup.appName}`) ? (
+                        <FolderOpen size={12} className="text-amber-400 flex-shrink-0" />
+                      ) : (
+                        <Folder size={12} className="text-amber-400 flex-shrink-0" />
+                      )}
+                      <span className="text-xs font-mono text-zinc-400 truncate">{appGroup.appName}/</span>
+                      <span className="text-[9px] font-mono text-zinc-600">({appGroup.files.length})</span>
+                    </button>
+                    {expandedApps.has(`${group.name}:${appGroup.appName}`) && appGroup.tree.map((node, i, arr) => (
+                      <HistoryTreeNode
+                        key={node.file?.analysis_id || node.name}
+                        node={node}
+                        depth={0}
+                        parentPath=""
+                        expandedTreePaths={expandedTreePaths}
+                        onToggle={toggleTreePath}
+                        onNavigateToWorkspace={onNavigateToWorkspace}
+                        onNavigateToChat={onNavigateToChat}
+                        onInspectFile={handleInspectFile}
+                        healthColor={healthColor}
+                        connectorPrefix=""
+                        isLast={i === arr.length - 1}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
             ))

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, PieChartIcon, ExternalLink, FileCode, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AnalysisResult } from '../../types';
-import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+import { TreeNodeData, buildFileTree, groupByTopLevelDir } from '../../lib/fileTree';
 import CodeViewer from '../CodeViewer';
 import { analysisAPI } from '../../api/analysis';
 
@@ -111,6 +111,7 @@ interface OverviewTabProps {
 
 export default function OverviewTab({ history, onNavigateToWorkspace }: OverviewTabProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
   const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
   const [selectedFileLoading, setSelectedFileLoading] = useState(false);
   const [selectedFileError, setSelectedFileError] = useState<string | null>(null);
@@ -193,6 +194,13 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
     setExpandedFolders(prev => ({
       ...prev,
       [folderName]: !prev[folderName]
+    }));
+  };
+
+  const toggleAppGroup = (key: string) => {
+    setExpandedApps(prev => ({
+      ...prev,
+      [key]: !prev[key]
     }));
   };
 
@@ -395,7 +403,14 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
             {(Object.entries(groupedScans) as [string, AnalysisResult[]][]).map(([folderName, files]) => {
               const isExpanded = !!expandedFolders[folderName];
               const issuesInFolder = files.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
-              const treeNodes = buildFileTree(files, folderName === '(root)' ? undefined : folderName);
+              const stripPrefix = folderName === '(root)' ? undefined : folderName;
+              const processedFiles = stripPrefix
+                ? files.map(f => ({
+                    ...f,
+                    filename: f.filename.startsWith(stripPrefix + '/') ? f.filename.slice(stripPrefix.length + 1) : f.filename,
+                  }))
+                : files;
+              const appGroups = groupByTopLevelDir(processedFiles);
               return (
                 <div key={folderName}>
                   <div
@@ -423,16 +438,53 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
                         exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden"
                       >
-                        {treeNodes.map((node, ni, arr) => (
-                          <TreeNode
-                            key={ni}
-                            node={node}
-                            depth={0}
-                            onClick={(res) => handleSelectFile(res)}
-                            connectorPrefix=""
-                            isLast={ni === arr.length - 1}
-                          />
-                        ))}
+                        {appGroups.map((ag, agIdx) => {
+                          const appKey = `${folderName}:${ag.appName}`;
+                          const isAppExpanded = !!expandedApps[appKey];
+                          const treeNodes = buildFileTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName);
+                          const appIssues = ag.items.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
+                          return (
+                            <div key={ag.appName}>
+                              <div
+                                onClick={() => toggleAppGroup(appKey)}
+                                className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
+                              >
+                                <ChevronRight
+                                  size={10}
+                                  className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isAppExpanded ? 'rotate-90' : ''}`}
+                                />
+                                <Folder size={12} className="text-amber-400 flex-shrink-0" />
+                                <span className="font-mono text-[11px] text-zinc-400 truncate group-hover:text-zinc-200 transition-colors">
+                                  {ag.appName}/
+                                </span>
+                                <span className="font-mono text-[9px] text-zinc-600">
+                                  {ag.items.length} {appIssues > 0 ? `• ${appIssues} issues` : '• clean'}
+                                </span>
+                              </div>
+                              <AnimatePresence initial={false}>
+                                {isAppExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden pl-3"
+                                  >
+                                    {treeNodes.map((node, ni, arr) => (
+                                      <TreeNode
+                                        key={ni}
+                                        node={node}
+                                        depth={0}
+                                        onClick={(res) => handleSelectFile(res)}
+                                        connectorPrefix=""
+                                        isLast={ni === arr.length - 1}
+                                      />
+                                    ))}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
                       </motion.div>
                     )}
                   </AnimatePresence>

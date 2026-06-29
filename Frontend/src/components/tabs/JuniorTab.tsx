@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
 import { analysisAPI } from '../../api/analysis';
+import { groupByTopLevelDir } from '../../lib/fileTree';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
 import { timeAgo } from '../../lib/time';
 import HistoryTab from './HistoryTab';
@@ -493,7 +494,21 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children = buildPathTree(items, (r: any) => r.filename, (r: any, path) => r.analysis_id || path);
+      const stripFolder = folder.replace(/\\/g, '/').replace(/\/?$/, '');
+      const processed = items.map(r => ({
+        ...r,
+        filename: r.filename.startsWith(stripFolder + '/') ? r.filename.slice(stripFolder.length + 1) : r.filename,
+      }));
+      const appGroups = groupByTopLevelDir(processed);
+      const children: TreeNode[] = [];
+      for (const ag of appGroups) {
+        const prefix = ag.appName === 'Project Root' ? '' : ag.appName + '/';
+        const agChildren = buildPathTree(ag.items, (r: any) => {
+          const f = r.filename.replace(/\\/g, '/');
+          return prefix && f.startsWith(prefix) ? f.slice(prefix.length) : f;
+        }, (r: any, path) => r.analysis_id || path);
+        children.push({ name: ag.appName, isDir: true, children: agChildren, key: `${folder}:${ag.appName}`, item: { count: ag.items.length } });
+      }
       nodes.push({ name: folderName, isDir: true, children, key: folder, item: { folder } });
     }
     nodes.sort((a, b) => a.name.localeCompare(b.name));
@@ -511,11 +526,28 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children = buildPathTree(items, (s: any) => s.filename, (s: any, path) => String(s.id || path));
-      const hasActive = items.some(s => s.status === 'pending_review' || s.status === 'analysing');
+      const stripFolder = folder.replace(/\\/g, '/').replace(/\/?$/, '');
+      const processed = items.map(s => ({
+        ...s,
+        filename: s.filename.startsWith(stripFolder + '/') ? s.filename.slice(stripFolder.length + 1) : s.filename,
+      }));
+      const appGroups = groupByTopLevelDir(processed);
+      const children: TreeNode[] = [];
+      let totalCount = 0;
+      let hasActive = false;
+      for (const ag of appGroups) {
+        const prefix = ag.appName === 'Project Root' ? '' : ag.appName + '/';
+        const agChildren = buildPathTree(ag.items, (s: any) => {
+          const f = s.filename.replace(/\\/g, '/');
+          return prefix && f.startsWith(prefix) ? f.slice(prefix.length) : f;
+        }, (s: any, path) => String(s.id || path));
+        totalCount += ag.items.length;
+        if (ag.items.some((s: any) => s.status === 'pending_review' || s.status === 'analysing')) hasActive = true;
+        children.push({ name: ag.appName, isDir: true, children: agChildren, key: `${folder}:${ag.appName}`, item: { count: ag.items.length } });
+      }
       nodes.push({
         name: folderName, isDir: true, children, key: folder,
-        item: { count: items.length, hasActive },
+        item: { count: totalCount, hasActive },
       });
     }
     nodes.sort((a, b) => a.name.localeCompare(b.name));
@@ -533,9 +565,26 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     const nodes: TreeNode[] = [];
     for (const [folder, items] of groups) {
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const children = buildPathTree(items, (s: any) => s.filename, (s: any, path) => String(s.id || path));
-      const totalFolderIssues = items.reduce((sum: number, s: any) => sum + (s.total_issues ?? 0), 0);
-      nodes.push({ name: folderName, isDir: true, children, key: folder, item: { count: items.length, total_issues: totalFolderIssues } });
+      const stripFolder = folder.replace(/\\/g, '/').replace(/\/?$/, '');
+      const processed = items.map(s => ({
+        ...s,
+        filename: s.filename.startsWith(stripFolder + '/') ? s.filename.slice(stripFolder.length + 1) : s.filename,
+      }));
+      const appGroups = groupByTopLevelDir(processed);
+      const children: TreeNode[] = [];
+      let totalCount = 0;
+      let totalFolderIssues = 0;
+      for (const ag of appGroups) {
+        const prefix = ag.appName === 'Project Root' ? '' : ag.appName + '/';
+        const agChildren = buildPathTree(ag.items, (s: any) => {
+          const f = s.filename.replace(/\\/g, '/');
+          return prefix && f.startsWith(prefix) ? f.slice(prefix.length) : f;
+        }, (s: any, path) => String(s.id || path));
+        totalCount += ag.items.length;
+        totalFolderIssues += ag.items.reduce((sum: number, s: any) => sum + (s.total_issues ?? 0), 0);
+        children.push({ name: ag.appName, isDir: true, children: agChildren, key: `${folder}:${ag.appName}`, item: { count: ag.items.length } });
+      }
+      nodes.push({ name: folderName, isDir: true, children, key: folder, item: { count: totalCount, total_issues: totalFolderIssues } });
     }
     nodes.sort((a, b) => a.name.localeCompare(b.name));
     return nodes;
@@ -582,7 +631,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     return nodes.map((node, idx) => {
       const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
       const treeKey = node.key || fullPath;
-      const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+      const isExpanded = expandedTreePaths[fullPath] ?? false;
       const nodeIsLast = idx === nodes.length - 1;
       const branch = nodeIsLast ? '└── ' : '├── ';
 

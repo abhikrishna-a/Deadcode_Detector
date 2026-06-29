@@ -3,9 +3,7 @@ import secrets
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
-from django.conf import settings
 import pyotp
-from urllib.parse import quote
 
 
 class CustomUser(AbstractUser):
@@ -37,11 +35,9 @@ class CustomUser(AbstractUser):
         return bool(self.mfa_secret and self.is_mfa_enabled)
 
     def generate_mfa_secret(self):
-        # Create random base32 secret
         self.mfa_secret = pyotp.random_base32()
         self.is_mfa_enabled = False
         self.save(update_fields=["mfa_secret", "is_mfa_enabled"])
-
         return self.mfa_secret
 
     def get_mfa_token(self):
@@ -54,13 +50,10 @@ class CustomUser(AbstractUser):
         return totp.now()
 
     def verify_mfa_token(self, token):
-        # If no secret exists
         if not self.mfa_secret:
             return False
         totp = pyotp.TOTP(self.mfa_secret)
-
-        # Verify entered OTP
-        return totp.verify(token, valid_window=1)
+        return totp.verify(token, valid_window=5)
 
     def get_mfa_uri(self):
         if not self.mfa_secret:

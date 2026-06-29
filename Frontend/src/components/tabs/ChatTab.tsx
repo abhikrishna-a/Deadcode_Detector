@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, FileCode, Search, Terminal, Folder, ChevronRight, AlertOctagon, ExternalLink } from 'lucide-react';
 import { AnalysisResult, ChatMessage, Issue } from '../../types';
 import { analysisAPI } from '../../api/analysis';
-import { TreeNodeData, buildFileTree } from '../../lib/fileTree';
+import { TreeNodeData, buildFileTree, groupByTopLevelDir } from '../../lib/fileTree';
 
 function renderContentWithCitations(text: string): React.ReactNode {
   const parts = text.split(/(\[(?:File|Source|Line|L)\s*:?\s*[^\]]+\])/g);
@@ -132,13 +132,30 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       if (!groups[key]) groups[key] = [];
       groups[key].push(doc);
     });
-    return Object.entries(groups).map(([folderName, docs]) => ({
-      name: folderName === '__single__' ? 'Single Files' : folderName,
-      isDir: true,
-      children: buildFileTree(docs),
-      file: undefined,
-      totalIssues: 0,
-    }));
+    return Object.entries(groups).map(([folderName, docs]) => {
+      const stripFolder = folderName === '__single__' ? undefined : folderName.replace(/\\/g, '/').replace(/\/?$/, '');
+      const processed = stripFolder
+        ? docs.map(d => ({
+            ...d,
+            filename: d.filename.startsWith(stripFolder + '/') ? d.filename.slice(stripFolder.length + 1) : d.filename,
+          }))
+        : docs;
+      const appGroups = groupByTopLevelDir(processed);
+      const children = appGroups.map(ag => ({
+        name: ag.appName,
+        isDir: true,
+        children: buildFileTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName),
+        file: undefined,
+        totalIssues: 0,
+      }));
+      return {
+        name: folderName === '__single__' ? 'Single Files' : folderName,
+        isDir: true,
+        children,
+        file: undefined,
+        totalIssues: 0,
+      };
+    });
   }, [filteredDocs]);
 
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
@@ -181,11 +198,11 @@ export default function ChatTab({ history, initialDocId, initialFilename }: Chat
       );
     }
 
-    const isExpanded = expandedTreePaths[fullPath] ?? (depth < 1);
+    const isExpanded = expandedTreePaths[fullPath] ?? false;
     return (
       <div key={fullPath}>
         <div
-          onClick={() => setExpandedTreePaths(prev => ({ ...prev, [fullPath]: !(prev[fullPath] ?? (depth < 1)) }))}
+          onClick={() => setExpandedTreePaths(prev => ({ ...prev, [fullPath]: !(prev[fullPath] ?? false) }))}
           className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
           style={{ paddingLeft: `${8 + depth * 12}px` }}
         >

@@ -84,3 +84,34 @@ export function buildFileTree(files: AnalysisResult[], stripPrefix?: string): Tr
   sortTree(root);
   return root;
 }
+
+export interface AppGroup<T> {
+  appName: string;
+  items: T[];
+}
+
+export function groupByTopLevelDir<T extends { filename: string }>(
+  items: T[],
+  rootLabel: string = 'Project Root'
+): AppGroup<T>[] {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const path = item.filename.replace(/\\/g, '/');
+    const slashIdx = path.indexOf('/');
+    const appName = slashIdx === -1 ? '__root__' : path.substring(0, slashIdx);
+    if (!groups.has(appName)) {
+      groups.set(appName, []);
+    }
+    groups.get(appName)!.push(item);
+  }
+  return Array.from(groups.entries())
+    .map(([appName, appItems]) => ({
+      appName: appName === '__root__' ? rootLabel : appName,
+      items: appItems,
+    }))
+    .sort((a, b) => {
+      if (a.appName === rootLabel) return 1;
+      if (b.appName === rootLabel) return -1;
+      return a.appName.localeCompare(b.appName);
+    });
+}

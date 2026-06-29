@@ -19,7 +19,7 @@ def _send_email_async(subject, message, recipient):
             message=message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[recipient],
-            fail_silently=False,
+            fail_silently=True,
         )
     except Exception as e:
         logger.error(f"Email to {recipient} failed: {e}")

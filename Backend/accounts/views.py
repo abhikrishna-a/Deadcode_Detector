@@ -39,7 +39,7 @@ def _send_email_async(subject, message, recipient):
             message=message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[recipient],
-            fail_silently=False,
+            fail_silently=True,
         )
     except Exception as e:
         logger.error(f"Email to {recipient} failed: {e}")
@@ -54,8 +54,8 @@ def has_verified_mfa_session(token_claims):
     return bool(token_claims and token_claims.payload.get("mfa_verified_for_session") is True)
 
 
-def build_qr_code_data_url(data):
-    image = qrcode.make(data)
+def build_qr_code_data_url(data, box_size=10):
+    image = qrcode.make(data, box_size=box_size)
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
@@ -66,7 +66,6 @@ def _set_refresh_cookie(response, session_key):
     response.set_cookie(
         key=settings.REFRESH_TOKEN_COOKIE_NAME,
         value=session_key,
-        max_age=settings.REFRESH_TOKEN_COOKIE_MAX_AGE,
         httponly=True,
         samesite='Lax',
         secure=not settings.DEBUG,
@@ -77,7 +76,6 @@ def _set_access_cookie(response, access_token):
     response.set_cookie(
         key='ghostcode_access',
         value=access_token,
-        max_age=settings.REFRESH_TOKEN_COOKIE_MAX_AGE,
         httponly=False,
         samesite='Lax',
         secure=not settings.DEBUG,
@@ -280,7 +278,7 @@ class MFAInitialVerifyView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # If MFA was fully operational before this rotation attempt, require 
+        # If MFA was fully operational before this rotation attempt, require
         # that the user's active token claims maintain verified session authority.
         if user.is_mfa_enabled and has_verified_mfa_session(token_claims):
             return Response(
