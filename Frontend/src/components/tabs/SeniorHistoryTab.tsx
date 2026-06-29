@@ -35,6 +35,7 @@ interface HistoryItem {
   scan_folder?: string;
   scan_type?: string;
   source_content?: string;
+  analysis_data?: any;
 }
 
 interface HistoryTreeNode {
@@ -279,11 +280,27 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
     inspectedFileRef.current = id;
 
     if (item.source_content && item.source_content.trim()) {
+      const rawIssues: any[] = item.analysis_data?.issues || [];
+      const normalizedIssues: Issue[] = rawIssues.map(i => ({
+        id: i.id || '',
+        type: i.type || i.category || 'unknown',
+        name: i.name || null,
+        file: i.file || item.filename,
+        line: i.line || i.line_start || 1,
+        line_start: i.line_start || i.line || 1,
+        line_end: i.line_end,
+        description: i.description || '',
+        code_snippet: i.code_snippet || '',
+        suggestion: i.suggestion || '',
+        severity: i.severity || 'medium',
+        confidence: i.confidence ?? 0,
+        safe_to_remove: i.safe_to_remove,
+      }));
       setInspectedFile({
         id,
         filename: item.filename,
         source_content: item.source_content,
-        issues: [],
+        issues: normalizedIssues,
         loading: false,
         error: null,
       });
@@ -364,11 +381,27 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
           match = searchData.items.find((i: any) => i.analysis_id === id);
         }
         if (match?.source_content) {
+          const rawIssues: any[] = match.analysis_data?.issues || match.analysis?.issues || [];
+          const normalizedIssues: Issue[] = rawIssues.map(i => ({
+            id: i.id || '',
+            type: i.type || i.category || 'unknown',
+            name: i.name || null,
+            file: i.file || match.filename,
+            line: i.line || i.line_start || 1,
+            line_start: i.line_start || i.line || 1,
+            line_end: i.line_end,
+            description: i.description || '',
+            code_snippet: i.code_snippet || '',
+            suggestion: i.suggestion || '',
+            severity: i.severity || 'medium',
+            confidence: i.confidence ?? 0,
+            safe_to_remove: i.safe_to_remove,
+          }));
           setInspectedFile({
             id,
             filename: match.filename,
             source_content: match.source_content,
-            issues: [],
+            issues: normalizedIssues,
             loading: false,
             error: null,
           });
@@ -442,6 +475,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
               created_at: r.created_at,
               scan_folder: sf,
               source_content: (r as any)._source_content || (r as any).source || '',
+              analysis_data: r.analysis,
             });
           }
         } catch {
