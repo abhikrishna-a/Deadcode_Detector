@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import List, AsyncGenerator
@@ -17,7 +18,7 @@ def _get_groq_model() -> str:
 
 
 def _get_gemini_model() -> str:
-    return os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
 TOP_K = 3
@@ -225,6 +226,7 @@ async def stream_answer(
             last_error = e
             groq_key_manager.rotate()
             if attempt < max_attempts - 1:
+                await asyncio.sleep(0.5)
                 continue
 
     # Fall back to Gemini

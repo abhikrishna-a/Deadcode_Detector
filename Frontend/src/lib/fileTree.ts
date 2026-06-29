@@ -90,6 +90,7 @@ export interface HistoryTreeNodeData<T = any> {
   isDir: boolean;
   children: HistoryTreeNodeData<T>[];
   file?: T;
+  meta?: Record<string, any>;
 }
 
 export function buildHistoryTree<T extends { filename: string }>(
@@ -105,7 +106,8 @@ export function buildHistoryTree<T extends { filename: string }>(
         path = path.slice(prefix.length);
       }
     }
-    const parts = path.split('/');
+    path = path.replace(/^\/+/, '');
+    const parts = path.split('/').filter(Boolean);
     let current = root;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];

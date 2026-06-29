@@ -376,10 +376,14 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
               const issuesInFolder = files.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
               const stripPrefix = folderName === '(root)' ? undefined : folderName;
               const processedFiles = stripPrefix
-                ? files.map(f => ({
-                    ...f,
-                    filename: f.filename.startsWith(stripPrefix + '/') ? f.filename.slice(stripPrefix.length + 1) : f.filename,
-                  }))
+                ? files.map(f => {
+                    const normPrefix = stripPrefix.replace(/\\/g, '/').replace(/\/?$/, '/');
+                    const normName = f.filename.replace(/\\/g, '/');
+                    return {
+                      ...f,
+                      filename: normName.startsWith(normPrefix) ? normName.slice(normPrefix.length) : normName,
+                    };
+                  })
                 : files;
               const appGroups = groupByTopLevelDir(processedFiles);
               return (

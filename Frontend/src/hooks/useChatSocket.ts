@@ -64,7 +64,8 @@ export function useChatSocket() {
 
       const WS_BASE = import.meta.env.VITE_WS_URL
         || `${location.protocol.replace('http', 'ws')}//${location.host}/ws`;
-      const ws = new WebSocket(`${WS_BASE}/chat/${encodeURIComponent(roomName)}/?token=${encodeURIComponent(token)}`);
+      const safeRoom = roomName.replace(/^\/+|\/+$/g, '');
+      const ws = new WebSocket(`${WS_BASE}/chat/${encodeURIComponent(safeRoom)}/?token=${encodeURIComponent(token)}`);
 
       ws.onopen = () => {
         wsRef.current = ws;

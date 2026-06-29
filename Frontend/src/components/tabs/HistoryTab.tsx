@@ -197,7 +197,11 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
   }, []);
 
   const addComment = useCallback(async () => {
-    if (!submissionId || !commentText.trim() || commentLine === null) return;
+    if (!submissionId) {
+      onShowToast?.('Cannot add feedback: submission not linked to a review record.', 'error');
+      return;
+    }
+    if (!commentText.trim() || commentLine === null) return;
     setSubmittingComment(true);
     try {
       const fb = await analysisAPI.seniorAddFeedback(submissionId, commentLine, commentText.trim());
@@ -586,7 +590,6 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
                     if (!lineFeedbacks.has(fb.line_start)) lineFeedbacks.set(fb.line_start, []);
                     lineFeedbacks.get(fb.line_start)!.push(fb);
                   });
-                  const isSenior = currentUser.role === 'senior';
                   return (
                     <div className="h-full overflow-auto font-mono text-[13px] leading-relaxed">
                       <table className="w-full border-collapse">
@@ -602,96 +605,89 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
                                   className={`group ${issues ? 'bg-rose-500/[0.02]' : ''} ${isCommenting ? 'bg-cyan-500/[0.03]' : ''}`}
                                 >
                                   <td
-                                    onClick={() => {
-                                      if (!isSenior) return;
-                                      setCommentLine(isCommenting ? null : lineNum);
-                                      setCommentText('');
-                                    }}
-                                    className={`w-12 text-right px-3 py-0 select-none text-zinc-600 text-[11px] border-r-2 ${
+                                    className={`w-12 text-right px-3 py-0 select-none text-zinc-600 text-[11px] border-r-2 align-top ${
                                       issues ? 'border-rose-500/30 text-rose-400/60' : 'border-white/[0.03]'
-                                    } ${isSenior ? 'cursor-pointer hover:text-cyan-400' : ''}`}
+                                    }`}
                                   >
                                     {lineNum}
                                   </td>
                                   <td className="px-4 py-0 text-zinc-300 whitespace-pre-wrap min-w-0 break-all">
-                                    <div className="flex items-start gap-2">
-                                      <span className="flex-1">{lineContent || ' '}</span>
-                                      {isSenior && (
-                                        <span
-                                          onClick={() => {
-                                            setCommentLine(isCommenting ? null : lineNum);
-                                            setCommentText('');
-                                          }}
-                                          className={`opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0 mt-0.5 ${
-                                            isCommenting ? 'opacity-100' : ''
-                                          }`}
-                                          title="Add inline comment"
-                                        >
-                                          <MessageSquare size={12} className="text-cyan-400 hover:text-cyan-300" />
-                                        </span>
+                                    <div className="flex items-start gap-3">
+                                      {isCommenting && (
+                                        <div className="w-56 flex-shrink-0">
+                                          <textarea
+                                            autoFocus
+                                            value={commentText}
+                                            onChange={e => setCommentText(e.target.value)}
+                                            placeholder="Write a comment..."
+                                            className="w-full bg-zinc-900/60 border border-white/[0.06] rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-cyan-400/40 resize-none"
+                                            rows={2}
+                                          />
+                                          <div className="flex gap-2 mt-1.5">
+                                            <button
+                                              onClick={addComment}
+                                              disabled={!commentText.trim() || submittingComment}
+                                              className="flex-1 px-2.5 py-1 rounded-lg text-[10px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-500/20 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                            >
+                                              {submittingComment ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+                                              Send
+                                            </button>
+                                            <button
+                                              onClick={() => { setCommentLine(null); setCommentText(''); }}
+                                              className="px-2.5 py-1 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-zinc-300 border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
                                       )}
-                                    </div>
-                                    {issues && issues.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-0.5 mb-0.5">
-                                        {issues.map(iss => (
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start gap-2">
                                           <span
-                                            key={iss.id}
-                                            className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300/70 font-mono uppercase tracking-wider"
+                                            onClick={() => {
+                                              setCommentLine(isCommenting ? null : lineNum);
+                                              setCommentText('');
+                                            }}
+                                            className={`flex-shrink-0 mt-0.5 cursor-pointer ${
+                                              isCommenting ? 'text-cyan-400' : 'opacity-0 group-hover:opacity-100 transition-opacity text-cyan-400 hover:text-cyan-300'
+                                            }`}
+                                            title="Add inline comment"
                                           >
-                                            {iss.type}
+                                            <MessageSquare size={12} />
                                           </span>
-                                        ))}
+                                          <span className="flex-1">{lineContent || ' '}</span>
+                                        </div>
+                                        {issues && issues.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-0.5 mb-0.5">
+                                            {issues.map(iss => (
+                                              <span
+                                                key={iss.id}
+                                                className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300/70 font-mono uppercase tracking-wider"
+                                              >
+                                                {iss.type}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {fbList && fbList.length > 0 && (
+                                          <div className="mt-0.5 space-y-0.5">
+                                            {fbList.map(fb => (
+                                              <div
+                                                key={fb.id}
+                                                className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/[0.04] border border-blue-500/[0.06]"
+                                              >
+                                                <span className="text-blue-300 font-semibold text-[10px]">
+                                                  {fb.reviewer_username || 'Reviewer'}:
+                                                </span>{' '}
+                                                <span className="text-zinc-300">{fb.comment}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
+                                    </div>
                                   </td>
                                 </tr>
-                                {isCommenting && (
-                                  <tr>
-                                    <td colSpan={2} className="px-4 pb-2">
-                                      <div className="flex gap-2 items-start">
-                                        <textarea
-                                          autoFocus
-                                          value={commentText}
-                                          onChange={e => setCommentText(e.target.value)}
-                                          placeholder="Write a comment..."
-                                          className="flex-1 bg-zinc-900/60 border border-white/[0.06] rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-cyan-400/40 resize-none"
-                                          rows={2}
-                                        />
-                                        <button
-                                          onClick={() => { setCommentLine(null); setCommentText(''); }}
-                                          className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-zinc-300 border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button
-                                          onClick={addComment}
-                                          disabled={!commentText.trim() || submittingComment}
-                                          className="px-3 py-1.5 rounded-lg text-[10px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-500/20 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                        >
-                                          {submittingComment ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
-                                          Send
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                                {fbList && fbList.length > 0 && (
-                                  <tr>
-                                    <td colSpan={2} className="px-4 pb-1">
-                                      {fbList.map(fb => (
-                                        <div
-                                          key={fb.id}
-                                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/[0.04] border border-blue-500/[0.06] mb-1 last:mb-0"
-                                        >
-                                          <span className="text-blue-300 font-semibold text-[10px]">
-                                            {fb.reviewer_username || 'Reviewer'}:
-                                          </span>{' '}
-                                          <span className="text-zinc-300">{fb.comment}</span>
-                                        </div>
-                                      ))}
-                                    </td>
-                                  </tr>
-                                )}
                               </Fragment>
                             );
                           })}

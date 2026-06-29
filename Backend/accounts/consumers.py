@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+from urllib.parse import unquote
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -129,7 +130,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
 
 class ChatRoomConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_name = unquote(self.scope['url_route']['kwargs']['room_name'])
         self.room_group_name = f'chat_{self.room_name}'
 
         user = self.scope.get('user')

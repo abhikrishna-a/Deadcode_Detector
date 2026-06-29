@@ -10,7 +10,9 @@ import {
 } from 'lucide-react';
 import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
 import { analysisAPI } from '../../api/analysis';
-import { groupByTopLevelDir } from '../../lib/fileTree';
+import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
+import type { HistoryTreeNodeData } from '../../lib/fileTree';
+import HistoryTreeNode from '../../lib/TreeComponents';
 import { useNotificationSocket } from '../../hooks/useNotificationSocket';
 import { timeAgo } from '../../lib/time';
 import HistoryTab from './HistoryTab';
@@ -475,13 +477,21 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 
   const doneSubmissions = useMemo(() => submissions.filter(s => s.status === 'done'), [submissions]);
 
-  const recentSubmissionTree = useMemo(() => (
-    buildPathTree(
-      submissions.slice(0, 10),
-      (s: any) => `${s.scan_folder || 'Standalone'}/${s.filename}`,
-      (s: any, path) => String(s.id || path),
-    )
-  ), [submissions]);
+  const recentSubmissionTree = useMemo(() => {
+    const sliced = submissions.slice(0, 10);
+    const seen = new Map<string, any>();
+    for (const s of sliced) {
+      const path = `${s.scan_folder || 'Standalone'}/${s.relative_path || s.filename}`;
+      if (!seen.has(path) || new Date(s.created_at) > new Date(seen.get(path).created_at)) {
+        seen.set(path, s);
+      }
+    }
+    return buildPathTree(
+      Array.from(seen.values()),
+      (s: any) => `${s.scan_folder || 'Standalone'}/${s.relative_path || s.filename}`,
+      (s: any, path: string) => path,
+    );
+  }, [submissions]);
 
   // Build folder-based tree for reports
   const reportTree = useMemo(() => {
@@ -529,9 +539,16 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       const stripFolder = folder.replace(/\\/g, '/').replace(/\/?$/, '');
       const processed = items.map(s => ({
         ...s,
-        filename: s.filename.startsWith(stripFolder + '/') ? s.filename.slice(stripFolder.length + 1) : s.filename,
+        filename: (s.relative_path || s.filename).startsWith(stripFolder + '/') ? (s.relative_path || s.filename).slice(stripFolder.length + 1) : (s.relative_path || s.filename),
       }));
-      const appGroups = groupByTopLevelDir(processed);
+      const seen = new Map<string, any>();
+      for (const s of processed) {
+        const key = s.filename;
+        if (!seen.has(key) || new Date(s.created_at) > new Date(seen.get(key).created_at)) {
+          seen.set(key, s);
+        }
+      }
+      const appGroups = groupByTopLevelDir(Array.from(seen.values()));
       const children: TreeNode[] = [];
       let totalCount = 0;
       let hasActive = false;
@@ -554,40 +571,37 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     return nodes;
   }, [submissions]);
 
-  // Build results tree
+  // Build results tree using shared buildHistoryTree
   const resultsTree = useMemo(() => {
-    const groups = new Map<string, any[]>();
+    const seen = new Map<string, any>();
     for (const s of doneSubmissions) {
-      const key = s.scan_folder || 'Standalone';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(s);
-    }
-    const nodes: TreeNode[] = [];
-    for (const [folder, items] of groups) {
+      const folder = s.scan_folder || 'Standalone';
       const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
-      const stripFolder = folder.replace(/\\/g, '/').replace(/\/?$/, '');
-      const processed = items.map(s => ({
-        ...s,
-        filename: s.filename.startsWith(stripFolder + '/') ? s.filename.slice(stripFolder.length + 1) : s.filename,
-      }));
-      const appGroups = groupByTopLevelDir(processed);
-      const children: TreeNode[] = [];
-      let totalCount = 0;
-      let totalFolderIssues = 0;
-      for (const ag of appGroups) {
-        const prefix = ag.appName === 'Project Root' ? '' : ag.appName + '/';
-        const agChildren = buildPathTree(ag.items, (s: any) => {
-          const f = s.filename.replace(/\\/g, '/');
-          return prefix && f.startsWith(prefix) ? f.slice(prefix.length) : f;
-        }, (s: any, path) => String(s.id || path));
-        totalCount += ag.items.length;
-        totalFolderIssues += ag.items.reduce((sum: number, s: any) => sum + (s.total_issues ?? 0), 0);
-        children.push({ name: ag.appName, isDir: true, children: agChildren, key: `${folder}:${ag.appName}`, item: { count: ag.items.length } });
+      const rawPath = (s.relative_path || s.filename).replace(/\\/g, '/');
+      const prefix = folder.replace(/\\/g, '/').replace(/\/?$/, '') + '/';
+      const relativePath = rawPath.startsWith(prefix) ? rawPath.slice(prefix.length) : rawPath;
+      const fullKey = `${folderName}/${relativePath}`;
+      if (!seen.has(fullKey) || new Date(s.created_at) > new Date(seen.get(fullKey).created_at)) {
+        seen.set(fullKey, { ...s, filename: fullKey });
       }
-      nodes.push({ name: folderName, isDir: true, children, key: folder, item: { count: totalCount, total_issues: totalFolderIssues } });
     }
-    nodes.sort((a, b) => a.name.localeCompare(b.name));
-    return nodes;
+    const tree = buildHistoryTree(Array.from(seen.values()));
+    // Aggregate total_issues into directory meta
+    const sumIssues = (nodes: HistoryTreeNodeData<any>[]): number => {
+      let total = 0;
+      for (const n of nodes) {
+        if (n.isDir) {
+          const childTotal = sumIssues(n.children);
+          n.meta = { ...n.meta, total_issues: childTotal };
+          total += childTotal;
+        } else {
+          total += (n.file?.total_issues ?? 0);
+        }
+      }
+      return total;
+    };
+    sumIssues(tree);
+    return tree;
   }, [doneSubmissions]);
 
   // Build issues tree for dashboard
@@ -1004,6 +1018,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
           <motion.div key="history" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
             <HistoryTab
               key="junior-history"
+              currentUser={currentUser}
               onNavigateToChat={onNavigateToChat || (() => {})}
               onNavigateToWorkspace={onNavigateToWorkspace || (() => {})}
               onShowToast={onShowToast}
@@ -1173,7 +1188,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                   const s = node.item;
                   const badge = statusBadge(s.status);
                   const BadgeIcon = badge.icon;
-                  const { icon: FileIcon, color: iconColor } = getFileIcon(s.filename);
+                  const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
                   return (
                     <div key={s.id}
                       className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors"
@@ -1181,7 +1196,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                       {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
                       <BadgeIcon size={10} className={`${badge.color} ${s.status === 'analysing' ? 'animate-spin' : ''} flex-shrink-0`} />
                       <FileIcon size={10} className={`${iconColor} flex-shrink-0`} />
-                      <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{s.filename}</span>
+                      <span className="text-[11px] font-mono text-zinc-300 truncate flex-1">{node.name}</span>
                       <span className={`text-[8px] font-mono px-1 rounded ${badge.bg} ${badge.color}`}>{s.status}</span>
                       {s.status === 'failed' && (
                         <button onClick={(e) => { e.stopPropagation(); handleRetry(s.id); }}
@@ -1278,15 +1293,32 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                                     : lineIssues.some(iss => (iss.severity || '') === 'medium') ? 'medium'
                                     : 'low'
                                   : null;
+                                const sevColors: Record<string, { lineNum: string; border: string; bg: string; badge: string }> = {
+                                  high:   { lineNum: 'text-rose-400/60', border: 'border-rose-500/30', bg: 'bg-rose-500/[0.02]',  badge: 'bg-rose-500/10 text-rose-300/70' },
+                                  medium: { lineNum: 'text-amber-400/60', border: 'border-amber-500/30', bg: 'bg-amber-500/[0.02]',  badge: 'bg-amber-500/10 text-amber-300/70' },
+                                  low:    { lineNum: 'text-cyan-400/60', border: 'border-cyan-500/30', bg: 'bg-cyan-500/[0.02]',   badge: 'bg-cyan-500/10 text-cyan-300/70' },
+                                };
+                                const sc = maxSev ? sevColors[maxSev] : null;
                                 return (
-                                  <tr key={lineNum} className={hasIssues ? 'bg-amber-500/[0.02]' : ''}>
-                                    <td className="select-none text-right px-3 py-0 text-zinc-700 w-12 border-r border-white/[0.03] align-top text-[10px]">{lineNum}</td>
+                                  <tr key={lineNum} className={sc ? sc.bg : ''}>
+                                    <td className={`select-none text-right px-3 py-0 align-top text-[10px] w-12 border-r-2 ${sc ? `${sc.lineNum} ${sc.border}` : 'text-zinc-700 border-white/[0.03]'}`}>{lineNum}</td>
                                     <td className="w-6 px-1 py-0 align-top text-center border-r border-white/[0.03]">
                                       {hasIssues && (
                                         <span className={maxSev === 'high' ? 'text-rose-400' : maxSev === 'medium' ? 'text-amber-400' : 'text-cyan-400'}>{'\u25CF'}</span>
                                       )}
                                     </td>
-                                    <td className="px-3 py-0 text-zinc-300 whitespace-pre-wrap align-top">{line || ' '}</td>
+                                    <td className="px-3 py-0 text-zinc-300 whitespace-pre-wrap align-top">
+                                      {line || ' '}
+                                      {lineIssues.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                          {lineIssues.map(iss => (
+                                            <span key={iss.id} className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider ${sc?.badge || ''}`}>
+                                              {iss.type}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -1398,29 +1430,40 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                     )}
                   </div>
                 </div>
-                {renderTree(resultsTree, 0, '', (node, depth, isLast, connectorPrefix) => {
-                  const s = node.item;
-                  if (!s) return null;
-                  const issCount = s.total_issues ?? 0;
-                  const hasIssues = issCount > 0;
-                  const { icon: FileIcon, color: iconColor } = getFileIcon(node.name);
-                  const nameColor = hasIssues ? 'text-amber-300' : 'text-zinc-300';
-                  return (
-                    <div key={s.id}
-                      className="flex items-center gap-2 py-1 hover:bg-white/[0.015] transition-colors cursor-pointer group"
-                      onClick={() => handleViewResult(s.id)}
-                    >
-                      {connectorSpan(connectorPrefix + (isLast ? '└── ' : '├── '))}
-                      <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />
-                      <span className={`text-[11px] font-mono ${nameColor} truncate flex-1 group-hover:text-cyan-400 transition-colors`}>{node.name}</span>
-                      {hasIssues && (
-                        <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded flex-shrink-0">{issCount}</span>
-                      )}
-                      <span className="text-[8px] font-mono text-zinc-600 flex-shrink-0">{timeAgo(s.created_at)}</span>
-                      <ChevronRight size={10} className="text-zinc-600 group-hover:text-cyan-400 flex-shrink-0 transition-colors" />
-                    </div>
-                  );
-                }, '')}
+                {resultsTree.map((node, idx) => (
+                  <HistoryTreeNode
+                    key={node.name}
+                    node={node}
+                    depth={0}
+                    parentPath=""
+                    expandedTreePaths={expandedTreePaths}
+                    onToggle={toggleTreePath}
+                    renderFileIcon={(n) => {
+                      const { icon: FileIcon, color: iconColor } = getFileIcon(n.name);
+                      return <FileIcon size={11} className={`${iconColor} flex-shrink-0`} />;
+                    }}
+                    renderFileRow={(file, nodeName) => {
+                      const s = file as any;
+                      const issCount = s.total_issues ?? 0;
+                      const hasIssues = issCount > 0;
+                      const nameColor = hasIssues ? 'text-amber-300' : 'text-zinc-300';
+                      return (
+                        <div
+                          className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer group"
+                          onClick={() => handleViewResult(s.id)}
+                        >
+                          <span className={`text-[11px] font-mono ${nameColor} truncate flex-1 group-hover:text-cyan-400 transition-colors`}>{nodeName}</span>
+                          {hasIssues && (
+                            <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded flex-shrink-0">{issCount}</span>
+                          )}
+                          <span className="text-[8px] font-mono text-zinc-600 flex-shrink-0">{timeAgo(s.created_at)}</span>
+                          <ChevronRight size={10} className="text-zinc-600 group-hover:text-cyan-400 flex-shrink-0 transition-colors" />
+                        </div>
+                      );
+                    }}
+                    isLast={idx === resultsTree.length - 1}
+                  />
+                ))}
               </div>
             )}
           </motion.div>
