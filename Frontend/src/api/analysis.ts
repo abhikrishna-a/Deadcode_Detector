@@ -96,7 +96,7 @@ export const analysisAPI = {
       throw new Error(detail);
     }
     const json = await response.json();
-    return { ...json, _source_content: json.source_content || '' };
+    return { ...json, _source_content: json._source_content || json.source_content || '' };
   },
 
   // RAG: Get all analyses for a scan folder
@@ -137,6 +137,7 @@ export const analysisAPI = {
       scan_folder?: string;
       scan_type?: string;
       source_content?: string;
+      analysis_data?: any;
     }>;
     total: number;
   }> => {

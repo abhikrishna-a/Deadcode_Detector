@@ -1,9 +1,10 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, PieChartIcon, ExternalLink, FileCode, Loader2 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart3, Bug, CheckCircle, File, Folder, ChevronRight, FolderTree, FileCode, Loader2, MessageSquare } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { AnalysisResult } from '../../types';
-import { TreeNodeData, buildFileTree, groupByTopLevelDir } from '../../lib/fileTree';
+import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
+import HistoryTreeNode from '../../lib/TreeComponents';
 import CodeViewer from '../CodeViewer';
 import { analysisAPI } from '../../api/analysis';
 
@@ -17,105 +18,34 @@ const CATEGORIES = [
   { key: 'commented_code', label: 'Commented Snippets', color: '#10b981' },
 ];
 
-function connectorSpan(prefix: string): React.ReactNode {
-  return (
-    <span className="font-mono text-zinc-600 text-[10px] select-none flex-shrink-0 leading-none">
-      {prefix}
-    </span>
-  );
-}
-
-function childConnectorPrefix(parentPrefix: string, parentIsLast: boolean): string {
-  return parentPrefix + (parentIsLast ? '    ' : '│   ');
-}
-
-function TreeNode({ node, depth, onClick, connectorPrefix = '', isLast = true }: {
-  node: TreeNodeData;
-  depth: number;
-  onClick: (res: AnalysisResult) => void;
-  connectorPrefix?: string;
-  isLast?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(depth < 2);
-  const branch = isLast ? '└── ' : '├── ';
-
-  if (!node.isDir) {
-    const health = node.file?.summary?.health_score ?? 100;
-    const healthColor = health > 85 ? 'text-emerald-400' : health > 60 ? 'text-amber-400' : 'text-rose-400';
-    return (
-      <div
-        onClick={() => node.file && onClick(node.file)}
-        className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {connectorSpan(connectorPrefix + branch)}
-          <span className="font-mono text-[11px] text-zinc-400 truncate max-w-[160px] group-hover:text-zinc-200 transition-colors">
-            {node.name}
-          </span>
-        </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-600 flex-shrink-0">
-          <span>{node.file?.metrics?.total_lines || 0} lines</span>
-          <span className={`font-bold w-12 text-right ${healthColor}`}>{health}%</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.015] cursor-pointer transition-colors group"
-      >
-        {connectorSpan(connectorPrefix + branch)}
-        <ChevronRight
-          size={10}
-          className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${expanded ? 'rotate-90' : ''}`}
-        />
-        <Folder size={12} className="text-cyan-400 flex-shrink-0" />
-        <span className="font-mono text-[11px] text-zinc-500 truncate group-hover:text-zinc-300 transition-colors">
-          {node.name}/
-        </span>
-      </div>
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            {node.children.map((child, i, arr) => (
-              <TreeNode
-                key={i}
-                node={child}
-                depth={depth + 1}
-                onClick={onClick}
-                connectorPrefix={childConnectorPrefix(connectorPrefix, isLast)}
-                isLast={i === arr.length - 1}
-              />
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+const healthColor = (score: number) => {
+  if (score >= 85) return 'text-emerald-400';
+  if (score >= 60) return 'text-amber-400';
+  return 'text-rose-400';
+};
 
 interface OverviewTabProps {
   key?: string;
   user?: any;
+  currentUser?: any;
   history: AnalysisResult[];
   onNavigateToWorkspace?: (analysisId: string, filename: string, scanFolder?: string) => void;
+  onNavigateToChat?: (docId: string, filename: string) => void;
 }
 
-export default function OverviewTab({ history, onNavigateToWorkspace }: OverviewTabProps) {
+export default function OverviewTab({ history, onNavigateToWorkspace, onNavigateToChat, currentUser }: OverviewTabProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
-  const [selectedFile, setSelectedFile] = useState<AnalysisResult | null>(null);
-  const [selectedFileLoading, setSelectedFileLoading] = useState(false);
-  const [selectedFileError, setSelectedFileError] = useState<string | null>(null);
-  const selectedFileRef = useRef<string | null>(null);
+  const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
+  const [inspectedFile, setInspectedFile] = useState<{
+    id: string;
+    filename: string;
+    source_content: string;
+    issues: any[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const inspectedFileRef = useRef<string | null>(null);
 
   const stats = useMemo(() => {
     const singles = history.filter(r => r.scan_type === 'single').length;
@@ -204,44 +134,85 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
     }));
   };
 
-  const handleSelectFile = useCallback((file: AnalysisResult) => {
-    const localMatch = history.find(item => item.document_id === file.document_id) || file;
-    setSelectedFile(localMatch);
-    setSelectedFileLoading(false);
-
-    if (localMatch._source_content && localMatch._source_content.trim()) {
-      setSelectedFileError(null);
-      return;
-    }
-
-    if (!localMatch.document_id) {
-      setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
-      return;
-    }
-
-    const docId = localMatch.document_id;
-    selectedFileRef.current = docId;
-    setSelectedFileLoading(true);
-    setSelectedFileError(null);
-
-    analysisAPI.ragGetAnalysis(docId).then(data => {
-      if (selectedFileRef.current !== docId) return;
-      if (data && data._source_content) {
-        setSelectedFile(prev => prev?.document_id === docId
-          ? { ...prev, _source_content: data._source_content }
-          : prev
-        );
-        setSelectedFileError(null);
-      } else {
-        setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
-      }
-    }).catch(() => {
-      if (selectedFileRef.current !== docId) return;
-      setSelectedFileError('This history entry only contains summary data, so the source code is not available here.');
-    }).finally(() => {
-      if (selectedFileRef.current === docId) setSelectedFileLoading(false);
+  const toggleTreePath = (path: string, depth: number = 0) => {
+    setExpandedTreePaths(prev => {
+      if (!(path in prev)) return { ...prev, [path]: true };
+      return { ...prev, [path]: !prev[path] };
     });
-  }, [history]);
+  };
+
+  const handleInspectFile = useCallback(async (item: AnalysisResult) => {
+    const id = item.document_id;
+    inspectedFileRef.current = id;
+    setInspectedFile({
+      id,
+      filename: item.filename,
+      source_content: '',
+      issues: [],
+      loading: true,
+      error: null,
+    });
+
+    if (item._source_content && item._source_content.trim()) {
+      setInspectedFile({
+        id,
+        filename: item.filename,
+        source_content: item._source_content,
+        issues: item.issues || [],
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+
+    if (!id) {
+      setInspectedFile(prev => prev?.id === id ? { ...prev, loading: false, error: 'Source code not available.' } : prev);
+      return;
+    }
+
+    try {
+      const data = await analysisAPI.ragGetAnalysis(id);
+      if (inspectedFileRef.current !== id) return;
+      setInspectedFile({
+        id,
+        filename: data.filename || item.filename,
+        source_content: data._source_content || '',
+        issues: data.analysis?.issues || [],
+        loading: false,
+        error: null,
+      });
+    } catch {
+      if (inspectedFileRef.current !== id) return;
+
+      // Fallback: try Django analysis endpoints
+      try {
+        let match: any;
+        if (item.scan_folder) {
+          const folderData = await analysisAPI.analysisByFolder(item.scan_folder);
+          match = folderData.items.find((i: any) => i.filename === item.filename);
+        } else {
+          const searchData = await analysisAPI.analysisHistory(1, 0, item.filename);
+          match = searchData.items.find((i: any) => i.analysis_id === id);
+        }
+        if (match?.source_content) {
+          setInspectedFile({
+            id,
+            filename: match.filename,
+            source_content: match.source_content,
+            issues: match.analysis?.issues || match.analysis_data?.issues || [],
+            loading: false,
+            error: null,
+          });
+          return;
+        }
+      } catch {}
+
+      setInspectedFile(prev => prev?.id === id
+        ? { ...prev, loading: false, error: 'Failed to load file details. The source may no longer be available.' }
+        : prev
+      );
+    }
+  }, []);
 
   return (
     <motion.div
@@ -441,7 +412,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
                         {appGroups.map((ag, agIdx) => {
                           const appKey = `${folderName}:${ag.appName}`;
                           const isAppExpanded = !!expandedApps[appKey];
-                          const treeNodes = buildFileTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName);
+                          const treeNodes = buildHistoryTree(ag.items, ag.appName === 'Project Root' ? undefined : ag.appName);
                           const appIssues = ag.items.reduce((s, f) => s + (f.summary?.total_issues || 0), 0);
                           return (
                             <div key={ag.appName}>
@@ -469,16 +440,53 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
                                     exit={{ height: 0, opacity: 0 }}
                                     className="overflow-hidden pl-3"
                                   >
-                                    {treeNodes.map((node, ni, arr) => (
-                                      <TreeNode
-                                        key={ni}
-                                        node={node}
-                                        depth={0}
-                                        onClick={(res) => handleSelectFile(res)}
-                                        connectorPrefix=""
-                                        isLast={ni === arr.length - 1}
-                                      />
-                                    ))}
+                                    <div
+                                      style={{
+                                        background: 'linear-gradient(135deg, rgba(16, 15, 23, 0.6), rgba(8, 8, 12, 0.7))',
+                                        border: '1px solid rgba(255, 255, 255, 0.03)',
+                                        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.03)'
+                                      }}
+                                      className="rounded-lg overflow-hidden"
+                                    >
+                                      {treeNodes.map((node, ni, arr) => (
+                                        <HistoryTreeNode<AnalysisResult>
+                                          key={(node.file as AnalysisResult)?.document_id || node.name}
+                                          node={node}
+                                          depth={0}
+                                          parentPath=""
+                                          expandedTreePaths={expandedTreePaths}
+                                          onToggle={toggleTreePath}
+                                          connectorPrefix=""
+                                          isLast={ni === arr.length - 1}
+                                          renderFileRow={(file, nodeName) => (
+                                            <>
+                                              <button
+                                                onClick={() => handleInspectFile(file)}
+                                                className="text-xs font-mono text-zinc-300 hover:text-cyan-400 truncate max-w-[160px] text-left cursor-pointer transition-colors"
+                                                title={file.filename}
+                                              >
+                                                {nodeName}
+                                              </button>
+                                              <span className={`text-[10px] font-mono ${healthColor(file.summary?.health_score ?? 100)}`}>
+                                                {file.summary?.health_score ?? 100}%
+                                              </span>
+                                              <span className={`text-[10px] font-mono ${(file.summary?.total_issues || 0) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                {(file.summary?.total_issues || 0) > 0 ? `${file.summary?.total_issues || 0} issues` : 'Clean'}
+                                              </span>
+                                              {onNavigateToChat && (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); onNavigateToChat(file.document_id, file.filename); }}
+                                                  className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer ml-auto hidden sm:block"
+                                                  title="Open in Chat"
+                                                >
+                                                  <MessageSquare size={11} />
+                                                </button>
+                                              )}
+                                            </>
+                                          )}
+                                        />
+                                      ))}
+                                    </div>
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -493,54 +501,61 @@ export default function OverviewTab({ history, onNavigateToWorkspace }: Overview
             })}
           </div>
         )}
+      </div>
 
-        <AnimatePresence initial={false}>
-          {selectedFile && (
+      {/* Modal overlay for file inspection */}
+      <AnimatePresence>
+        {inspectedFile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setInspectedFile(null)}
+          >
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="pt-4 border-t border-white/[0.04] space-y-3"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={e => e.stopPropagation()}
+              className="w-[90vw] h-[85vh] bg-[#0a0a0d] border border-white/[0.04] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2 min-w-0">
                   <FileCode size={14} className="text-cyan-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs font-semibold text-zinc-200 truncate">
-                      {selectedFile.filename}
-                    </div>
-                    <div className="text-[10px] font-mono text-zinc-500">
-                      {selectedFile.summary.total_issues} issue{selectedFile.summary.total_issues === 1 ? '' : 's'} • {selectedFile.summary.health_score}% health
-                    </div>
-                  </div>
+                  <span className="text-sm font-mono text-zinc-200 truncate">{inspectedFile.filename}</span>
                 </div>
-
+                <button
+                  onClick={() => setInspectedFile(null)}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.04] transition-all cursor-pointer flex-shrink-0"
+                >
+                  Close
+                </button>
               </div>
-
-              {selectedFileError && (
-                <div className="text-[11px] font-mono text-amber-300 bg-amber-500/5 border border-amber-400/10 rounded-lg px-3 py-2">
-                  {selectedFileError}
-                </div>
-              )}
-
-              {selectedFileLoading ? (
-                <div className="h-[420px] rounded-xl border border-white/[0.035] bg-black/20 flex items-center justify-center text-zinc-500">
-                  <Loader2 size={16} className="mr-2 animate-spin" />
-                  Loading code viewer...
-                </div>
-              ) : (
-                <div className="h-[420px]">
-                  <CodeViewer
-                    source={selectedFile._source_content || ''}
-                    issues={selectedFile.issues || []}
-                    filename={selectedFile.filename}
-                  />
-                </div>
-              )}
+              <div className="flex-1 min-h-0 p-4">
+                {inspectedFile.loading ? (
+                  <div className="h-full flex items-center justify-center text-zinc-500">
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                    Loading file...
+                  </div>
+                ) : inspectedFile.error ? (
+                  <div className="h-full flex items-center justify-center text-amber-300 text-xs font-mono">
+                    {inspectedFile.error}
+                  </div>
+                ) : (
+                  <div className="h-full">
+                    <CodeViewer
+                      source={inspectedFile.source_content}
+                      issues={inspectedFile.issues}
+                      filename={inspectedFile.filename}
+                    />
+                  </div>
+                )}
+              </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -277,10 +277,35 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
   const handleInspectFile = useCallback(async (item: HistoryItem) => {
     const id = item.analysis_id;
     inspectedFileRef.current = id;
+
+    if (item.source_content && item.source_content.trim()) {
+      setInspectedFile({
+        id,
+        filename: item.filename,
+        source_content: item.source_content,
+        issues: [],
+        loading: false,
+        error: null,
+      });
+      setFeedbacks([]);
+      setSubmissionId(null);
+      setCommentLine(null);
+      setCommentText('');
+      try {
+        const lookup = await analysisAPI.lookupSubmissionByAnalysis(id);
+        if (inspectedFileRef.current !== id) return;
+        setSubmissionId(lookup.submission_id);
+        const fb = await analysisAPI.listSubmissionFeedback(lookup.submission_id);
+        if (inspectedFileRef.current !== id) return;
+        setFeedbacks(fb);
+      } catch {}
+      return;
+    }
+
     setInspectedFile({
       id,
       filename: item.filename,
-      source_content: item.source_content || '',
+      source_content: '',
       issues: [],
       loading: true,
       error: null,
@@ -327,6 +352,30 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
       }
     } catch {
       if (inspectedFileRef.current !== id) return;
+
+      // Fallback: try Django analysis endpoints
+      try {
+        let match: any;
+        if (item.scan_folder) {
+          const folderData = await analysisAPI.analysisByFolder(item.scan_folder);
+          match = folderData.items.find((i: any) => i.filename === item.filename);
+        } else {
+          const searchData = await analysisAPI.analysisHistory(1, 0, item.filename);
+          match = searchData.items.find((i: any) => i.analysis_id === id);
+        }
+        if (match?.source_content) {
+          setInspectedFile({
+            id,
+            filename: match.filename,
+            source_content: match.source_content,
+            issues: [],
+            loading: false,
+            error: null,
+          });
+          return;
+        }
+      } catch {}
+
       setInspectedFile({
         id,
         filename: item.filename,
@@ -392,6 +441,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
               total_issues: r.total_issues,
               created_at: r.created_at,
               scan_folder: sf,
+              source_content: (r as any)._source_content || (r as any).source || '',
             });
           }
         } catch {

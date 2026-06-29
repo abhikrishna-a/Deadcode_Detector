@@ -85,6 +85,56 @@ export function buildFileTree(files: AnalysisResult[], stripPrefix?: string): Tr
   return root;
 }
 
+export interface HistoryTreeNodeData<T = any> {
+  name: string;
+  isDir: boolean;
+  children: HistoryTreeNodeData<T>[];
+  file?: T;
+}
+
+export function buildHistoryTree<T extends { filename: string }>(
+  files: T[],
+  defaultScanFolder?: string
+): HistoryTreeNodeData<T>[] {
+  const root: HistoryTreeNodeData<T>[] = [];
+  for (const file of files) {
+    let path = file.filename.replace(/\\/g, '/');
+    if (defaultScanFolder) {
+      const prefix = defaultScanFolder.replace(/\\/g, '/').replace(/\/?$/, '/');
+      if (path.startsWith(prefix)) {
+        path = path.slice(prefix.length);
+      }
+    }
+    const parts = path.split('/');
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      if (isLast) {
+        current.push({ name: part, isDir: false, children: [], file });
+      } else {
+        let dir = current.find(n => n.name === part && n.isDir);
+        if (!dir) {
+          dir = { name: part, isDir: true, children: [], file: undefined };
+          current.push(dir);
+        }
+        current = dir.children;
+      }
+    }
+  }
+  const sortNodes = (nodes: HistoryTreeNodeData<T>[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      if (node.children.length > 0) sortNodes(node.children);
+    }
+  };
+  sortNodes(root);
+  return root;
+}
+
 export interface AppGroup<T> {
   appName: string;
   items: T[];

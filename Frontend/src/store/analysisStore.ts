@@ -2,10 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AnalysisResult } from '../types';
 
-function stripSource(items: AnalysisResult[]): AnalysisResult[] {
-  return items.map(({ _source_content, ...rest }) => rest as AnalysisResult);
-}
-
 interface AnalysisState {
   history: AnalysisResult[];
   viewTarget: { analysisId: string; filename: string; scanFolder?: string } | null;
@@ -134,16 +130,22 @@ export const useAnalysisStore = create<AnalysisState>()(
     }),
     {
       name: storageKey,
-      version: 1,
-      migrate: () => ({}),
-      partialize: (state) => ({
-        ...state,
-        history: stripSource(state.history),
-        batchReportsList: stripSource(state.batchReportsList),
-        selectedFile: state.selectedFile
-          ? { ...state.selectedFile, _source_content: undefined }
-          : null,
+      version: 2,
+      migrate: () => ({
+        history: [],
+        viewTarget: null,
+        chatTarget: null,
+        batchReportsList: [],
+        selectedFile: null,
+        selectedFolder: null,
+        expandedFolders: {},
+        currentFolderName: '',
+        issueFilter: 'all' as const,
+        expandedIssueId: null,
+        view: 'upload' as const,
+        historyMode: false,
       }),
+      partialize: (state) => state,
     }
   )
 );

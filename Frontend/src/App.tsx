@@ -164,6 +164,10 @@ export default function App() {
                       <OverviewTab
                         key="overview"
                         history={history}
+                        currentUser={currentUser}
+                        onNavigateToChat={(docId, filename) => {
+                          setChatTarget({ docId, filename });
+                        }}
                         onNavigateToWorkspace={(analysisId, filename, scanFolder) => {
                           handleNavigateToWorkspace(analysisId, filename, scanFolder, onNavigate);
                         }}

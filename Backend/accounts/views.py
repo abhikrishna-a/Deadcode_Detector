@@ -847,6 +847,7 @@ class SeniorAnalysisHistoryView(APIView):
                 'scan_folder': s.scan_folder or None,
                 'scan_type': 'folder' if s.scan_folder else 'folder',
                 'source_content': s.file_content or '',
+                'analysis_data': s.result or {},
             })
 
         return Response({'items': result_items, 'total': total})

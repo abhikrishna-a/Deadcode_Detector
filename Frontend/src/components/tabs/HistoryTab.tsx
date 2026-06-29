@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare, Send } from 'lucide-react';
+import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
+import HistoryTreeNode from '../../lib/TreeComponents';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
-import { groupByTopLevelDir } from '../../lib/fileTree';
 import type { Issue, User } from '../../types';
 
 interface HistoryTabProps {
@@ -33,14 +34,8 @@ interface HistoryItem {
   created_at: string;
   scan_folder?: string;
   scan_type?: string;
-}
-
-interface HistoryTreeNode {
-  name: string;
-  isDir: boolean;
-  children: HistoryTreeNode[];
-  file?: HistoryItem;
-  scanFolder?: string;
+  source_content?: string;
+  analysis_data?: any;
 }
 
 type FilterMode = 'all' | 'file' | 'repo' | 'folder';
@@ -59,50 +54,6 @@ const healthColor = (score: number) => {
   if (score >= 60) return 'text-amber-400';
   return 'text-rose-400';
 };
-
-function buildHistoryTree(files: HistoryItem[], defaultScanFolder?: string): HistoryTreeNode[] {
-  const root: HistoryTreeNode[] = [];
-  for (const file of files) {
-    let path = file.filename.replace(/\\/g, '/');
-    if (defaultScanFolder) {
-      const prefix = defaultScanFolder.replace(/\\/g, '/').replace(/\/?$/, '/');
-      if (path.startsWith(prefix)) {
-        path = path.slice(prefix.length);
-      }
-    }
-    const parts = path.split('/');
-    let current = root;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      if (isLast) {
-        current.push({ name: part, isDir: false, children: [], file });
-      } else {
-        let dir = current.find(n => n.name === part && n.isDir);
-        if (!dir) {
-          dir = { name: part, isDir: true, children: [], file: undefined, scanFolder: defaultScanFolder };
-          current.push(dir);
-        }
-        current = dir.children;
-      }
-    }
-  }
-  const sortNodes = (nodes: HistoryTreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const node of nodes) {
-      if (node.children.length > 0) sortNodes(node.children);
-    }
-  };
-  sortNodes(root);
-  return root;
-}
-
-function buildUnifiedTree(files: HistoryItem[], defaultScanFolder?: string): HistoryTreeNode[] {
-  return buildHistoryTree(files, defaultScanFolder);
-}
 
 function buildTree(items: HistoryItem[]): { name: string; scanType?: string; files: HistoryItem[] }[] {
   const groups = new Map<string, { name: string; scanType?: string; files: HistoryItem[] }>();
@@ -133,137 +84,7 @@ function buildTree(items: HistoryItem[]): { name: string; scanType?: string; fil
   return result;
 }
 
-function findFirstFile(node: HistoryTreeNode): HistoryItem | undefined {
-  if (node.file) return node.file;
-  for (const child of node.children) {
-    const found = findFirstFile(child);
-    if (found) return found;
-  }
-  return undefined;
-}
 
-interface HistoryTreeNodeProps {
-  node: HistoryTreeNode;
-  depth: number;
-  parentPath: string;
-  expandedTreePaths: Record<string, boolean>;
-  onToggle: (path: string, depth: number) => void;
-  onNavigateToWorkspace: (analysisId: string, filename: string, scanFolder?: string) => void;
-  onNavigateToChat: (docId: string, filename: string) => void;
-  onInspectFile: (item: HistoryItem) => void;
-  healthColor: (score: number) => string;
-  connectorPrefix?: string;
-  isLast?: boolean;
-}
-
-function connectorSpan(prefix: string): React.ReactNode {
-  return (
-    <span className="font-mono text-zinc-600 text-[10px] select-none flex-shrink-0 leading-none">
-      {prefix}
-    </span>
-  );
-}
-
-function childConnectorPrefix(parentPrefix: string, parentIsLast: boolean): string {
-  return parentPrefix + (parentIsLast ? '    ' : '│   ');
-}
-
-function HistoryTreeNode({
-  node, depth, parentPath, expandedTreePaths, onToggle,
-  onNavigateToWorkspace, onNavigateToChat, onInspectFile, healthColor,
-  connectorPrefix = '', isLast = true,
-}: HistoryTreeNodeProps) {
-  const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
-  const isExpanded = expandedTreePaths[fullPath] ?? false;
-  const branch = isLast ? '└── ' : '├── ';
-
-  if (!node.isDir && node.file) {
-    const item = node.file;
-    return (
-      <div
-        className="flex items-center gap-2 px-6 py-2 hover:bg-white/[0.01] transition-colors border-t border-white/[0.02]"
-      >
-        {connectorSpan(connectorPrefix + branch)}
-        <FileCode size={11} className="text-violet-400/70 flex-shrink-0" />
-        <button
-          onClick={() => onInspectFile(item)}
-          className="text-xs font-mono text-zinc-300 hover:text-cyan-400 truncate max-w-[160px] text-left cursor-pointer transition-colors"
-          title={item.filename}
-        >
-          {node.name}
-        </button>
-        <span className={`text-[10px] font-mono ${healthColor(item.health_score)}`}>
-          {item.health_score}%
-        </span>
-        <span className={`text-[10px] font-mono ${item.total_issues > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-          {item.total_issues > 0 ? `${item.total_issues} issues` : 'Clean'}
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onNavigateToChat(item.analysis_id, item.filename); }}
-          className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer ml-auto hidden sm:block"
-          title="Open in Chat"
-        >
-          <MessageSquare size={11} />
-        </button>
-        <span className="text-[8px] font-mono text-zinc-700 hidden sm:inline">
-          {new Date(item.created_at).toLocaleDateString()}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <button
-        onClick={() => onToggle(fullPath, depth)}
-        className="flex items-center gap-1.5 w-full px-6 py-2.5 hover:bg-white/[0.01] transition-colors text-left cursor-pointer border-t border-white/[0.02]"
-      >
-        {connectorSpan(connectorPrefix + branch)}
-        <ChevronRight
-          size={10}
-          onClick={(e) => { e.stopPropagation(); onToggle(fullPath, depth); }}
-          className={`text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
-        />
-        {isExpanded ? (
-          <FolderOpen size={12} className="text-purple-400 flex-shrink-0" />
-        ) : (
-          <Folder size={12} className="text-purple-400 flex-shrink-0" />
-        )}
-        <span className="text-xs font-mono text-zinc-400 truncate">{node.name}/</span>
-        <span className="text-[9px] font-mono text-zinc-600">({node.children.length})</span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
-            {node.children.map((child, i, arr) => (
-              <HistoryTreeNode
-                key={child.file?.analysis_id || child.name}
-                node={child}
-                depth={depth + 1}
-                parentPath={fullPath}
-                expandedTreePaths={expandedTreePaths}
-                onToggle={onToggle}
-                onNavigateToWorkspace={onNavigateToWorkspace}
-                onNavigateToChat={onNavigateToChat}
-                onInspectFile={onInspectFile}
-                healthColor={healthColor}
-                connectorPrefix={childConnectorPrefix(connectorPrefix, isLast)}
-                isLast={i === arr.length - 1}
-              />
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateToWorkspace, onShowToast }: HistoryTabProps) {
   const [items, setItems] = useState<HistoryItem[]>([]);
@@ -288,6 +109,7 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const inspectedFileRef = useRef<string | null>(null);
+  const preloadedDataRef = useRef<Map<string, HistoryItem>>(new Map());
 
   const handleInspectFile = useCallback(async (item: HistoryItem) => {
     const id = item.analysis_id;
@@ -305,8 +127,28 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
     setCommentLine(null);
     setCommentText('');
     try {
-      const data = await analysisAPI.ragGetAnalysis(id);
+      let data: any;
+      try {
+        data = await analysisAPI.ragGetAnalysis(id);
+      } catch {
+        // RAG unavailable — try pre-loaded data from Django fallback
+        data = null;
+      }
       if (inspectedFileRef.current !== id) return;
+      if (!data) {
+        const preloaded = preloadedDataRef.current.get(id);
+        if (preloaded?.analysis_data) {
+          data = {
+            analysis_id: preloaded.analysis_id,
+            filename: preloaded.filename,
+            language: preloaded.language,
+            analysis: preloaded.analysis_data,
+            _source_content: preloaded.source_content || '',
+            cached: true,
+          };
+        }
+      }
+      if (!data) throw new Error('No data available');
       const rawIssues: any[] = data.analysis?.issues || [];
       const normalizedIssues: Issue[] = rawIssues.map(i => ({
         id: i.id || '',
@@ -387,6 +229,7 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
           allItems = allItems.concat(r.items);
         }
       }
+      preloadedDataRef.current = new Map();
       setItems(allItems);
       setHasLoadedOnce(true);
     } catch {
@@ -406,6 +249,14 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
             allItems = allItems.concat(r.items);
           }
         }
+        // Store pre-loaded data (source_content + analysis_data) for fallback
+        const map = new Map<string, HistoryItem>();
+        for (const item of allItems) {
+          if (item.analysis_data || item.source_content) {
+            map.set(item.analysis_id, item);
+          }
+        }
+        preloadedDataRef.current = map;
         setItems(allItems);
         setHasLoadedOnce(true);
       } catch {
@@ -638,19 +489,42 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
                       <span className="text-[9px] font-mono text-zinc-600">({appGroup.files.length})</span>
                     </button>
                     {expandedApps.has(`${group.name}:${appGroup.appName}`) && appGroup.tree.map((node, i, arr) => (
-                      <HistoryTreeNode
-                        key={node.file?.analysis_id || node.name}
+                      <HistoryTreeNode<HistoryItem>
+                        key={(node.file as HistoryItem)?.analysis_id || node.name}
                         node={node}
                         depth={0}
                         parentPath=""
                         expandedTreePaths={expandedTreePaths}
                         onToggle={toggleTreePath}
-                        onNavigateToWorkspace={onNavigateToWorkspace}
-                        onNavigateToChat={onNavigateToChat}
-                        onInspectFile={handleInspectFile}
-                        healthColor={healthColor}
                         connectorPrefix=""
                         isLast={i === arr.length - 1}
+                        renderFileRow={(file, nodeName) => (
+                          <>
+                            <button
+                              onClick={() => handleInspectFile(file)}
+                              className="text-xs font-mono text-zinc-300 hover:text-cyan-400 truncate max-w-[160px] text-left cursor-pointer transition-colors"
+                              title={file.filename}
+                            >
+                              {nodeName}
+                            </button>
+                            <span className={`text-[10px] font-mono ${healthColor(file.health_score)}`}>
+                              {file.health_score}%
+                            </span>
+                            <span className={`text-[10px] font-mono ${file.total_issues > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                              {file.total_issues > 0 ? `${file.total_issues} issues` : 'Clean'}
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onNavigateToChat(file.analysis_id, file.filename); }}
+                              className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer ml-auto hidden sm:block"
+                              title="Open in Chat"
+                            >
+                              <MessageSquare size={11} />
+                            </button>
+                            <span className="text-[8px] font-mono text-zinc-700 hidden sm:inline">
+                              {new Date(file.created_at).toLocaleDateString()}
+                            </span>
+                          </>
+                        )}
                       />
                     ))}
                   </div>
