@@ -6,8 +6,13 @@ import type {
 
 const RAG_BASE = '/api/rag';
 
-async function readErrorDetail(_response: Response, fallback: string): Promise<string> {
-  return fallback;
+async function readErrorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    return body.detail || body.error || body.message || JSON.stringify(body).slice(0, 200) || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export const analysisAPI = {
@@ -512,6 +517,16 @@ export const analysisAPI = {
     if (before) params.set('before', before);
     const r = await fetch(`/api/chat/rooms/${encodeURIComponent(roomName)}/messages/?${params}`, {
       headers: { Authorization: `Bearer ${t}` },
+    });
+    return r.json();
+  },
+
+  sendRoomMessage: async (roomName: string, content: string): Promise<any> => {
+    const t = await getAccessToken();
+    const r = await fetch(`/api/chat/rooms/${encodeURIComponent(roomName)}/messages/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      body: JSON.stringify({ content }),
     });
     return r.json();
   },

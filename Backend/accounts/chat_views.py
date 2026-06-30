@@ -259,3 +259,24 @@ class ChatRoomMessagesView(APIView):
         except Exception as e:
             logger.exception('Failed to fetch messages for room %s', room_name)
             return Response({'error': 'Failed to fetch messages.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request, room_name):
+        try:
+            room, _ = ChatRoom.objects.get_or_create(
+                name=room_name,
+                defaults={'created_by': request.user, 'scan_folder': room_name},
+            )
+            content = request.data.get('content', '').strip()
+            if not content:
+                return Response({'error': 'Content is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            msg = RoomMessage.objects.create(room=room, author=request.user, content=content)
+            return Response({
+                'id': msg.id,
+                'author_id': msg.author_id,
+                'author_username': msg.author.username,
+                'content': msg.content,
+                'created_at': msg.created_at.isoformat(),
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.exception('Failed to send message to room %s', room_name)
+            return Response({'error': 'Failed to send message.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

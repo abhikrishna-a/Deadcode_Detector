@@ -606,12 +606,16 @@ class SubmissionByAnalysisIdView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, analysis_id):
+        from django.db.models import Q
         from .models import JuniorSubmission
-        try:
-            sub = JuniorSubmission.objects.get(analysis_id=analysis_id, user=request.user)
-            return Response({'submission_id': sub.id, 'filename': sub.filename})
-        except JuniorSubmission.DoesNotExist:
+        user_filter = {} if request.user.role == 'senior' else {'user': request.user}
+        sub = JuniorSubmission.objects.filter(
+            Q(analysis_id=analysis_id) | Q(rag_document_id=analysis_id),
+            **user_filter
+        ).order_by('-created_at').first()
+        if not sub:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'submission_id': sub.id, 'filename': sub.filename})
 
 
 class JuniorSubmissionAnalyzeView(APIView):
@@ -822,8 +826,10 @@ class SeniorAnalysisHistoryView(APIView):
         search = request.query_params.get('search', '')
 
         qs = JuniorSubmission.objects.filter(
-            user=request.user, status='done'
+            status='done'
         ).select_related('user').order_by('-created_at')
+        if request.user.role != 'senior':
+            qs = qs.filter(user=request.user)
 
         if search:
             qs = qs.filter(
@@ -845,7 +851,7 @@ class SeniorAnalysisHistoryView(APIView):
                 'total_issues': summary.get('total_issues', 0) or len((s.result or {}).get('issues', [])),
                 'created_at': s.created_at.isoformat(),
                 'scan_folder': s.scan_folder or None,
-                'scan_type': 'folder' if s.scan_folder else 'folder',
+                'scan_type': 'folder' if s.scan_folder else 'single',
                 'source_content': s.file_content or '',
                 'analysis_data': s.result or {},
             })

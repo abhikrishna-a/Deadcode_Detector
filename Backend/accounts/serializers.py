@@ -133,7 +133,7 @@ class JuniorSubmissionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JuniorSubmission
-        fields = ['id', 'filename', 'language', 'relative_path', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds', 'total_issues']
+        fields = ['id', 'filename', 'language', 'relative_path', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds', 'total_issues', 'result']
 
     def get_total_issues(self, obj):
         if not obj.result:

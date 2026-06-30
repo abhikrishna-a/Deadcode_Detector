@@ -315,7 +315,9 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
         const fb = await analysisAPI.listSubmissionFeedback(lookup.submission_id);
         if (inspectedFileRef.current !== id) return;
         setFeedbacks(fb);
-      } catch {}
+      } catch (err) {
+        console.warn('Failed to lookup submission for analysis (preloaded path):', id, err);
+      }
       return;
     }
 
@@ -365,7 +367,8 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
         const fb = await analysisAPI.listSubmissionFeedback(lookup.submission_id);
         if (inspectedFileRef.current !== id) return;
         setFeedbacks(fb);
-      } catch {
+      } catch (err) {
+        console.warn('Failed to lookup submission for analysis (RAG path):', id, err);
       }
     } catch {
       if (inspectedFileRef.current !== id) return;
@@ -407,7 +410,9 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
           });
           return;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Failed to fallback-load Django analysis data:', err);
+      }
 
       setInspectedFile({
         id,

@@ -300,7 +300,7 @@ class BatchAnalysisView(APIView):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
 
         # Fire a single batch task (much faster than per-file tasks — in-memory cross-ref, no LLM)
-        batch_analyze_folder.delay(files_data, batch_id, scan_folder, token, scan_type)
+        batch_analyze_folder.delay(files_data, batch_id, scan_folder, token, scan_type, user_id=request.user.id)
 
         return Response({'batch_id': batch_id}, status=status.HTTP_201_CREATED)
 

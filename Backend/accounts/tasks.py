@@ -67,6 +67,22 @@ def _store_result(batch_id: str, filename: str, data: dict) -> None:
     r.expire(key, 3600)
 
 
+def _detect_language(filename: str) -> str:
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    lang_map = {
+        'py': 'python', 'js': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
+        'jsx': 'javascript', 'java': 'java', 'kt': 'kotlin', 'kts': 'kotlin',
+        'go': 'go', 'rs': 'rust', 'rb': 'ruby', 'php': 'php', 'cs': 'csharp',
+        'cpp': 'cpp', 'c': 'c', 'h': 'c', 'hpp': 'cpp', 'swift': 'swift',
+        'scala': 'scala', 'dart': 'dart', 'lua': 'lua', 'sh': 'bash',
+        'bash': 'bash', 'zsh': 'bash', 'sql': 'sql', 'r': 'r',
+        'toml': 'toml', 'yaml': 'yaml', 'yml': 'yaml', 'json': 'json',
+        'xml': 'xml', 'html': 'html', 'htm': 'html', 'css': 'css',
+        'scss': 'scss', 'less': 'less', 'vue': 'vue', 'svelte': 'svelte',
+    }
+    return lang_map.get(ext, '')
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=10)
 def batch_analyze_folder(
     self,
@@ -76,6 +92,7 @@ def batch_analyze_folder(
     token: str = '',
     scan_type: str = 'folder',
     submission_ids: list | None = None,
+    user_id: int | None = None,
 ):
     """
     Celery task: sends ALL folder files to RAG /batch-analyze at once.
@@ -102,6 +119,12 @@ def batch_analyze_folder(
             from .models import JuniorSubmission
             submissions = JuniorSubmission.objects.select_related('user').filter(id__in=submission_ids)
             submission_map = {submission.filename: submission for submission in submissions}
+
+        from django.contrib.auth import get_user_model
+        user = None
+        if user_id:
+            user = get_user_model().objects.filter(id=user_id).first()
+
         processed = set()
 
         for fr in results_list:
@@ -109,6 +132,22 @@ def batch_analyze_folder(
             processed.add(fn)
             is_error = bool(fr.get('error'))
             submission = submission_map.get(fn)
+
+            if not submission and user:
+                from .models import JuniorSubmission
+                base_fn = fn.rsplit('/', 1)[-1] if '/' in fn else fn
+                submission, _ = JuniorSubmission.objects.update_or_create(
+                    user=user,
+                    relative_path=fn,
+                    scan_folder=scan_folder,
+                    defaults={
+                        'filename': base_fn,
+                        'file_content': content_map.get(fn, ''),
+                        'language': _detect_language(fn),
+                        'status': 'failed' if is_error else 'done',
+                    },
+                )
+
             if submission:
                 if is_error:
                     submission.status = 'failed'
@@ -120,11 +159,14 @@ def batch_analyze_folder(
                         'file_name': submission.filename,
                     })
                 else:
-                    submission.analysis_id = fr.get('document_id') or submission.analysis_id
+                    doc_id = fr.get('document_id')
+                    if doc_id:
+                        submission.analysis_id = doc_id
+                        submission.rag_document_id = doc_id
                     submission.result = fr.get('analysis', {})
                     submission.status = 'done'
                     submission.error = ''
-                    submission.save(update_fields=['analysis_id', 'result', 'status', 'error'])
+                    submission.save(update_fields=['analysis_id', 'rag_document_id', 'result', 'status', 'error'])
                     _notify_user(submission.user_id, {
                         'type': 'junior.analysis_complete',
                         'submission_id': submission.id,
@@ -172,6 +214,20 @@ def batch_analyze_folder(
         for fn, _ in files_data:
             if fn not in processed:
                 submission = submission_map.get(fn)
+                if not submission and user:
+                    from .models import JuniorSubmission
+                    base_fn = fn.rsplit('/', 1)[-1] if '/' in fn else fn
+                    submission, _ = JuniorSubmission.objects.update_or_create(
+                        user=user,
+                        relative_path=fn,
+                        scan_folder=scan_folder,
+                        defaults={
+                            'filename': base_fn,
+                            'file_content': content_map.get(fn, ''),
+                            'language': _detect_language(fn),
+                            'status': 'failed',
+                        },
+                    )
                 if submission:
                     submission.status = 'failed'
                     submission.error = 'Skipped by analysis service (unsupported or empty)'

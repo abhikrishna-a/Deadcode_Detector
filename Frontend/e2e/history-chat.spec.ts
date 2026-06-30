@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { TOTP } from 'otpauth';
+import { TOTP, URI } from 'otpauth';
 
 const BASE_URL = 'http://localhost:5173';
 
@@ -34,13 +34,15 @@ async function authenticateUser(page: Page) {
 
   const qrData: any = await page.evaluate(async (token) => {
     const res = await fetch('/api/auth/mfa/setup/', {
+      method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
     });
     return res.json();
   }, loginData.pre_auth_token);
   expect(qrData.qr_code_uri).toBeTruthy();
 
-  const totp = TOTP.fromURI(qrData.qr_code_uri);
+  const parsed = URI.parse(qrData.qr_code_uri);
+  const totp = new TOTP({ secret: parsed.secret });
   const code = totp.generate();
 
   const activateRes: any = await page.evaluate(async (opts) => {

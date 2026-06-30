@@ -92,7 +92,11 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
       const row: Record<string, any> = { category: cat.label };
       for (const [folder, files] of Object.entries(folderGroups)) {
         row[folder] = files.reduce((sum, f) =>
-          sum + (f.issues?.filter(i => i.type === cat.key).length || 0), 0
+          sum + (
+            f.summary?.categories?.[cat.key] ??
+            f.issues?.filter(i => i.type === cat.key).length ??
+            0
+          ), 0
         );
       }
       return row;
@@ -205,7 +209,9 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
           });
           return;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Failed to fallback-load Django analysis data:', err);
+      }
 
       setInspectedFile(prev => prev?.id === id
         ? { ...prev, loading: false, error: 'Failed to load file details. The source may no longer be available.' }

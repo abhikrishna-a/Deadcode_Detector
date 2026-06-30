@@ -85,18 +85,20 @@ export default function App() {
         }
         const store = useAnalysisStore.getState();
         for (const item of allItems) {
+          const analysisData = item.analysis_data || {};
+          const rSummary = analysisData.summary || {};
           store.addHistoryReport({
             document_id: item.analysis_id,
             filename: item.filename,
             summary: {
               total_issues: item.total_issues || 0,
-              severity_counts: { high: 0, medium: 0, low: 0 },
-              categories: {},
-              overall_health: (item.total_issues || 0) === 0 ? 'clean' : 'needs_attention',
+              severity_counts: rSummary.severity_counts || { high: 0, medium: 0, low: 0 },
+              categories: rSummary.categories || {},
+              overall_health: rSummary.overall_health || ((item.total_issues || 0) === 0 ? 'clean' : 'needs_attention'),
               health_score: item.health_score ?? 100,
             },
-            issues: [],
-            metrics: { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
+            issues: analysisData.issues || [],
+            metrics: analysisData.metrics || rSummary.metrics || { total_lines: 0, code_lines: 0, comment_lines: 0, blank_lines: 0, dead_lines_estimate: 0, dead_code_percentage: 0 },
             scan_folder: item.scan_folder,
             scan_type: item.scan_type || 'single',
             scan_id: item.scan_id || item.analysis_id,

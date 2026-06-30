@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   AlertTriangle, AlertCircle, Info, MessageSquare,
   Loader2, FolderOpen, CheckCircle, RefreshCw, Upload,
-  FileCode, FileText, X, BarChart3, Bug, File, Folder,
+  FileCode, FileText, X, BarChart3, Bug, File as FileIcon, Folder,
   LayoutDashboard, ClipboardList, GitBranch, Users,
   ChevronRight, XCircle, Clock, Trash2,
   MessageSquareText, Send, CheckCheck,
 } from 'lucide-react';
 import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
+import { GitManifest, GitFileContents } from '../../api/types';
 import { analysisAPI } from '../../api/analysis';
 import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
 import type { HistoryTreeNodeData } from '../../lib/fileTree';
@@ -240,6 +241,15 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   const [resultDetail, setResultDetail] = useState<any>(null);
   const [resultLoading, setResultLoading] = useState(false);
 
+  // Inline chat overlay state
+  const [chatOverlayOpen, setChatOverlayOpen] = useState(false);
+  const [chatRoomName, setChatRoomName] = useState('');
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatPollRef = useRef<number | null>(null);
+  const chatMsgEndRef = useRef<HTMLDivElement>(null);
+
   // Tree expansion state
   const [expandedTreePaths, setExpandedTreePaths] = useState<Record<string, boolean>>({});
 
@@ -299,6 +309,29 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     });
     return () => { disconnect(); };
   }, [connect]);
+
+  // Chat overlay polling
+  useEffect(() => {
+    if (!chatOverlayOpen || !chatRoomName) return;
+    const poll = async () => {
+      try {
+        const res = await analysisAPI.getRoomMessages(chatRoomName);
+        setChatMessages(res.messages || []);
+      } catch {}
+    };
+    poll();
+    chatPollRef.current = window.setInterval(poll, 3000);
+    return () => {
+      if (chatPollRef.current !== null) {
+        window.clearInterval(chatPollRef.current);
+        chatPollRef.current = null;
+      }
+    };
+  }, [chatOverlayOpen, chatRoomName]);
+
+  useEffect(() => {
+    chatMsgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   const BATCH_SIZE = 100;
 
@@ -377,9 +410,37 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     if (!gitUrl.trim() || gitImporting) return;
     setGitImporting(true);
     try {
-      const result = await analysisAPI.juniorGitImport(gitUrl.trim(), gitBranch, []);
-      setSubmissions(prev => prev); // refresh() below will update
-      onShowToast(`Imported ${result.imported} file(s) from ${result.repo_name}.`, 'success');
+      // Step 1: Clone the repo (same as AnalyzerTab.analyzeGitRepo)
+      const manifest: GitManifest | null = await analysisAPI.gitClone(gitUrl.trim(), gitBranch);
+      if (!manifest || !manifest.files.length) throw new Error('No files found in repository.');
+      onShowToast(`Cloned ${manifest.repo_name}: ${manifest.files.length} file(s) found.`, 'info');
+
+      // Step 2: Fetch all file contents in parallel batches
+      const FETCH_BATCH = 1000;
+      const allPaths = manifest.files.map(f => f.path);
+      const fileContents: Record<string, string> = {};
+      const fetchPromises: Promise<void>[] = [];
+      for (let i = 0; i < allPaths.length; i += FETCH_BATCH) {
+        const chunk = allPaths.slice(i, i + FETCH_BATCH);
+        fetchPromises.push((async () => {
+          const contents: GitFileContents = await analysisAPI.gitFetchFiles(manifest.session_id, chunk);
+          for (const f of contents.files) {
+            fileContents[f.path] = f.content;
+          }
+        })());
+      }
+      await Promise.all(fetchPromises);
+
+      // Step 3: Create File objects (filtered to text files) and submit for batch analysis
+      const files = manifest.files
+        .filter(f => f.path in fileContents && fileContents[f.path] && isTextFile(f.path))
+        .map(f => new File([fileContents[f.path]], f.path));
+      const skipped = manifest.files.length - files.length;
+      if (skipped > 0) onShowToast(`Filtered out ${skipped} non-text file(s) from git import.`, 'info');
+      if (!files.length) throw new Error('No text files found in repository.');
+      await analysisAPI.submitBatchAnalysis(files, manifest.repo_name, 'repo');
+      onShowToast(`Submitted ${files.length} file(s) from ${manifest.repo_name} for analysis.`, 'success');
+
       setGitUrl('');
       setGitBranch('main');
       const data = await analysisAPI.listSubmissions();
@@ -399,7 +460,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     [reports, selectedFolder],
   );
 
-  const handleAskSenior = async (aid: string, fn: string, iid: string) => {
+  const handleAskSenior = async (aid: string, fn: string, iid: string, scanFolder?: string, description?: string) => {
     const key = `${aid}:${iid}`;
     setSending(p => ({ ...p, [key]: true }));
     try {
@@ -410,6 +471,36 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       onShowToast('Failed to send question.', 'error');
     }
     setSending(p => ({ ...p, [key]: false }));
+
+    // Open inline chat overlay
+    const room = scanFolder || 'general';
+    setChatRoomName(room);
+    setChatMessages([]);
+    setChatOverlayOpen(true);
+
+    try {
+      await analysisAPI.createChatRoom(room, room);
+      if (description) {
+        await analysisAPI.sendRoomMessage(room, `**Issue in \`${fn}\`:** ${description}`);
+      }
+    } catch (e: any) {
+      console.warn('Chat overlay init failed:', e);
+    }
+  };
+
+  const handleChatSend = async () => {
+    const text = chatInput.trim();
+    if (!text || !chatRoomName) return;
+    setChatSending(true);
+    try {
+      await analysisAPI.sendRoomMessage(chatRoomName, text);
+      setChatInput('');
+      const res = await analysisAPI.getRoomMessages(chatRoomName);
+      setChatMessages(res.messages || []);
+    } catch {
+      onShowToast('Failed to send message.', 'error');
+    }
+    setChatSending(false);
   };
 
   const handleRetry = async (id: number) => {
@@ -573,16 +664,14 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 
   // Build results tree using shared buildHistoryTree
   const resultsTree = useMemo(() => {
+    const SKIP_FILE = /^(demo_|test_file_|ui_test_|live_demo_)/;
     const seen = new Map<string, any>();
     for (const s of doneSubmissions) {
-      const folder = s.scan_folder || 'Standalone';
-      const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
+      const baseName = (s.filename || '').split('/').pop() || '';
+      if (SKIP_FILE.test(baseName)) continue;
       const rawPath = (s.relative_path || s.filename).replace(/\\/g, '/');
-      const prefix = folder.replace(/\\/g, '/').replace(/\/?$/, '') + '/';
-      const relativePath = rawPath.startsWith(prefix) ? rawPath.slice(prefix.length) : rawPath;
-      const fullKey = `${folderName}/${relativePath}`;
-      if (!seen.has(fullKey) || new Date(s.created_at) > new Date(seen.get(fullKey).created_at)) {
-        seen.set(fullKey, { ...s, filename: fullKey });
+      if (!seen.has(rawPath) || new Date(s.created_at) > new Date(seen.get(rawPath).created_at)) {
+        seen.set(rawPath, { ...s, filename: rawPath });
       }
     }
     const tree = buildHistoryTree(Array.from(seen.values()));
@@ -600,17 +689,45 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       }
       return total;
     };
+    // Aggregate total file count into directory meta
+    const countFiles = (nodes: HistoryTreeNodeData<any>[]): number => {
+      let total = 0;
+      for (const n of nodes) {
+        if (n.isDir) {
+          const childTotal = countFiles(n.children);
+          n.meta = { ...n.meta, total_files: childTotal };
+          total += childTotal;
+        } else {
+          total += 1;
+        }
+      }
+      return total;
+    };
     sumIssues(tree);
+    countFiles(tree);
     return tree;
   }, [doneSubmissions]);
 
   // Build issues tree for dashboard
   const issuesTree = useMemo(() => {
     const bySeverity: Record<string, { report: any; issue: any }[]> = { high: [], medium: [], low: [] };
+    const seen = new Set<string>();
     for (const r of folderReports) {
       for (const iss of (r.analysis?.issues || [])) {
         const sev = iss.severity || 'low';
         if (bySeverity[sev]) bySeverity[sev].push({ report: r, issue: iss });
+      }
+    }
+    // Also pull issues from submissions that have result data (e.g. git import)
+    for (const s of submissions) {
+      if (s.status !== 'done' || !s.result?.issues) continue;
+      if (selectedFolder && s.scan_folder !== selectedFolder) continue;
+      for (const iss of s.result.issues) {
+        const key = `${s.analysis_id || s.id}:${iss.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const sev = iss.severity || 'low';
+        if (bySeverity[sev]) bySeverity[sev].push({ report: s, issue: iss });
       }
     }
     const nodes: TreeNode[] = [];
@@ -633,7 +750,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       });
     }
     return nodes;
-  }, [folderReports]);
+  }, [folderReports, submissions, selectedFolder]);
 
   function renderTree(
     nodes: TreeNode[],
@@ -770,7 +887,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {[
                 { icon: BarChart3, value: stats.totalAnalyses, label: 'Analyses', color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
-                { icon: File, value: stats.submittedFiles, label: 'Submitted', color: 'text-purple-300', bg: 'bg-purple-500/10' },
+                { icon: FileIcon, value: stats.submittedFiles, label: 'Submitted', color: 'text-purple-300', bg: 'bg-purple-500/10' },
                 { icon: Bug, value: stats.totalIssues, label: 'Issues', color: 'text-rose-400', bg: 'bg-rose-400/10' },
                 { icon: Clock, value: stats.pendingReviews, label: 'Pending', color: 'text-amber-200', bg: 'bg-amber-200/10' },
                 { icon: CheckCircle, value: `${stats.avgHealth}%`, label: 'Health', color: stats.avgHealth >= 85 ? 'text-emerald-400' : stats.avgHealth >= 60 ? 'text-amber-400' : 'text-rose-400', bg: 'bg-emerald-500/10' },
@@ -1270,7 +1387,8 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                   </div>
 
                   {resultDetail.status === 'done' ? (() => {
-                    const issues = resultDetail.analysis?.analysis?.issues || [];
+                    const rawResult = resultDetail.result || resultDetail.analysis || {};
+                    const issues = rawResult.issues || rawResult.analysis?.issues || [];
                     const issueMap: Record<number, any[]> = {};
                     for (const iss of issues) {
                       const line = iss.line_start || iss.line || 1;
@@ -1344,7 +1462,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                                       {createdMap[key] ? (
                                         <span className="text-[9px] text-emerald-400 font-mono">Sent ✓</span>
                                       ) : (
-                                        <button onClick={() => handleAskSenior(resultDetail.analysis_id, resultDetail.filename, issue.id)}
+                                        <button onClick={() => handleAskSenior(resultDetail.analysis_id, resultDetail.filename, issue.id, resultDetail.scan_folder, issue.description)}
                                           disabled={sending[key]}
                                           className="text-[9px] px-1.5 py-0.5 rounded border transition-all disabled:opacity-40 cursor-pointer font-mono border-cyan-400/20 text-cyan-400 hover:bg-cyan-400/5">
                                           {sending[key] ? '...' : 'Ask'}
@@ -1376,7 +1494,56 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
                     </div>
                   )}
                 </div>
-              </>
+
+              {/* Inline chat overlay */}
+              {chatOverlayOpen && (
+                <div className="fixed bottom-4 right-4 w-96 h-[500px] z-50 flex flex-col rounded-2xl border border-white/[0.06] bg-zinc-950/95 backdrop-blur-xl shadow-2xl overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageSquareText size={14} className="text-cyan-400 flex-shrink-0" />
+                      <span className="text-xs font-mono text-zinc-200 font-semibold truncate">Chat: {chatRoomName}</span>
+                    </div>
+                    <button onClick={() => setChatOverlayOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer flex-shrink-0">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    {chatMessages.length === 0 ? (
+                      <div className="text-center text-zinc-600 text-[10px] font-mono py-8">No messages yet</div>
+                    ) : (
+                      chatMessages.map((m, i) => (
+                        <div key={m.id || i} className={`flex ${m.author_username === currentUser.username ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[80%] px-3 py-2 rounded-xl text-[11px] ${
+                            m.author_username === currentUser.username
+                              ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/20'
+                              : 'bg-zinc-800/50 text-zinc-300 border border-white/[0.04]'
+                          }`}>
+                            <div className="text-[9px] text-zinc-500 mb-0.5">{m.author_username}</div>
+                            <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <div ref={chatMsgEndRef} />
+                  </div>
+                  <div className="border-t border-white/[0.04] p-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={chatInput}
+                        onChange={e => setChatInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                        placeholder="Type a message..."
+                        className="flex-1 bg-zinc-800/50 border border-white/[0.06] rounded-lg px-3 py-2 text-[11px] font-mono text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-400/30 transition-colors"
+                      />
+                      <button onClick={handleChatSend} disabled={chatSending || !chatInput.trim()}
+                        className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-500/30 disabled:opacity-30 transition-all cursor-pointer">
+                        {chatSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
             ) : resultLoading ? (
               <div className="flex items-center justify-center h-48">
                 <Loader2 size={18} className="animate-spin text-cyan-400" />

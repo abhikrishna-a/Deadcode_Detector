@@ -68,7 +68,7 @@ export default function HistoryTreeNode<T>({
           <Folder size={12} className="text-purple-400 flex-shrink-0" />
         )}
         <span className="text-xs font-mono text-zinc-400 truncate">{node.name}/</span>
-        <span className="text-[9px] font-mono text-zinc-600">({node.children.length})</span>
+        <span className="text-[9px] font-mono text-zinc-600">({node.meta?.total_files ?? node.children.length})</span>
         {node.meta?.total_issues !== undefined && node.meta.total_issues > 0 && (
           <span className="text-[8px] font-mono text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded ml-1">
             {node.meta.total_issues} issues
