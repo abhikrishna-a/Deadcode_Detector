@@ -129,20 +129,28 @@ test.describe('HistoryTab and TeamChatTab E2E', () => {
     const msgInput = page.locator('input[placeholder*="Message"]');
     await expect(msgInput).toBeVisible({ timeout: 10000 });
 
+    // Verify connection status badge shows "Connected"
+    await expect(page.locator('text=Connected')).toBeVisible({ timeout: 8000 });
+
     // Send message via Enter key
     const testMsg = `Hello from e2e ${Date.now()}`;
     await msgInput.fill(testMsg);
+    // Verify React state caught up before pressing Enter
+    await expect(msgInput).toHaveValue(testMsg);
+    await page.waitForTimeout(200);
     await msgInput.press('Enter');
 
     // Wait for message to appear
-    await expect(page.locator(`text="${testMsg}"`)).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(`text="${testMsg}"`)).toBeVisible({ timeout: 12000 });
 
     // Send a follow-up via Enter
     const secondMsg = `Second message ${Date.now()}`;
     await msgInput.fill(secondMsg);
+    await expect(msgInput).toHaveValue(secondMsg);
+    await page.waitForTimeout(200);
     await msgInput.press('Enter');
 
-    await expect(page.locator(`text="${secondMsg}"`)).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(`text="${secondMsg}"`)).toBeVisible({ timeout: 12000 });
 
     // Switch room: click History then back to verify room still works
     await page.click('button:has-text("History")');
