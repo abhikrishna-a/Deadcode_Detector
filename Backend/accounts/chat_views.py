@@ -6,6 +6,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Count, OuterRef, Subquery
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -184,23 +185,27 @@ class ChatRoomListCreateView(APIView):
 
     def get(self, request):
         try:
-            rooms = ChatRoom.objects.all().order_by('-created_at')
-            data = []
-            for r in rooms:
-                last_msg = r.messages.order_by('-created_at').first()
-                data.append({
-                    'id': r.id,
-                    'name': r.name,
-                    'scan_folder': r.scan_folder,
-                    'created_by': r.created_by.username,
-                    'created_at': r.created_at.isoformat(),
-                    'message_count': r.messages.count(),
-                    'last_message': {
-                        'content': last_msg.content[:200] if last_msg else '',
-                        'author_username': last_msg.author.username if last_msg else '',
-                        'created_at': last_msg.created_at.isoformat() if last_msg else '',
-                    } if last_msg else None,
-                })
+            last_msg_qs = RoomMessage.objects.filter(room=OuterRef('pk')).order_by('-created_at')
+            rooms = ChatRoom.objects.annotate(
+                message_count=Count('messages'),
+                last_message_content=Subquery(last_msg_qs.values('content')[:1]),
+                last_message_author=Subquery(last_msg_qs.values('author__username')[:1]),
+                last_message_created_at=Subquery(last_msg_qs.values('created_at')[:1]),
+            ).select_related('created_by').order_by('-created_at')
+
+            data = [{
+                'id': r.id,
+                'name': r.name,
+                'scan_folder': r.scan_folder,
+                'created_by': r.created_by.username,
+                'created_at': r.created_at.isoformat(),
+                'message_count': r.message_count,
+                'last_message': {
+                    'content': (r.last_message_content or '')[:200],
+                    'author_username': r.last_message_author or '',
+                    'created_at': r.last_message_created_at.isoformat() if r.last_message_created_at else '',
+                } if r.last_message_content else None,
+            } for r in rooms]
             return Response({'rooms': data}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.exception('Failed to list rooms')

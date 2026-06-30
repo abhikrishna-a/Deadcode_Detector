@@ -580,7 +580,7 @@ class JuniorSubmissionListView(APIView):
     def get(self, request):
         from .models import JuniorSubmission
         from .serializers import JuniorSubmissionSerializer
-        submissions = JuniorSubmission.objects.filter(user=request.user).order_by('-created_at')
+        submissions = JuniorSubmission.objects.filter(user=request.user).select_related('user').order_by('-created_at')
         return Response(JuniorSubmissionSerializer(submissions, many=True).data)
 
 

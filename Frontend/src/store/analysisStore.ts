@@ -145,7 +145,10 @@ export const useAnalysisStore = create<AnalysisState>()(
         view: 'upload' as const,
         historyMode: false,
       }),
-      partialize: (state) => state,
+      partialize: (state) => ({
+        history: state.history,
+        currentFolderName: state.currentFolderName,
+      }),
     }
   )
 );

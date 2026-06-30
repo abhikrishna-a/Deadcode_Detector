@@ -83,11 +83,10 @@ export default function App() {
             allItems = allItems.concat(r.items);
           }
         }
-        const store = useAnalysisStore.getState();
-        for (const item of allItems) {
+        const reports: AnalysisResult[] = allItems.map(item => {
           const analysisData = item.analysis_data || {};
           const rSummary = analysisData.summary || {};
-          store.addHistoryReport({
+          return {
             document_id: item.analysis_id,
             filename: item.filename,
             summary: {
@@ -103,8 +102,9 @@ export default function App() {
             scan_type: item.scan_type || 'single',
             scan_id: item.scan_id || item.analysis_id,
             _source_content: item.source_content || '',
-          } as AnalysisResult);
-        }
+          } as AnalysisResult;
+        });
+        useAnalysisStore.getState().setHistory(reports);
       } catch {
         // Silent — history stays as persisted
       }

@@ -103,17 +103,6 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
     });
   }, [folderGroups]);
 
-  const handleFolderNavigate = useCallback((folderKey: string) => {
-    const files = folderGroups[folderKey];
-    if (!files?.length) return;
-    const file = files[0];
-    if (folderKey === '(Single Files)') {
-      onNavigateToWorkspace?.(file.document_id, file.filename);
-    } else {
-      onNavigateToWorkspace?.(file.document_id, file.filename, file.scan_folder);
-    }
-  }, [folderGroups, onNavigateToWorkspace]);
-
   const groupedScans = useMemo(() => {
     const folders: Record<string, AnalysisResult[]> = {};
     history.forEach(r => {
@@ -323,8 +312,6 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
                       dataKey={folder}
                       stroke={folderColorMap[folder]}
                       strokeWidth={3}
-                      onClick={() => handleFolderNavigate(folder)}
-                      style={{ cursor: 'pointer' }}
                     />
                 );
               })}
@@ -338,17 +325,16 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
               {[...new Set(folderList)].map(folder => {
                 if (folder === '(Single Files)') return null;
                 return (
-                <button
+                <div
                   key={folder}
-                  onClick={() => handleFolderNavigate(folder)}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] transition-colors cursor-pointer text-[11px] font-mono text-zinc-300"
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] transition-colors text-[11px] font-mono text-zinc-300"
                 >
                   <div
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: folderColorMap[folder] }}
                   />
                   <span>{folder}</span>
-                </button>
+                </div>
               );
             })}
           </div>

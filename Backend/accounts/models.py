@@ -119,15 +119,15 @@ class JuniorSubmission(models.Model):
     file_content = models.TextField(blank=True, default='')
     language = models.CharField(max_length=50, blank=True, default='')
     relative_path = models.CharField(max_length=1000, blank=True, default='')
-    scan_folder = models.CharField(max_length=500, blank=True, default='')
+    scan_folder = models.CharField(max_length=500, blank=True, default='', db_index=True)
     analysis_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_review')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_review', db_index=True)
     error = models.TextField(blank=True, default='')
     result = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     scheduled_at = models.DateTimeField(blank=True, null=True, db_index=True)
     timeout_seconds = models.IntegerField(default=60)
-    rag_document_id = models.UUIDField(null=True, blank=True)
+    rag_document_id = models.UUIDField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -165,7 +165,7 @@ class CodeReviewFeedback(models.Model):
     line_end = models.IntegerField(blank=True, null=True)
     comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    resolved = models.BooleanField(default=False)
+    resolved = models.BooleanField(default=False, db_index=True)
 
     def __str__(self):
         return f"Feedback on {self.submission.filename} L{self.line_start}"

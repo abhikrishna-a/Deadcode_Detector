@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'motion/react';
 import {
   MessageSquare, Send, Hash, Folder, Loader2, Plus,
-  CheckCheck,
+  CheckCheck, RefreshCw,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { analysisAPI } from '../../api/analysis';
@@ -70,7 +70,21 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
       for (const item of items) {
         if (item.scan_folder) folders.add(item.scan_folder);
       }
-      setScanFolders(Array.from(folders).sort());
+      const arr = Array.from(folders).sort();
+      setScanFolders(arr);
+      if (arr.length === 0) {
+        setTimeout(async () => {
+          try {
+            const retry = await analysisAPI.ragHistory(200, 0);
+            const retryItems = Array.isArray(retry) ? retry : retry.items || [];
+            const retryFolders = new Set<string>();
+            for (const item of retryItems) {
+              if (item.scan_folder) retryFolders.add(item.scan_folder);
+            }
+            setScanFolders(Array.from(retryFolders).sort());
+          } catch { /* ignore */ }
+        }, 2000);
+      }
     } catch { /* ignore */ }
   };
 
@@ -259,8 +273,15 @@ export default function TeamChatTab({ currentUser }: TeamChatTabProps) {
               ))}
               {availableFolders.length > 0 && (
                 <div className="px-4 py-2 border-t border-white/[0.04]">
-                  <div className="text-[9px] text-zinc-600 font-mono mb-2 uppercase tracking-wider">
+                  <div className="text-[9px] text-zinc-600 font-mono mb-2 uppercase tracking-wider flex items-center gap-2">
                     Available scan folders
+                    <button
+                      onClick={loadScanFolders}
+                      className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                      title="Refresh folders"
+                    >
+                      <RefreshCw size={10} />
+                    </button>
                   </div>
                   {availableFolders.map(f => (
                     <button

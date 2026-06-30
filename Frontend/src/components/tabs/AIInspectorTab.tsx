@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Folder, Trash2, Bot, User, AlertCircle } from 'lucide-react';
+import { MessageSquare, Send, Folder, Trash2, Bot, User, AlertCircle, RefreshCw } from 'lucide-react';
 import { analysisAPI } from '../../api/analysis';
 import { User as UserType } from '../../types';
 
@@ -22,30 +22,34 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const loadedRef = useRef(false);
 
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    (async () => {
+  const loadFolders = async () => {
+    try {
+      let hist;
       try {
-        let hist;
-        try {
-          hist = await analysisAPI.ragHistory(500);
-        } catch {
+        hist = await analysisAPI.ragHistory(500);
+        if (!hist.items?.length) {
           hist = await analysisAPI.analysisHistory(500);
         }
-        const folderSet = new Set<string>();
-        for (const item of hist.items) {
-          if (item.scan_folder) folderSet.add(item.scan_folder);
-        }
-        const arr = Array.from(folderSet).sort();
-        setFolders(arr);
-        if (arr.length > 0) setSelectedFolder(arr[0]);
       } catch {
-        // silent
+        hist = await analysisAPI.analysisHistory(500);
       }
-    })();
+      const folderSet = new Set<string>();
+      for (const item of hist.items) {
+        if (item.scan_folder) folderSet.add(item.scan_folder);
+      }
+      const arr = Array.from(folderSet).sort();
+      setFolders(arr);
+      if (arr.length > 0) setSelectedFolder(arr[0]);
+    } catch {
+      // silent
+    }
+  };
+
+  useEffect(() => {
+    loadFolders();
+    const timer = setTimeout(loadFolders, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -153,6 +157,13 @@ export default function AIInspectorTab({ currentUser, onShowToast }: AIInspector
           <label className="text-[9px] font-mono uppercase tracking-widest text-zinc-500 font-semibold mb-2 block">
             <Folder size={10} className="inline mr-1 text-purple-400" />
             Scan Folder
+            <button
+              onClick={loadFolders}
+              className="ml-2 text-cyan-400 hover:text-cyan-300 transition-colors align-middle cursor-pointer"
+              title="Refresh folders"
+            >
+              <RefreshCw size={10} />
+            </button>
           </label>
           {folders.length === 0 ? (
             <p className="text-[10px] font-mono text-zinc-600 italic">No analyzed folders found. Run an analysis first.</p>
