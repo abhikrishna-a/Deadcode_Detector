@@ -473,18 +473,20 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     setSending(p => ({ ...p, [key]: false }));
 
     // Open inline chat overlay
-    const room = scanFolder || 'general';
+    const room = scanFolder || '';
     setChatRoomName(room);
     setChatMessages([]);
     setChatOverlayOpen(true);
 
-    try {
-      await analysisAPI.createChatRoom(room, room);
-      if (description) {
-        await analysisAPI.sendRoomMessage(room, `**Issue in \`${fn}\`:** ${description}`);
+    if (room) {
+      try {
+        await analysisAPI.createChatRoom(room, room);
+        if (description) {
+          await analysisAPI.sendRoomMessage(room, `**Issue in \`${fn}\`:** ${description}`);
+        }
+      } catch (e: any) {
+        console.warn('Chat overlay init failed:', e);
       }
-    } catch (e: any) {
-      console.warn('Chat overlay init failed:', e);
     }
   };
 
