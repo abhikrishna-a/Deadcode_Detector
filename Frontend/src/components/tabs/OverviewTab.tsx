@@ -6,6 +6,7 @@ import { AnalysisResult } from '../../types';
 import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
 import HistoryTreeNode from '../../lib/TreeComponents';
 import CodeViewer from '../CodeViewer';
+import { logger } from '../../lib/logger';
 import { analysisAPI } from '../../api/analysis';
 
 const FOLDER_COLORS = ['#06b6d4', '#8b5cf6', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#84cc16'];
@@ -199,7 +200,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
           return;
         }
       } catch (err) {
-        console.warn('Failed to fallback-load Django analysis data:', err);
+        logger.warn('Failed to fallback-load Django analysis data:', err);
       }
 
       setInspectedFile(prev => prev?.id === id

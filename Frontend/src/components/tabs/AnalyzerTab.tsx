@@ -13,6 +13,7 @@ import { analysisAPI } from '../../api/analysis';
 import { useAnalysisSocket } from '../../hooks/useAnalysisSocket';
 import { TreeNodeData, buildFileTree, groupByTopLevelDir } from '../../lib/fileTree';
 import { useAnalysisStore } from '../../store/analysisStore';
+import { logger } from '../../lib/logger';
 import CodeViewer from '../CodeViewer';
 import Modal from '../ui/Modals';
 
@@ -460,7 +461,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         setHistoryMode(true);
         setBatchErrorsList([]);
       } catch (err: any) {
-        console.error('Failed to load analysis from history:', err);
+        logger.error('Failed to load analysis from history:', err);
       } finally {
         setViewTarget(null);
       }
@@ -517,7 +518,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
           );
         }
       } catch (err) {
-        console.error('Failed to re-fetch analysis data:', err);
+        logger.error('Failed to re-fetch analysis data:', err);
       }
     })();
   }, [selectedFile?.document_id]);
@@ -630,7 +631,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             fileContents[f.path] = f.content;
           }
         } catch (err) {
-          console.error('Fetch batch failed:', err);
+          logger.error('Fetch batch failed:', err);
         }
       })());
     }
@@ -704,7 +705,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             startPollingFallback(batch_id);
           }
         },
-        onError: (err) => console.error('WS error:', err),
+        onError: (err) => logger.error('WS error:', err),
       });
     } catch {
       setBatchErrorsList(prev => [{ path: gitUrl, error: 'Unable to submit batch for analysis. Please try again.' }]);
@@ -854,7 +855,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             startPollingFallback(batch_id);
           }
         },
-        onError: (err) => console.error('WS error:', err),
+        onError: (err) => logger.error('WS error:', err),
       });
     } catch {
       setBatchErrorsList(prev => [{ path: folderName, error: 'Unable to submit batch for analysis. Please try again.' }]);

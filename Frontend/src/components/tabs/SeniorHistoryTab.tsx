@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, FileCode, Loader2, Folder, FolderOpen, ChevronRight, ArrowUpFromLine, MessageSquare, Send } from 'lucide-react';
+import { logger } from '../../lib/logger';
 import { analysisAPI } from '../../api/analysis';
 import { Skeleton } from '../ui/Skeleton';
 import { groupByTopLevelDir } from '../../lib/fileTree';
@@ -316,7 +317,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
         if (inspectedFileRef.current !== id) return;
         setFeedbacks(fb);
       } catch (err) {
-        console.warn('Failed to lookup submission for analysis (preloaded path):', id, err);
+        logger.warn('Failed to lookup submission for analysis (preloaded path):', id, err);
       }
       return;
     }
@@ -368,7 +369,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
         if (inspectedFileRef.current !== id) return;
         setFeedbacks(fb);
       } catch (err) {
-        console.warn('Failed to lookup submission for analysis (RAG path):', id, err);
+        logger.warn('Failed to lookup submission for analysis (RAG path):', id, err);
       }
     } catch {
       if (inspectedFileRef.current !== id) return;
@@ -411,7 +412,7 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
           return;
         }
       } catch (err) {
-        console.warn('Failed to fallback-load Django analysis data:', err);
+        logger.warn('Failed to fallback-load Django analysis data:', err);
       }
 
       setInspectedFile({

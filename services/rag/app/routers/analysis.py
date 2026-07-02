@@ -21,7 +21,6 @@ from app.services.storage import store_analysis, get_history, get_document, upda
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
 
 logger = logging.getLogger("ghostcode-rag.analysis")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 router = APIRouter()
 

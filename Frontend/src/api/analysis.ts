@@ -1,3 +1,4 @@
+import { logger } from '../lib/logger';
 import { apiClient, getAccessToken } from './client';
 import type {
   GitManifest,
@@ -65,7 +66,7 @@ export const analysisAPI = {
     }
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Analysis failed (HTTP ${response.status})`);
-      console.error('Analysis failed:', { status: response.status, detail });
+      logger.error('Analysis failed:', { status: response.status, detail });
       throw new Error(detail);
     }
     const result = await response.json();
@@ -299,7 +300,7 @@ export const analysisAPI = {
     }
     if (!response.ok) {
       const detail = await readErrorDetail(response, `RAG chat failed (HTTP ${response.status})`);
-      console.error('RAG chat failed:', { status: response.status, detail });
+      logger.error('RAG chat failed:', { status: response.status, detail });
       throw new Error(detail);
     }
     const reader = response.body?.getReader();
@@ -352,7 +353,7 @@ export const analysisAPI = {
     }
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Folder chat failed (HTTP ${response.status})`);
-      console.error('Folder chat failed:', { status: response.status, detail });
+      logger.error('Folder chat failed:', { status: response.status, detail });
       throw new Error(detail);
     }
     const reader = response.body?.getReader();

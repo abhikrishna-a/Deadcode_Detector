@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
 import { GitManifest, GitFileContents } from '../../api/types';
+import { logger } from '../../lib/logger';
 import { analysisAPI } from '../../api/analysis';
 import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
 import type { HistoryTreeNodeData } from '../../lib/fileTree';
@@ -485,7 +486,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
           await analysisAPI.sendRoomMessage(room, `**Issue in \`${fn}\`:** ${description}`);
         }
       } catch (e: any) {
-        console.warn('Chat overlay init failed:', e);
+        logger.warn('Chat overlay init failed:', e);
       }
     }
   };
