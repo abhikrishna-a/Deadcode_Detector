@@ -48,7 +48,7 @@ class ChatThreadListCreateView(APIView):
                 qs = IssueThread.objects.filter(resolved=resolved)
             else:
                 qs = IssueThread.objects.filter(created_by=request.user, resolved=resolved)
-            qs = qs.prefetch_related('messages', 'created_by')
+            qs = qs.select_related('created_by').prefetch_related('messages')
 
             data = []
             for t in qs:

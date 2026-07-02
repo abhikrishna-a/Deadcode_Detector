@@ -15,3 +15,4 @@ RUN pip install --no-cache-dir -r requirements/base.txt -r requirements/extra.tx
 COPY . .
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1

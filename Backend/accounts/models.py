@@ -15,7 +15,8 @@ class CustomUser(AbstractUser):
     role = models.CharField(
         max_length=10,
         choices=ROLE_CHOICES,
-        default='junior'
+        default='junior',
+        db_index=True
     )
     # Secret key used to generate OTP
     mfa_secret = models.CharField(
@@ -27,7 +28,7 @@ class CustomUser(AbstractUser):
     # Whether MFA setup is completed
     is_mfa_enabled = models.BooleanField(default=False)
 
-    password_reset_token = models.CharField(max_length=64, blank=True, null=True)
+    password_reset_token = models.CharField(max_length=64, blank=True, null=True, db_index=True)
     password_reset_token_created_at = models.DateTimeField(blank=True, null=True)
 
     @property
@@ -170,3 +171,5 @@ class CodeReviewFeedback(models.Model):
 
     def __str__(self):
         return f"Feedback on {self.submission.filename} L{self.line_start}"
+
+

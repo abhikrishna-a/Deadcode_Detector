@@ -118,7 +118,7 @@ def batch_analyze_folder(
         submission_map = {}
         if submission_ids:
             from .models import JuniorSubmission
-            submissions = JuniorSubmission.objects.select_related('user').filter(id__in=submission_ids)
+            submissions = JuniorSubmission.objects.filter(id__in=submission_ids)
             submission_map = {submission.filename: submission for submission in submissions}
 
         from django.contrib.auth import get_user_model
@@ -274,7 +274,7 @@ def handle_batch_failure(sender=None, task_id=None, exception=None, args=None, *
         if submission_ids:
             try:
                 from .models import JuniorSubmission
-                submissions = JuniorSubmission.objects.select_related('user').filter(id__in=submission_ids)
+                submissions = JuniorSubmission.objects.filter(id__in=submission_ids)
                 submission_map = {submission.filename: submission for submission in submissions}
             except Exception:
                 logger.warning('Failed to load submissions for failed batch %s', batch_id, exc_info=True)

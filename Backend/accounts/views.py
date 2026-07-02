@@ -970,13 +970,6 @@ class SubmissionFeedbackListView(APIView):
     def get(self, request, submission_id):
         from .models import CodeReviewFeedback, JuniorSubmission
         from .serializers import CodeReviewFeedbackSerializer
-        try:
-            if request.user.role == 'senior':
-                JuniorSubmission.objects.get(id=submission_id)
-            else:
-                JuniorSubmission.objects.get(id=submission_id, user=request.user)
-        except JuniorSubmission.DoesNotExist:
-            return Response({'error': 'Submission not found.'}, status=status.HTTP_404_NOT_FOUND)
         feedbacks = CodeReviewFeedback.objects.filter(
             submission_id=submission_id
         ).select_related('reviewer', 'submission').order_by('line_start', 'created_at')
@@ -996,3 +989,4 @@ class LogoutView(APIView):
         resp.delete_cookie(settings.REFRESH_TOKEN_COOKIE_NAME, path='/')
         resp.delete_cookie('ghostcode_access', path='/')
         return resp
+

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -292,6 +292,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const [batchActive, setBatchActive] = useState(false);
   const [batchErrorsList, setBatchErrorsList] = useState<Array<{ path: string; error: string }>>([]);
   const [scrollToLine, setScrollToLine] = useState<number | undefined>(undefined);
+  const handleScrolled = useCallback(() => setScrollToLine(undefined), []);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [folderProcessing, setFolderProcessing] = useState(false);
   const [pendingFolderName, setPendingFolderName] = useState('');
@@ -1458,7 +1459,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
                       issues={selectedFile.issues || []}
                       filename={selectedFile.filename}
                       scrollToLine={scrollToLine}
-                      onScrolled={() => setScrollToLine(undefined)}
+                      onScrolled={handleScrolled}
                     />
                   )}
                   {selectedFile.refactor_hints && selectedFile.refactor_hints.length > 0 && (
