@@ -25,6 +25,7 @@ ghostcode.db
 Backend/.env
 Backend/db.sqlite3
 Backend/staticfiles/
+Backend/celerybeat-schedule*
 media/
 
 # Node / Vite

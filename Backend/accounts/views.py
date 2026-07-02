@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import logging
 import secrets
 import threading
@@ -810,6 +812,8 @@ class SeniorSubmissionListView(APIView):
         qs = JuniorSubmission.objects.all().select_related('user').order_by('-created_at')
         if status_filter:
             qs = qs.filter(status=status_filter)
+        thirty_min_ago = timezone.now() - timedelta(minutes=30)
+        qs = qs.exclude(status='done', completed_at__lt=thirty_min_ago)
         return Response(JuniorSubmissionSerializer(qs, many=True).data)
 
 

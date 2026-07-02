@@ -128,6 +128,7 @@ class JuniorSubmission(models.Model):
     scheduled_at = models.DateTimeField(blank=True, null=True, db_index=True)
     timeout_seconds = models.IntegerField(default=60)
     rag_document_id = models.UUIDField(null=True, blank=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

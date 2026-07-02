@@ -214,13 +214,12 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   const [feedbackNotifs, setFeedbackNotifs] = useState(0);
   const feedbackNotifsRef = useRef(0);
 
-  // Live refresh state
-  const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
   const [refreshing, setRefreshing] = useState(false);
 
   // 30s tick to re-render timeAgo
+  const [, forceTick] = useState(0);
   useEffect(() => {
-    const tick = setInterval(() => setLastRefreshed(prev => prev + 1), 30000);
+    const tick = setInterval(() => forceTick(prev => prev + 1), 30000);
     return () => clearInterval(tick);
   }, []);
 
@@ -280,7 +279,6 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       const unresolved = feedbacks.filter((fb: CodeReviewFeedback) => !fb.resolved).length;
       feedbackNotifsRef.current = unresolved;
       setFeedbackNotifs(unresolved);
-      setLastRefreshed(Date.now());
     } catch (e: any) {
       onShowToast(e?.message || 'Failed to load history reports.', 'error');
     }
@@ -296,7 +294,6 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       try {
         const data = await analysisAPI.listSubmissions();
         setSubmissions(data);
-        setLastRefreshed(Date.now());
       } catch { /* ignore */ }
     };
     refresh();
@@ -571,6 +568,11 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
 
   const doneSubmissions = useMemo(() => submissions.filter(s => s.status === 'done'), [submissions]);
 
+  const latestUploadTime = useMemo(() => {
+    if (submissions.length === 0) return Date.now();
+    return Math.max(...submissions.map(s => new Date(s.created_at).getTime()));
+  }, [submissions]);
+
   const recentSubmissionTree = useMemo(() => {
     const sliced = submissions.slice(0, 10);
     const seen = new Map<string, any>();
@@ -840,7 +842,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
         <div>
           <h2 className="font-bold text-xl text-neutral-200 tracking-tight">Junior Dev Portal</h2>
           <p className="text-zinc-500 text-xs font-sans mt-1">
-            Nightly reports &middot; updated {timeAgo(String(lastRefreshed))}
+            Nightly reports &middot; updated {timeAgo(latestUploadTime)}
             <button onClick={loadData} className="ml-2 text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 cursor-pointer">
               <RefreshCw size={10} className={refreshing ? 'animate-spin' : ''} /> refresh
             </button>

@@ -9,6 +9,7 @@ from celery.exceptions import MaxRetriesExceededError
 from celery.signals import task_failure
 from channels.layers import get_channel_layer
 from django.conf import settings
+from django.utils import timezone
 from requests import HTTPError
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -165,8 +166,9 @@ def batch_analyze_folder(
                         submission.rag_document_id = doc_id
                     submission.result = fr.get('analysis', {})
                     submission.status = 'done'
+                    submission.completed_at = timezone.now()
                     submission.error = ''
-                    submission.save(update_fields=['analysis_id', 'rag_document_id', 'result', 'status', 'error'])
+                    submission.save(update_fields=['analysis_id', 'rag_document_id', 'result', 'status', 'completed_at', 'error'])
                     _notify_user(submission.user_id, {
                         'type': 'junior.analysis_complete',
                         'submission_id': submission.id,
@@ -399,10 +401,11 @@ def analyze_junior_submission(self, submission_id: int):
         data = resp.json()
         submission.result = data.get('analysis', data)
         submission.status = 'done'
+        submission.completed_at = timezone.now()
         doc_id = data.get('document_id')
         if doc_id:
             submission.rag_document_id = doc_id
-        submission.save(update_fields=['result', 'status', 'rag_document_id'])
+        submission.save(update_fields=['result', 'status', 'completed_at', 'rag_document_id'])
         _notify_user(user.id, {
             'type': 'junior.analysis_complete',
             'submission_id': submission.id,
