@@ -127,7 +127,7 @@ const CodeViewer = memo(function CodeViewer({ source, issues, filename, scrollTo
                           : 'text-amber-400 bg-amber-400/10 border-amber-400/25'
                       }`}
                     >
-                      {issue.type.replace('_', ' ')}
+                      {(issue.type ?? '').replaceAll('_', ' ')}
                     </span>
                   ))}
                 </div>

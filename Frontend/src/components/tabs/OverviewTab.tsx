@@ -47,6 +47,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
     error: string | null;
   } | null>(null);
   const inspectedFileRef = useRef<string | null>(null);
+  const loadedFileIdsRef = useRef<Set<string>>(new Set());
 
   const stats = useMemo(() => {
     const singles = history.filter(r => r.scan_type === 'single').length;
@@ -135,8 +136,19 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
     });
   };
 
+  const closeInspectedFile = useCallback(() => {
+    inspectedFileRef.current = null;
+    setInspectedFile(null);
+  }, []);
+
   const handleInspectFile = useCallback(async (item: AnalysisResult) => {
     const id = item.document_id;
+
+    // If this file is already fully loaded in the modal, skip to prevent blanking on re-renders
+    if (id && loadedFileIdsRef.current.has(id) && inspectedFileRef.current === id) {
+      return;
+    }
+
     inspectedFileRef.current = id;
     setInspectedFile({
       id,
@@ -148,6 +160,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
     });
 
     if (item._source_content && item._source_content.trim()) {
+      loadedFileIdsRef.current.add(id);
       setInspectedFile({
         id,
         filename: item.filename,
@@ -167,6 +180,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
     try {
       const data = await analysisAPI.ragGetAnalysis(id);
       if (inspectedFileRef.current !== id) return;
+      if (data._source_content) loadedFileIdsRef.current.add(id);
       setInspectedFile({
         id,
         filename: data.filename || item.filename,
@@ -189,6 +203,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
           match = searchData.items.find((i: any) => i.analysis_id === id);
         }
         if (match?.source_content) {
+          loadedFileIdsRef.current.add(id);
           setInspectedFile({
             id,
             filename: match.filename,
@@ -447,7 +462,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
                                     >
                                       {treeNodes.map((node, ni, arr) => (
                                         <HistoryTreeNode<AnalysisResult>
-                                          key={(node.file as AnalysisResult)?.document_id || node.name}
+                                          key={`${node.name}-${(node.file as AnalysisResult)?.document_id || ni}`}
                                           node={node}
                                           depth={0}
                                           parentPath=""
@@ -508,7 +523,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => setInspectedFile(null)}
+            onClick={closeInspectedFile}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -523,8 +538,7 @@ export default function OverviewTab({ history, onNavigateToWorkspace, onNavigate
                   <span className="text-sm font-mono text-zinc-200 truncate">{inspectedFile.filename}</span>
                 </div>
                 <button
-                  onClick={() => setInspectedFile(null)}
-                  className="px-3 py-1.5 rounded-lg text-[10px] font-mono text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.04] transition-all cursor-pointer flex-shrink-0"
+                  onClick={closeInspectedFile}
                 >
                   Close
                 </button>

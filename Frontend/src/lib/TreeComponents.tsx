@@ -87,7 +87,7 @@ export default function HistoryTreeNode<T>({
           >
             {node.children.map((child, i, arr) => (
               <HistoryTreeNode
-                key={child.file !== undefined ? String((child.file as any)?.analysis_id || (child.file as any)?.document_id || i) : child.name}
+                key={child.file !== undefined ? `${child.name}-${(child.file as any)?.document_id || (child.file as any)?.analysis_id || i}` : child.name}
                 node={child}
                 depth={depth + 1}
                 parentPath={fullPath}

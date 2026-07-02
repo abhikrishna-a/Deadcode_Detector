@@ -98,7 +98,13 @@ export function buildHistoryTree<T extends { filename: string }>(
   defaultScanFolder?: string
 ): HistoryTreeNodeData<T>[] {
   const root: HistoryTreeNodeData<T>[] = [];
+  const seen = new Set<string>();
   for (const file of files) {
+    const fileId = (file as any).document_id || (file as any).analysis_id;
+    if (fileId) {
+      if (seen.has(fileId)) continue;
+      seen.add(fileId);
+    }
     let path = file.filename.replace(/\\/g, '/');
     if (defaultScanFolder) {
       const prefix = defaultScanFolder.replace(/\\/g, '/').replace(/\/?$/, '/');
