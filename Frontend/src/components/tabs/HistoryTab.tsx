@@ -461,17 +461,6 @@ export default function HistoryTab({ currentUser, onNavigateToChat, onNavigateTo
                     </span>
                   )}
                   <span className="ml-auto" />
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const first = group.files[0];
-                      if (first) onNavigateToWorkspace(first.analysis_id, first.filename, first.scan_folder);
-                    }}
-                    className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer"
-                    title="Open in Workspace"
-                  >
-                    <ArrowUpFromLine size={11} />
-                  </span>
                 </button>
 
                 {expandedFolders.has(group.name) && group.appGroups.map((appGroup, agIdx, agArr) => (

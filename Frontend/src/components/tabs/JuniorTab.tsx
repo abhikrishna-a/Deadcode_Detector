@@ -9,7 +9,7 @@ import {
   MessageSquareText, Send, CheckCheck,
 } from 'lucide-react';
 import { User, AnalysisResult, CodeReviewFeedback } from '../../types';
-import { GitManifest, GitFileContents } from '../../api/types';
+import { GitManifest } from '../../api/types';
 import { logger } from '../../lib/logger';
 import { analysisAPI } from '../../api/analysis';
 import { groupByTopLevelDir, buildHistoryTree } from '../../lib/fileTree';
@@ -215,6 +215,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   const feedbackNotifsRef = useRef(0);
 
   const [refreshing, setRefreshing] = useState(false);
+  const uploadingRef = useRef(false);
 
   // 30s tick to re-render timeAgo
   const [, forceTick] = useState(0);
@@ -299,7 +300,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
     refresh();
     connect(msg => {
       if (msg.type === 'nightly_report_ready') loadData();
-      if (msg.type === 'submission_update' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') refresh();
+      if (msg.type === 'submission_update' || msg.type === 'junior.analysis_complete' || msg.type === 'junior.analysis_failed') { if (!uploadingRef.current) refresh(); }
       if (msg.type === 'feedback_added') {
         feedbackNotifsRef.current += 1;
         setFeedbackNotifs(feedbackNotifsRef.current);
@@ -382,6 +383,7 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
   const handleUpload = async () => {
     if (!uploadFiles.length || uploading) return;
     setUploading(true);
+    uploadingRef.current = true;
     const total = uploadFiles.length;
     let uploaded = 0;
     try {
@@ -402,42 +404,24 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
       onShowToast(e?.message || `Upload failed after ${uploaded}/${total} files.`, 'error');
     }
     setUploading(false);
+    uploadingRef.current = false;
   };
-
   const handleGitImport = async () => {
     if (!gitUrl.trim() || gitImporting) return;
     setGitImporting(true);
     try {
-      // Step 1: Clone the repo (same as AnalyzerTab.analyzeGitRepo)
       const manifest: GitManifest | null = await analysisAPI.gitClone(gitUrl.trim(), gitBranch);
       if (!manifest || !manifest.files.length) throw new Error('No files found in repository.');
-      onShowToast(`Cloned ${manifest.repo_name}: ${manifest.files.length} file(s) found.`, 'info');
 
-      // Step 2: Fetch all file contents in parallel batches
-      const FETCH_BATCH = 1000;
-      const allPaths = manifest.files.map(f => f.path);
-      const fileContents: Record<string, string> = {};
-      const fetchPromises: Promise<void>[] = [];
-      for (let i = 0; i < allPaths.length; i += FETCH_BATCH) {
-        const chunk = allPaths.slice(i, i + FETCH_BATCH);
-        fetchPromises.push((async () => {
-          const contents: GitFileContents = await analysisAPI.gitFetchFiles(manifest.session_id, chunk);
-          for (const f of contents.files) {
-            fileContents[f.path] = f.content;
-          }
-        })());
-      }
-      await Promise.all(fetchPromises);
-
-      // Step 3: Create File objects (filtered to text files) and submit for batch analysis
-      const files = manifest.files
-        .filter(f => f.path in fileContents && fileContents[f.path] && isTextFile(f.path))
-        .map(f => new File([fileContents[f.path]], f.path));
-      const skipped = manifest.files.length - files.length;
+      const filteredPaths = manifest.files
+        .map(f => f.path)
+        .filter(p => isTextFile(p));
+      const skipped = manifest.files.length - filteredPaths.length;
       if (skipped > 0) onShowToast(`Filtered out ${skipped} non-text file(s) from git import.`, 'info');
-      if (!files.length) throw new Error('No text files found in repository.');
-      await analysisAPI.submitBatchAnalysis(files, manifest.repo_name, 'repo');
-      onShowToast(`Submitted ${files.length} file(s) from ${manifest.repo_name} for analysis.`, 'success');
+      if (!filteredPaths.length) throw new Error('No text files found in repository.');
+
+      await analysisAPI.juniorGitImport(gitUrl.trim(), gitBranch, filteredPaths);
+      onShowToast(`Submitted ${filteredPaths.length} file(s) from ${manifest.repo_name || 'repository'} for review.`, 'success');
 
       setGitUrl('');
       setGitBranch('main');
@@ -605,7 +589,15 @@ export default function JuniorTab({ currentUser, history, onShowToast, onNavigat
         ...r,
         filename: r.filename.startsWith(stripFolder + '/') ? r.filename.slice(stripFolder.length + 1) : r.filename,
       }));
-      const appGroups = groupByTopLevelDir(processed);
+      // Deduplicate report entries by filename, keeping the newest
+      const reportSeen = new Map<string, any>();
+      for (const r of processed) {
+        const key = r.filename;
+        if (!reportSeen.has(key) || new Date(r.created_at) > new Date(reportSeen.get(key).created_at)) {
+          reportSeen.set(key, r);
+        }
+      }
+      const appGroups = groupByTopLevelDir(Array.from(reportSeen.values()));
       const children: TreeNode[] = [];
       for (const ag of appGroups) {
         const prefix = ag.appName === 'Project Root' ? '' : ag.appName + '/';

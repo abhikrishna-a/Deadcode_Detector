@@ -67,8 +67,18 @@ interface ReviewTreeNode {
 }
 
 function buildReviewTree(submissions: Submission[]): ReviewTreeNode[] {
+  // Deduplicate by file path, keeping the newest submission
+  const dedupMap = new Map<string, Submission>();
+  for (const sub of submissions) {
+    const p = (sub.scan_folder || 'Standalone') + '/' + (sub.relative_path || sub.filename || 'untitled');
+    const normPath = p.replace(/\\/g, '/');
+    const existing = dedupMap.get(normPath);
+    if (!existing || new Date(sub.created_at) > new Date(existing.created_at)) {
+      dedupMap.set(normPath, sub);
+    }
+  }
   const root: ReviewTreeNode[] = [];
-  for (const submission of submissions) {
+  for (const submission of dedupMap.values()) {
     const displayPath = submission.relative_path || submission.filename || 'untitled';
     const path = `${submission.scan_folder || 'Standalone'}/${displayPath}`.replace(/\\/g, '/');
     const parts = path.split('/').filter(Boolean);
@@ -79,8 +89,8 @@ function buildReviewTree(submissions: Submission[]): ReviewTreeNode[] {
       const isLast = i === parts.length - 1;
       currentPath = currentPath ? `${currentPath}/${part}` : part;
       if (isLast) {
-        if (!current.some(n => !n.isDir && n.key === String(submission.id))) {
-          current.push({ name: part, isDir: false, children: [], key: String(submission.id), submission });
+        if (!current.some(n => !n.isDir && n.key === currentPath)) {
+          current.push({ name: part, isDir: false, children: [], key: currentPath, submission });
         }
       } else {
         let dir = current.find(node => node.isDir && node.name === part);
@@ -177,6 +187,11 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const refreshInterval = setInterval(() => { load(); }, 60000);
+    return () => clearInterval(refreshInterval);
+  }, [load]);
 
   useEffect(() => {
     setSchedulerCountdown(60);

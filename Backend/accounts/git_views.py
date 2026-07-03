@@ -41,7 +41,7 @@ ALLOWED_EXTENSIONS = {
     '.md', '.txt',
     '.mjs', '.cjs', '.mts', '.cts',
 }
-SKIP_DIRS = {'node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv'}
+SKIP_DIRS = {'node_modules', '.git', '__pycache__', 'dist', 'build', '.venv', 'venv', 'static_root', 'migrations'}
 CACHE_TTL = 15 * 60  # 15 minutes
 
 

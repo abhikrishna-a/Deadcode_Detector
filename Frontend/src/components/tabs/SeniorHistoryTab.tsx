@@ -503,7 +503,18 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
         }
       }
 
-      setItems(merged);
+      // Deduplicate by file path, keeping the newest analysis
+      const pathSeen = new Map<string, HistoryItem>();
+      for (const item of merged) {
+        const key = (item.scan_folder || '') + '/' + item.filename;
+        const existing = pathSeen.get(key);
+        if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
+          pathSeen.set(key, item);
+        }
+      }
+      const deduped = Array.from(pathSeen.values());
+
+      setItems(deduped);
       setHasLoadedOnce(true);
     } catch {
       onShowToast('Unable to load history. Refresh the page and try again.', 'error');
@@ -690,18 +701,6 @@ export default function SeniorHistoryTab({ currentUser, onNavigateToChat, onNavi
                       {group.scanType}
                     </span>
                   )}
-                  <span className="ml-auto" />
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const first = group.files[0];
-                      if (first) onNavigateToWorkspace(first.analysis_id, first.filename, first.scan_folder);
-                    }}
-                    className="p-1 rounded text-zinc-600 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors cursor-pointer"
-                    title="Open in Workspace"
-                  >
-                    <ArrowUpFromLine size={11} />
-                  </span>
                 </button>
 
                 {expandedFolders.has(group.name) && group.appGroups.map((appGroup, agIdx, agArr) => (

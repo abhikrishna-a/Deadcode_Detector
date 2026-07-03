@@ -304,6 +304,10 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
   const [expandedAppGroups, setExpandedAppGroups] = useState<Record<string, boolean>>({});
   const subdirButtonRef = useRef<HTMLButtonElement>(null);
   const pendingFilesRef = useRef<File[]>([]);
+  const [gitConfirmModalOpen, setGitConfirmModalOpen] = useState(false);
+  const [gitPendingFileCount, setGitPendingFileCount] = useState(0);
+  const [gitPendingRepoName, setGitPendingRepoName] = useState('');
+  const gitPendingFilesRef = useRef<File[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const analysisSocket = useAnalysisSocket();
   const pollRef = useRef<number | null>(null);
@@ -639,17 +643,45 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
 
     await Promise.all(fetchPromises);
 
-    setActiveFileName('Submitting for batch analysis...');
-
     // Create File objects from fetched contents
     const files = manifest.files
       .filter(f => f.path in fileContents && fileContents[f.path])
       .map(f => new File([fileContents[f.path]], f.path));
 
+    if (files.length === 0) {
+      setBatchErrorsList(prev => [{ path: gitUrl, error: 'No supported files found in the repository.' }]);
+      setBatchActive(false);
+      setActiveFileName('');
+      return;
+    }
+
+    gitPendingFilesRef.current = files;
+    setGitPendingFileCount(files.length);
+    setGitPendingRepoName(manifest.repo_name || gitUrl);
+    setGitConfirmModalOpen(true);
+    setActiveFileName('');
+  };
+
+  const confirmGitScan = async () => {
+    const files = gitPendingFilesRef.current;
+    if (files.length === 0) return;
+    const repoName = gitPendingRepoName;
+
+    setGitConfirmModalOpen(false);
+    setBatchActive(true);
+    setScannedDoneCount(0);
+    setScannedFailCount(0);
+    setFilesTotalCount(files.length);
+    setActiveFileName('');
+    setProgressFiles([]);
+    setBatchReportsList([]);
+    setBatchErrorsList([]);
+
+    scannedDoneCountRef.current = 0;
+    scannedFailCountRef.current = 0;
+
     try {
-      const { batch_id } = await analysisAPI.submitBatchAnalysis(files, manifest.repo_name, 'repo');
-      scannedDoneCountRef.current = 0;
-      scannedFailCountRef.current = 0;
+      const { batch_id } = await analysisAPI.submitBatchAnalysis(files, repoName, 'repo');
       batchActiveRef.current = true;
 
       analysisSocket.connect(batch_id, {
@@ -672,7 +704,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
             },
             msg.filename,
           );
-          report._source_content = msg.source_content || fileContents[msg.filename] || '';
+          report._source_content = msg.source_content || '';
           addHistoryReport(report);
           setBatchReportsList(prev => {
             const idx = prev.findIndex(r => r.filename === msg.filename);
@@ -709,7 +741,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         onError: (err) => logger.error('WS error:', err),
       });
     } catch {
-      setBatchErrorsList(prev => [{ path: gitUrl, error: 'Unable to submit batch for analysis. Please try again.' }]);
+      setBatchErrorsList(prev => [{ path: repoName, error: 'Unable to submit batch for analysis. Please try again.' }]);
       setBatchActive(false);
       batchActiveRef.current = false;
     }
@@ -1693,6 +1725,38 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
         </div>
       </Modal>
 
+      <Modal open={gitConfirmModalOpen} onClose={() => { setGitConfirmModalOpen(false); setBatchActive(false); setActiveFileName(''); }} title="Repository Files">
+        <div className="space-y-4 font-sans text-left">
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Repository cloned and files are ready for analysis.
+          </p>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Repository</label>
+              <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl truncate">
+                {gitPendingRepoName || 'Unknown'}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 font-mono tracking-wider font-semibold block uppercase">Files to Scan</label>
+              <div className="w-full py-2.5 px-3.5 text-xs text-zinc-300 bg-white/[0.02] border border-white/[0.06] rounded-xl">
+                {gitPendingFileCount} files
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 flex justify-end gap-2.5 text-xs">
+            <button onClick={() => { setGitConfirmModalOpen(false); setBatchActive(false); setActiveFileName(''); }} className="px-4 py-2 border border-white/[0.04] text-neutral-400 hover:text-white rounded-lg cursor-pointer bg-white/[0.01]">Cancel</button>
+            <button
+              onClick={confirmGitScan}
+              disabled={gitPendingFileCount === 0}
+              className="px-5 py-2 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold rounded-lg hover:opacity-95 transition-all text-center cursor-pointer shadow-lg shadow-cyan-500/10 disabled:opacity-40"
+            >
+              Start Scan
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={gitModalOpen} onClose={() => setGitModalOpen(false)} title="Git Repository Import">
         <div className="space-y-4 font-sans text-left">
           <p className="text-xs text-neutral-400 leading-relaxed">
@@ -1729,7 +1793,7 @@ export default function AnalyzerTab({ onNavigateToChat, isActive = true }: Analy
               disabled={!gitUrl}
               className="px-5 py-2 bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-bold rounded-lg hover:opacity-95 transition-all text-center cursor-pointer shadow-lg shadow-cyan-500/10 disabled:opacity-40"
             >
-              Clone & Analyze
+              Fetch Files
             </button>
           </div>
         </div>
