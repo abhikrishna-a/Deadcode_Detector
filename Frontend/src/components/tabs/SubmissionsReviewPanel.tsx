@@ -43,6 +43,37 @@ interface Feedback {
   resolved: boolean;
 }
 
+interface DetailSubmission {
+  id: number;
+  filename: string;
+  file_content?: string;
+  language?: string;
+  status: string;
+  username?: string;
+  user?: number;
+  scheduled_at?: string;
+  error?: string;
+  result?: {
+    issues?: Array<{
+      line_start?: number;
+      line?: number;
+      severity?: string;
+      description?: string;
+    }>;
+  };
+  analysis?: {
+    analysis?: {
+      issues?: Array<{
+        line_start?: number;
+        line?: number;
+        severity?: string;
+        description?: string;
+      }>;
+    };
+  };
+  [key: string]: unknown;
+}
+
 const STATUSES = [
   { key: 'pending_review', label: 'Pending Review', icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20' },
   { key: 'analysing', label: 'Analysing', icon: Loader2, color: 'text-cyan-400', bg: 'bg-cyan-400/10', border: 'border-cyan-400/20' },
@@ -117,7 +148,7 @@ export default function SubmissionsReviewPanel({ currentUser, onShowToast }: Sub
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<DetailSubmission | null>(null);
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
