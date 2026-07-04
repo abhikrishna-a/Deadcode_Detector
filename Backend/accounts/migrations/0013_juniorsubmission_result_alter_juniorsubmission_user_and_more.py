@@ -6,33 +6,50 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0012_alter_timeout_default'),
+        ("accounts", "0012_alter_timeout_default"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='result',
+            model_name="juniorsubmission",
+            name="result",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='junior_submissions', to=settings.AUTH_USER_MODEL),
+            model_name="juniorsubmission",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="junior_submissions",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.CreateModel(
-            name='CodeReviewFeedback',
+            name="CodeReviewFeedback",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('line_start', models.IntegerField()),
-                ('line_end', models.IntegerField(blank=True, null=True)),
-                ('comment', models.TextField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('resolved', models.BooleanField(default=False)),
-                ('reviewer', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='given_feedback', to=settings.AUTH_USER_MODEL)),
-                ('submission', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='feedback', to='accounts.juniorsubmission')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("line_start", models.IntegerField()),
+                ("line_end", models.IntegerField(blank=True, null=True)),
+                ("comment", models.TextField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("resolved", models.BooleanField(default=False)),
+                (
+                    "reviewer",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="given_feedback",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "submission",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="feedback",
+                        to="accounts.juniorsubmission",
+                    ),
+                ),
             ],
         ),
     ]

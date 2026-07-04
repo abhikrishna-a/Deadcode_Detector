@@ -4,30 +4,39 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0017_juniorsubmission_rag_document_id'),
+        ("accounts", "0017_juniorsubmission_rag_document_id"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='codereviewfeedback',
-            name='resolved',
+            model_name="codereviewfeedback",
+            name="resolved",
             field=models.BooleanField(db_index=True, default=False),
         ),
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='rag_document_id',
+            model_name="juniorsubmission",
+            name="rag_document_id",
             field=models.UUIDField(blank=True, db_index=True, null=True),
         ),
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='scan_folder',
-            field=models.CharField(blank=True, db_index=True, default='', max_length=500),
+            model_name="juniorsubmission",
+            name="scan_folder",
+            field=models.CharField(blank=True, db_index=True, default="", max_length=500),
         ),
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='status',
-            field=models.CharField(choices=[('pending_review', 'Pending Review'), ('analysing', 'Analysing'), ('done', 'Done'), ('failed', 'Failed')], db_index=True, default='pending_review', max_length=20),
+            model_name="juniorsubmission",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("pending_review", "Pending Review"),
+                    ("analysing", "Analysing"),
+                    ("done", "Done"),
+                    ("failed", "Failed"),
+                ],
+                db_index=True,
+                default="pending_review",
+                max_length=20,
+            ),
         ),
     ]

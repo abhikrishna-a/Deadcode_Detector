@@ -16,18 +16,18 @@ logger = logging.getLogger("ghostcode-rag.storage")
 def _chunk_content(chunk):
     if isinstance(chunk, str):
         return chunk
-    if hasattr(chunk, 'content'):
+    if hasattr(chunk, "content"):
         return chunk.content
     if isinstance(chunk, dict):
-        return chunk.get('content', '')
-    return ''
+        return chunk.get("content", "")
+    return ""
 
 
 def _chunk_metadata(chunk):
-    if hasattr(chunk, 'metadata'):
+    if hasattr(chunk, "metadata"):
         return chunk.metadata
     if isinstance(chunk, dict):
-        return chunk.get('metadata', {})
+        return chunk.get("metadata", {})
     return {}
 
 
@@ -58,18 +58,26 @@ async def store_analysis(
                 VALUES (:id, :uid, :fn, :lang, :hash, :folder, :stype, :sid, :json, :health, :issues, :now, :source)
             """),
             {
-                "id": analysis_id, "uid": user_id, "fn": filename,
-                "lang": language, "hash": file_hash, "folder": scan_folder,
-                "stype": scan_type, "sid": scan_id,
+                "id": analysis_id,
+                "uid": user_id,
+                "fn": filename,
+                "lang": language,
+                "hash": file_hash,
+                "folder": scan_folder,
+                "stype": scan_type,
+                "sid": scan_id,
                 "json": json.dumps(analysis_json),
-                "health": health_score, "issues": total_issues, "now": now,
+                "health": health_score,
+                "issues": total_issues,
+                "now": now,
                 "source": source,
             },
         )
         if chunks and embeddings:
             rows = [
                 {
-                    "id": str(uuid.uuid4()), "aid": analysis_id,
+                    "id": str(uuid.uuid4()),
+                    "aid": analysis_id,
                     "idx": idx,
                     "text": _chunk_content(chunk),
                     "emb": json.dumps(emb),
@@ -94,9 +102,13 @@ async def store_analysis(
                 RETURNING id
             """),
             {
-                "uid": user_id, "fn": filename, "lang": language,
-                "hash": file_hash, "folder": scan_folder,
-                "stype": scan_type, "sid": scan_id,
+                "uid": user_id,
+                "fn": filename,
+                "lang": language,
+                "hash": file_hash,
+                "folder": scan_folder,
+                "stype": scan_type,
+                "sid": scan_id,
                 "json": json.dumps(analysis_json),
                 "source": source,
             },
@@ -106,7 +118,8 @@ async def store_analysis(
         if chunks and embeddings:
             rows = [
                 {
-                    "doc_id": document_id, "idx": i,
+                    "doc_id": document_id,
+                    "idx": i,
                     "content": _chunk_content(chunk),
                     "metadata": json.dumps(_chunk_metadata(chunk)),
                     "embedding": str(embedding),
@@ -133,26 +146,30 @@ async def find_similar(
     document_id: str | None = None,
 ) -> list[dict]:
     if IS_SQLITE:
-        rows = (await db.execute(
-            text("""
+        rows = (
+            await db.execute(
+                text("""
                 SELECT e.id, e.chunk_text, e.embedding, e.analysis_id, a.filename
                 FROM embeddings e
                 JOIN analyses a ON a.id = e.analysis_id
                 WHERE a.user_id = :uid
             """),
-            {"uid": user_id},
-        )).fetchall()
+                {"uid": user_id},
+            )
+        ).fetchall()
 
         scored = []
         for row in rows:
             emb = json.loads(row[2])
             score = cosine_similarity(query_vec, emb)
-            scored.append({
-                "score": score,
-                "chunk_text": row[1],
-                "analysis_id": row[3],
-                "filename": row[4],
-            })
+            scored.append(
+                {
+                    "score": score,
+                    "chunk_text": row[1],
+                    "analysis_id": row[3],
+                    "filename": row[4],
+                }
+            )
         scored.sort(key=lambda x: x["score"], reverse=True)
         if document_id:
             scored = [s for s in scored if s["analysis_id"] == document_id]
@@ -163,8 +180,9 @@ async def find_similar(
         if document_id:
             params["doc_id"] = document_id
 
-        rows = (await db.execute(
-            text(f"""
+        rows = (
+            await db.execute(
+                text(f"""
                 SELECT c.content, c.metadata, 1 - (c.embedding <=> CAST(:query AS vector)) AS score,
                        d.id AS analysis_id, d.filename
                 FROM rag_chunks c
@@ -173,8 +191,9 @@ async def find_similar(
                 ORDER BY c.embedding <=> CAST(:query AS vector)
                 LIMIT :top_k
             """),
-            params,
-        )).fetchall()
+                params,
+            )
+        ).fetchall()
 
         return [
             {
@@ -201,20 +220,30 @@ async def get_history(
         if search:
             where = "WHERE user_id = :uid AND (filename LIKE :search OR scan_folder LIKE :search)"
             params["search"] = f"%{search}%"
-        rows = (await db.execute(
-            text(f"""
+        rows = (
+            await db.execute(
+                text(f"""
                 SELECT id, filename, language, health_score, total_issues, created_at, scan_folder, scan_type, scan_id
                 FROM analyses
                 {where}
                 ORDER BY created_at DESC
                 LIMIT :lim OFFSET :off
             """),
-            params,
-        )).fetchall()
+                params,
+            )
+        ).fetchall()
         return [
-            {"analysis_id": r[0], "filename": r[1], "language": r[2],
-             "health_score": r[3], "total_issues": r[4], "created_at": r[5],
-             "scan_folder": r[6], "scan_type": r[7], "scan_id": r[8]}
+            {
+                "analysis_id": r[0],
+                "filename": r[1],
+                "language": r[2],
+                "health_score": r[3],
+                "total_issues": r[4],
+                "created_at": r[5],
+                "scan_folder": r[6],
+                "scan_type": r[7],
+                "scan_id": r[8],
+            }
             for r in rows
         ]
     else:
@@ -223,8 +252,9 @@ async def get_history(
         if search:
             where = "WHERE d.user_id = :uid AND (d.filename ILIKE :search OR d.scan_folder ILIKE :search)"
             params["search"] = f"%{search}%"
-        rows = (await db.execute(
-            text(f"""
+        rows = (
+            await db.execute(
+                text(f"""
                 SELECT d.id, d.filename, d.language,
                        COALESCE((d.analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((d.analysis->'summary'->>'total_issues')::int, 0) AS total_issues,
@@ -240,13 +270,21 @@ async def get_history(
                 ORDER BY d.created_at DESC
                 LIMIT :lim OFFSET :off
             """),
-            params,
-        )).fetchall()
+                params,
+            )
+        ).fetchall()
         return [
-            {"analysis_id": str(r[0]), "filename": r[1], "language": r[2],
-             "health_score": r[3], "total_issues": r[4],
-             "created_at": r[5].isoformat(), "scan_folder": r[6],
-             "scan_type": r[7], "scan_id": r[8]}
+            {
+                "analysis_id": str(r[0]),
+                "filename": r[1],
+                "language": r[2],
+                "health_score": r[3],
+                "total_issues": r[4],
+                "created_at": r[5].isoformat(),
+                "scan_folder": r[6],
+                "scan_type": r[7],
+                "scan_id": r[8],
+            }
             for r in rows
         ]
 
@@ -262,9 +300,7 @@ async def count_history(
         if search:
             where = "WHERE user_id = :uid AND (filename LIKE :search OR scan_folder LIKE :search)"
             params["search"] = f"%{search}%"
-        row = (await db.execute(
-            text(f"SELECT COUNT(*) FROM analyses {where}"), params
-        )).scalar()
+        row = (await db.execute(text(f"SELECT COUNT(*) FROM analyses {where}"), params)).scalar()
         return row or 0
     else:
         where = "WHERE d.user_id = :uid"
@@ -272,9 +308,7 @@ async def count_history(
         if search:
             where = "WHERE d.user_id = :uid AND (d.filename ILIKE :search OR d.scan_folder ILIKE :search)"
             params["search"] = f"%{search}%"
-        row = (await db.execute(
-            text(f"SELECT COUNT(*) FROM rag_documents d {where}"), params
-        )).scalar()
+        row = (await db.execute(text(f"SELECT COUNT(*) FROM rag_documents d {where}"), params)).scalar()
         return row or 0
 
 
@@ -284,10 +318,14 @@ async def get_document(
     user_id: int,
 ) -> dict | None:
     if IS_SQLITE:
-        row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json, source, scan_id FROM analyses WHERE id = :id AND user_id = :uid"),
-            {"id": document_id, "uid": user_id},
-        )).fetchone()
+        row = (
+            await db.execute(
+                text(
+                    "SELECT id, filename, language, analysis_json, source, scan_id FROM analyses WHERE id = :id AND user_id = :uid"
+                ),
+                {"id": document_id, "uid": user_id},
+            )
+        ).fetchone()
         if not row:
             return None
         try:
@@ -304,10 +342,14 @@ async def get_document(
             "scan_id": row[5],
         }
     else:
-        row = (await db.execute(
-            text("SELECT id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = :id AND user_id = :uid"),
-            {"id": document_id, "uid": user_id},
-        )).fetchone()
+        row = (
+            await db.execute(
+                text(
+                    "SELECT id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = :id AND user_id = :uid"
+                ),
+                {"id": document_id, "uid": user_id},
+            )
+        ).fetchone()
         if not row:
             return None
         return {
@@ -331,20 +373,26 @@ async def get_documents_by_scan_folder(
         if user_id is not None:
             where = "user_id = :uid AND scan_folder = :folder"
             params["uid"] = user_id
-        rows = (await db.execute(
-            text(f"""
+        rows = (
+            await db.execute(
+                text(f"""
                 SELECT id, filename, language, analysis_json, health_score, total_issues, created_at, source, scan_id
                 FROM analyses
                 WHERE {where}
                 ORDER BY filename
             """),
-            params,
-        )).fetchall()
+                params,
+            )
+        ).fetchall()
         return [
             {
-                "analysis_id": r[0], "filename": r[1], "language": r[2],
+                "analysis_id": r[0],
+                "filename": r[1],
+                "language": r[2],
                 "analysis": json.loads(r[3]) if isinstance(r[3], str) else r[3],
-                "health_score": r[4], "total_issues": r[5], "created_at": r[6],
+                "health_score": r[4],
+                "total_issues": r[5],
+                "created_at": r[6],
                 "source": r[7],
                 "_source_content": r[7],
                 "scan_id": r[8],
@@ -357,8 +405,9 @@ async def get_documents_by_scan_folder(
         if user_id is not None:
             where = "user_id = :uid AND scan_folder = :folder"
             params["uid"] = user_id
-        rows = (await db.execute(
-            text(f"""
+        rows = (
+            await db.execute(
+                text(f"""
                 SELECT id, filename, language, analysis, created_at, source, scan_id,
                        COALESCE((analysis->'summary'->>'health_score')::int, 0) AS health_score,
                        COALESCE((analysis->'summary'->>'total_issues')::int, 0) AS total_issues
@@ -366,16 +415,21 @@ async def get_documents_by_scan_folder(
                 WHERE {where}
                 ORDER BY filename
             """),
-            params,
-        )).fetchall()
+                params,
+            )
+        ).fetchall()
         return [
             {
-                "analysis_id": str(r[0]), "filename": r[1], "language": r[2],
-                "analysis": r[3], "created_at": r[4].isoformat(),
+                "analysis_id": str(r[0]),
+                "filename": r[1],
+                "language": r[2],
+                "analysis": r[3],
+                "created_at": r[4].isoformat(),
                 "source": r[5],
                 "_source_content": r[5],
                 "scan_id": r[6],
-                "health_score": r[7], "total_issues": r[8],
+                "health_score": r[7],
+                "total_issues": r[8],
             }
             for r in rows
         ]
@@ -387,10 +441,14 @@ async def check_hash(
     file_hash: str,
 ) -> dict | None:
     if IS_SQLITE:
-        row = (await db.execute(
-            text("SELECT id, filename, language, analysis_json, scan_folder, scan_type, source FROM analyses WHERE user_id = :uid AND file_hash = :hash"),
-            {"uid": user_id, "hash": file_hash},
-        )).fetchone()
+        row = (
+            await db.execute(
+                text(
+                    "SELECT id, filename, language, analysis_json, scan_folder, scan_type, source FROM analyses WHERE user_id = :uid AND file_hash = :hash"
+                ),
+                {"uid": user_id, "hash": file_hash},
+            )
+        ).fetchone()
         if not row:
             return None
         return {
@@ -403,10 +461,14 @@ async def check_hash(
             "source": row[6],
         }
     else:
-        row = (await db.execute(
-            text("SELECT id, filename, language, analysis, scan_folder, scan_type, source FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"),
-            {"uid": user_id, "hash": file_hash},
-        )).fetchone()
+        row = (
+            await db.execute(
+                text(
+                    "SELECT id, filename, language, analysis, scan_folder, scan_type, source FROM rag_documents WHERE user_id = :uid AND file_hash = :hash"
+                ),
+                {"uid": user_id, "hash": file_hash},
+            )
+        ).fetchone()
         if not row:
             return None
         return {
@@ -466,10 +528,12 @@ async def cleanup_stale_documents(
 ) -> int:
     deleted = 0
     if IS_SQLITE:
-        rows = (await db.execute(
-            text("SELECT id, filename FROM analyses WHERE user_id = :uid"),
-            {"uid": user_id},
-        )).fetchall()
+        rows = (
+            await db.execute(
+                text("SELECT id, filename FROM analyses WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        ).fetchall()
         for row in rows:
             if row[1] not in active_filenames:
                 await db.execute(
@@ -482,10 +546,12 @@ async def cleanup_stale_documents(
                 )
                 deleted += 1
     else:
-        rows = (await db.execute(
-            text("SELECT id, filename FROM rag_documents WHERE user_id = :uid"),
-            {"uid": user_id},
-        )).fetchall()
+        rows = (
+            await db.execute(
+                text("SELECT id, filename FROM rag_documents WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        ).fetchall()
         for row in rows:
             if row[1] not in active_filenames:
                 await db.execute(
@@ -508,10 +574,12 @@ async def delete_all_user_documents(
 ) -> int:
     deleted = 0
     if IS_SQLITE:
-        rows = (await db.execute(
-            text("SELECT id FROM analyses WHERE user_id = :uid"),
-            {"uid": user_id},
-        )).fetchall()
+        rows = (
+            await db.execute(
+                text("SELECT id FROM analyses WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        ).fetchall()
         for (row_id,) in rows:
             await db.execute(
                 text("DELETE FROM embeddings WHERE analysis_id = :id"),
@@ -523,10 +591,12 @@ async def delete_all_user_documents(
             )
             deleted += 1
     else:
-        rows = (await db.execute(
-            text("SELECT id FROM rag_documents WHERE user_id = :uid"),
-            {"uid": user_id},
-        )).fetchall()
+        rows = (
+            await db.execute(
+                text("SELECT id FROM rag_documents WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        ).fetchall()
         for (row_id,) in rows:
             await db.execute(
                 text("DELETE FROM rag_chunks WHERE document_id = CAST(:id AS uuid)"),

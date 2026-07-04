@@ -37,38 +37,91 @@ router = APIRouter()
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_LLM_BYTES = 30 * 1024
 SUPPORTED_EXTENSIONS = {
-    ".py", ".js", ".ts", ".tsx", ".jsx",
-    ".css", ".html", ".htm",
-    ".json", ".xml",
-    ".vue", ".svelte",
-    ".scss", ".less",
-    ".rb", ".go", ".rs", ".java", ".php", ".swift", ".kt",
-    ".yaml", ".yml", ".toml",
-    ".sh", ".bash", ".zsh",
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".css",
+    ".html",
+    ".htm",
+    ".json",
+    ".xml",
+    ".vue",
+    ".svelte",
+    ".scss",
+    ".less",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".php",
+    ".swift",
+    ".kt",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".bash",
+    ".zsh",
     ".sql",
-    ".md", ".txt",
-    ".mjs", ".cjs", ".mts", ".cts",
-    ".ini", ".cfg", ".conf",
-    ".rst", ".csv", ".tsv",
-    ".ps1", ".bat", ".cmd",
-    ".scala", ".groovy",
-    ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
-    ".cs", ".fs", ".vb",
-    ".pl", ".pm", ".lua", ".r",
-    ".m", ".mm",
-    ".graphql", ".gql",
+    ".md",
+    ".txt",
+    ".mjs",
+    ".cjs",
+    ".mts",
+    ".cts",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".rst",
+    ".csv",
+    ".tsv",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".scala",
+    ".groovy",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cc",
+    ".hh",
+    ".cxx",
+    ".hxx",
+    ".cs",
+    ".fs",
+    ".vb",
+    ".pl",
+    ".pm",
+    ".lua",
+    ".r",
+    ".m",
+    ".mm",
+    ".graphql",
+    ".gql",
     ".astro",
-    ".tf", ".hcl",
-    ".dockerignore", ".gitignore", ".editorconfig", ".env", ".properties",
+    ".tf",
+    ".hcl",
+    ".dockerignore",
+    ".gitignore",
+    ".editorconfig",
+    ".env",
+    ".properties",
 }
 
 _bg_semaphore = Semaphore(3)
 
 
 async def _background_finalize(
-    source: str, filename: str,
-    cross_ref_result: dict, llm_task,
-    user_id: int, scan_folder: str, scan_type: str,
+    source: str,
+    filename: str,
+    cross_ref_result: dict,
+    llm_task,
+    user_id: int,
+    scan_folder: str,
+    scan_type: str,
     document_id: str,
 ):
     async with _bg_semaphore:
@@ -109,11 +162,24 @@ async def _background_finalize(
                                 VALUES (:id, :aid, :idx, :text, :emb, :tokens)
                             """),
                             {
-                                "id": str(uuid_mod.uuid4()), "aid": document_id,
+                                "id": str(uuid_mod.uuid4()),
+                                "aid": document_id,
                                 "idx": idx,
-                                "text": chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else json.dumps(chunk),
+                                "text": chunk
+                                if isinstance(chunk, str)
+                                else chunk.content
+                                if hasattr(chunk, "content")
+                                else json.dumps(chunk),
                                 "emb": json.dumps(emb),
-                                "tokens": len((chunk if isinstance(chunk, str) else chunk.content if hasattr(chunk, 'content') else json.dumps(chunk)).split()),
+                                "tokens": len(
+                                    (
+                                        chunk
+                                        if isinstance(chunk, str)
+                                        else chunk.content
+                                        if hasattr(chunk, "content")
+                                        else json.dumps(chunk)
+                                    ).split()
+                                ),
                             },
                         )
                 else:
@@ -126,15 +192,24 @@ async def _background_finalize(
                         {"json": json.dumps(final_analysis), "id": document_id},
                     )
                     for idx, (chunk, emb) in enumerate(zip(all_chunks, embeddings)):
-                        content = chunk if isinstance(chunk, str) else (chunk.content if hasattr(chunk, 'content') else json.dumps(chunk))
-                        metadata = {"chunk_type": "issue", "filename": filename} if isinstance(chunk, str) and '"issue"' in chunk else (chunk.metadata if hasattr(chunk, 'metadata') else {})
+                        content = (
+                            chunk
+                            if isinstance(chunk, str)
+                            else (chunk.content if hasattr(chunk, "content") else json.dumps(chunk))
+                        )
+                        metadata = (
+                            {"chunk_type": "issue", "filename": filename}
+                            if isinstance(chunk, str) and '"issue"' in chunk
+                            else (chunk.metadata if hasattr(chunk, "metadata") else {})
+                        )
                         await db.execute(
                             text("""
                                 INSERT INTO rag_chunks (document_id, chunk_index, content, metadata, embedding)
                                 VALUES (CAST(:doc_id AS uuid), :idx, :content, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
                             """),
                             {
-                                "doc_id": document_id, "idx": idx,
+                                "doc_id": document_id,
+                                "idx": idx,
                                 "content": content,
                                 "metadata": json.dumps(metadata),
                                 "embedding": str(emb),
@@ -187,17 +262,34 @@ async def analyze_file(
             # Empty files are valid - return clean analysis
             language = detect_language(file.filename)
             clean_analysis = {
-                "summary": {"total_issues": 0, "severity_counts": {}, "categories": {},
-                            "overall_health": "clean", "health_score": 100},
+                "summary": {
+                    "total_issues": 0,
+                    "severity_counts": {},
+                    "categories": {},
+                    "overall_health": "clean",
+                    "health_score": 100,
+                },
                 "issues": [],
-                "metrics": {"total_lines": 0, "code_lines": 0, "comment_lines": 0,
-                            "blank_lines": 0, "dead_lines_estimate": 0, "dead_code_percentage": 0},
+                "metrics": {
+                    "total_lines": 0,
+                    "code_lines": 0,
+                    "comment_lines": 0,
+                    "blank_lines": 0,
+                    "dead_lines_estimate": 0,
+                    "dead_code_percentage": 0,
+                },
             }
             try:
                 doc_id = await store_analysis(
-                    db=db, user_id=user["user_id"], filename=file.filename,
-                    language=language, source=source, scan_folder=scan_folder,
-                    scan_type=scan_type, scan_id='', analysis_json=clean_analysis,
+                    db=db,
+                    user_id=user["user_id"],
+                    filename=file.filename,
+                    language=language,
+                    source=source,
+                    scan_folder=scan_folder,
+                    scan_type=scan_type,
+                    scan_id="",
+                    analysis_json=clean_analysis,
                 )
             except Exception:
                 doc_id = None
@@ -210,7 +302,7 @@ async def analyze_file(
                 "cached": False,
                 "scan_folder": scan_folder,
                 "scan_type": scan_type,
-                "scan_id": doc_id or '',
+                "scan_id": doc_id or "",
             }
 
         language = detect_language(file.filename)
@@ -242,7 +334,9 @@ async def analyze_file(
                         text("DELETE FROM rag_documents WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
                         {"id": existing["analysis_id"], "uid": user["user_id"]},
                     )
-                logger.info("Removed existing analysis for hash %s (file: %s) — folder/type changed", file_hash, file.filename)
+                logger.info(
+                    "Removed existing analysis for hash %s (file: %s) — folder/type changed", file_hash, file.filename
+                )
             except Exception as e:
                 logger.warning("Failed to remove old analysis for hash %s: %s", file_hash, e)
 
@@ -253,32 +347,50 @@ async def analyze_file(
             except json.JSONDecodeError:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be valid JSON")
             if not isinstance(analysis_data, dict):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be a JSON object")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="analysis_json must be a JSON object"
+                )
 
             # chunk & embed for provided JSON
             if store_for_rag:
                 source_chunks = chunk_code(source, file.filename)
                 issue_chunks = chunk_issues(analysis_data, file.filename)
                 all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
-                all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+                all_chunks = source_chunks + [
+                    json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}})
+                    for ic in issue_chunks
+                ]
                 if not all_chunks:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file"
+                    )
                 try:
                     embeddings = await embed_texts(all_chunk_texts)
                 except Exception as e:
                     logger.error("Embedding failed: %s", e, exc_info=True)
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}"
+                    )
                 if len(embeddings) != len(all_chunks):
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch"
+                    )
             else:
                 all_chunks = None
                 embeddings = None
 
             document_id = await store_analysis(
-                db=db, user_id=user["user_id"], filename=file.filename,
-                language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, scan_id='', analysis_json=analysis_data,
-                chunks=all_chunks, embeddings=embeddings,
+                db=db,
+                user_id=user["user_id"],
+                filename=file.filename,
+                language=language,
+                source=source,
+                scan_folder=scan_folder,
+                scan_type=scan_type,
+                scan_id="",
+                analysis_json=analysis_data,
+                chunks=all_chunks,
+                embeddings=embeddings,
             )
 
             return {
@@ -290,20 +402,25 @@ async def analyze_file(
                 "cached": False,
                 "scan_folder": scan_folder,
                 "scan_type": scan_type,
-                "scan_id": document_id or '',
+                "scan_id": document_id or "",
             }
 
         # --- cross-ref first (fast), LLM refines in background ---
         try:
             cross_ref_result, llm_task = await _analyze_file_direct(
-                source, file.filename, db=db, user_id=user["user_id"],
+                source,
+                file.filename,
+                db=db,
+                user_id=user["user_id"],
             )
         except Exception as e:
             logger.error("Cross-ref analysis failed: %s", e, exc_info=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cross-ref analysis failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cross-ref analysis failed: {str(e)}"
+            )
 
         # Skip LLM refinement for large files or batch/folder scans (speed)
-        if len(source) > MAX_LLM_BYTES or scan_type in ('folder', 'repo'):
+        if len(source) > MAX_LLM_BYTES or scan_type in ("folder", "repo"):
             llm_task = None
 
         # If no LLM needed, store with chunks normally
@@ -312,40 +429,69 @@ async def analyze_file(
                 source_chunks = chunk_code(source, file.filename)
                 issue_chunks = chunk_issues(cross_ref_result, file.filename)
                 all_chunk_texts = [c.content for c in source_chunks] + issue_chunks
-                all_chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}}) for ic in issue_chunks]
+                all_chunks = source_chunks + [
+                    json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": file.filename}})
+                    for ic in issue_chunks
+                ]
                 if not all_chunks:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to chunk file"
+                    )
                 try:
                     embeddings = await embed_texts(all_chunk_texts)
                 except Exception as e:
                     logger.error("Embedding failed: %s", e, exc_info=True)
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Embedding failed: {str(e)}"
+                    )
                 if len(embeddings) != len(all_chunks):
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Embedding count mismatch"
+                    )
             else:
                 all_chunks = None
                 embeddings = None
 
             document_id = await store_analysis(
-                db=db, user_id=user["user_id"], filename=file.filename,
-                language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, scan_id='', analysis_json=cross_ref_result,
-                chunks=all_chunks, embeddings=embeddings,
+                db=db,
+                user_id=user["user_id"],
+                filename=file.filename,
+                language=language,
+                source=source,
+                scan_folder=scan_folder,
+                scan_type=scan_type,
+                scan_id="",
+                analysis_json=cross_ref_result,
+                chunks=all_chunks,
+                embeddings=embeddings,
             )
         else:
             # LLM pending — store cross-ref result without chunks, launch background finalize
             document_id = await store_analysis(
-                db=db, user_id=user["user_id"], filename=file.filename,
-                language=language, source=source, scan_folder=scan_folder,
-                scan_type=scan_type, scan_id='', analysis_json=cross_ref_result,
-                chunks=None, embeddings=None,
+                db=db,
+                user_id=user["user_id"],
+                filename=file.filename,
+                language=language,
+                source=source,
+                scan_folder=scan_folder,
+                scan_type=scan_type,
+                scan_id="",
+                analysis_json=cross_ref_result,
+                chunks=None,
+                embeddings=None,
             )
-            asyncio.create_task(_background_finalize(
-                source=source, filename=file.filename,
-                cross_ref_result=cross_ref_result, llm_task=llm_task,
-                user_id=user["user_id"], scan_folder=scan_folder,
-                scan_type=scan_type, document_id=document_id,
-            ))
+            asyncio.create_task(
+                _background_finalize(
+                    source=source,
+                    filename=file.filename,
+                    cross_ref_result=cross_ref_result,
+                    llm_task=llm_task,
+                    user_id=user["user_id"],
+                    scan_folder=scan_folder,
+                    scan_type=scan_type,
+                    document_id=document_id,
+                )
+            )
 
         return {
             "document_id": document_id,
@@ -356,7 +502,7 @@ async def analyze_file(
             "cached": False,
             "scan_folder": scan_folder,
             "scan_type": scan_type,
-            "scan_id": document_id or '',
+            "scan_id": document_id or "",
         }
     except HTTPException:
         raise
@@ -412,7 +558,10 @@ async def batch_analyze(
         if source.strip():
             source_chunks = chunk_code(source, filename)
             issue_texts = chunk_issues(analysis, filename)
-            chunks = source_chunks + [json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": filename}}) for ic in issue_texts]
+            chunks = source_chunks + [
+                json.dumps({"content": ic, "metadata": {"chunk_type": "issue", "filename": filename}})
+                for ic in issue_texts
+            ]
             if chunks:
                 chunk_texts = [c.content for c in source_chunks] + issue_texts
                 all_chunk_batches.append((filename, source, analysis, chunks))
@@ -440,31 +589,42 @@ async def batch_analyze(
         file_embeddings = None
         if chunks and all_embeddings is not None:
             n_chunks = len(chunks)
-            file_embeddings = all_embeddings[embedding_idx:embedding_idx + n_chunks]
+            file_embeddings = all_embeddings[embedding_idx : embedding_idx + n_chunks]
             embedding_idx += n_chunks
         try:
             doc_id = await store_analysis(
-                db, user["user_id"], filename, language, source, analysis,
-                scan_folder=req.scan_folder, scan_type=req.scan_type,
+                db,
+                user["user_id"],
+                filename,
+                language,
+                source,
+                analysis,
+                scan_folder=req.scan_folder,
+                scan_type=req.scan_type,
                 scan_id=batch_scan_id,
-                chunks=chunks, embeddings=file_embeddings,
+                chunks=chunks,
+                embeddings=file_embeddings,
             )
             await db.commit()
-            results.append(BatchFileResult(
-                filename=filename,
-                analysis=analysis,
-                document_id=doc_id,
-                error=None,
-            ))
+            results.append(
+                BatchFileResult(
+                    filename=filename,
+                    analysis=analysis,
+                    document_id=doc_id,
+                    error=None,
+                )
+            )
         except Exception as e:
             await db.rollback()
             logger.error("Failed to store analysis for %s: %s", filename, e, exc_info=True)
-            results.append(BatchFileResult(
-                filename=filename,
-                analysis={},
-                document_id="",
-                error=str(e),
-            ))
+            results.append(
+                BatchFileResult(
+                    filename=filename,
+                    analysis={},
+                    document_id="",
+                    error=str(e),
+                )
+            )
     elapsed = int((asyncio.get_event_loop().time() - start) * 1000)
     logger.info("Batch analyzed and stored %d files in %d ms", len(filtered), elapsed)
 
@@ -514,7 +674,9 @@ async def analyze_only(
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Analysis parsing error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Analysis parsing error: {str(e)}"
+        )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Grok analysis failed: {str(e)}")
 
@@ -532,7 +694,9 @@ async def get_document_analysis(
         if IS_SQLITE:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found")
         result = await db.execute(
-            text("SELECT user_id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = CAST(:id AS uuid)"),
+            text(
+                "SELECT user_id, filename, language, analysis, source, scan_id FROM rag_documents WHERE id = CAST(:id AS uuid)"
+            ),
             {"id": document_id},
         )
         row = result.fetchone()
@@ -540,7 +704,14 @@ async def get_document_analysis(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
         if row[0] != user["user_id"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-        return {"document_id": document_id, "filename": row[1], "language": row[2], "analysis": row[3], "_source_content": row[4] or "", "scan_id": row[5] or ""}
+        return {
+            "document_id": document_id,
+            "filename": row[1],
+            "language": row[2],
+            "analysis": row[3],
+            "_source_content": row[4] or "",
+            "scan_id": row[5] or "",
+        }
 
     return {
         "document_id": doc["analysis_id"],
@@ -560,9 +731,13 @@ async def list_documents(
     items = await get_history(db, user["user_id"], limit=100, offset=0)
     if IS_SQLITE:
         return [
-            {"id": item["analysis_id"], "filename": item["filename"],
-             "language": item["language"], "created_at": item["created_at"],
-             "chunk_count": 0}
+            {
+                "id": item["analysis_id"],
+                "filename": item["filename"],
+                "language": item["language"],
+                "created_at": item["created_at"],
+                "chunk_count": 0,
+            }
             for item in items
         ]
     else:
@@ -580,8 +755,7 @@ async def list_documents(
         )
         rows = result.fetchall()
         return [
-            {"id": str(r[0]), "filename": r[1], "language": r[2],
-             "created_at": r[3].isoformat(), "chunk_count": r[4]}
+            {"id": str(r[0]), "filename": r[1], "language": r[2], "created_at": r[3].isoformat(), "chunk_count": r[4]}
             for r in rows
         ]
 
@@ -642,6 +816,7 @@ async def delete_document_route(
 
 
 # --- New-style endpoints (single-file API shape) ---
+
 
 @router.get("/analysis/{analysis_id}")
 async def rag_get_analysis(
@@ -730,11 +905,7 @@ ANALYZER_ACCEPTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".txt", ".m
 
 
 def _validate_analyzer_file(file: UploadFile) -> str:
-    ext = (
-        "." + file.filename.rsplit(".", 1)[-1].lower()
-        if "." in (file.filename or "")
-        else ""
-    )
+    ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
     if ext not in ANALYZER_ACCEPTED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

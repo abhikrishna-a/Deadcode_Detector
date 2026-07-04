@@ -13,17 +13,42 @@ from app.services.prompts import BATCH_LLM_SYSTEM, get_batch_llm_prompt
 SymbolInfo = tuple[str, str]  # (name, type)  type is one of: function, class, import, variable
 
 # ── Django internals we never flag ──────────────────────────────────────
-MIDDLEWARE_HOOKS = {'process_view', 'process_request', 'process_response',
-                    'process_exception', '__call__', '__init__'}
+MIDDLEWARE_HOOKS = {"process_view", "process_request", "process_response", "process_exception", "__call__", "__init__"}
 DJANGO_SETTINGS = {
-    'BASE_DIR', 'SECRET_KEY', 'DEBUG', 'ALLOWED_HOSTS', 'INSTALLED_APPS',
-    'MIDDLEWARE', 'ROOT_URLCONF', 'TEMPLATES', 'WSGI_APPLICATION', 'DATABASES',
-    'AUTH_USER_MODEL', 'AUTH_PASSWORD_VALIDATORS', 'LOGIN_URL',
-    'LOGIN_REDIRECT_URL', 'LOGOUT_REDIRECT_URL', 'LANGUAGE_CODE', 'TIME_ZONE',
-    'USE_I18N', 'USE_TZ', 'DEFAULT_AUTO_FIELD', 'STATIC_URL',
-    'STATICFILES_DIRS', 'STATIC_ROOT', 'CLOUDINARY_STORAGE', 'MEDIA_URL',
-    'STORAGES', 'EMAIL_BACKEND', 'EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USE_TLS',
-    'EMAIL_HOST_USER', 'EMAIL_HOST_PASSWORD', 'DEFAULT_FROM_EMAIL', 'MESSAGE_TAGS',
+    "BASE_DIR",
+    "SECRET_KEY",
+    "DEBUG",
+    "ALLOWED_HOSTS",
+    "INSTALLED_APPS",
+    "MIDDLEWARE",
+    "ROOT_URLCONF",
+    "TEMPLATES",
+    "WSGI_APPLICATION",
+    "DATABASES",
+    "AUTH_USER_MODEL",
+    "AUTH_PASSWORD_VALIDATORS",
+    "LOGIN_URL",
+    "LOGIN_REDIRECT_URL",
+    "LOGOUT_REDIRECT_URL",
+    "LANGUAGE_CODE",
+    "TIME_ZONE",
+    "USE_I18N",
+    "USE_TZ",
+    "DEFAULT_AUTO_FIELD",
+    "STATIC_URL",
+    "STATICFILES_DIRS",
+    "STATIC_ROOT",
+    "CLOUDINARY_STORAGE",
+    "MEDIA_URL",
+    "STORAGES",
+    "EMAIL_BACKEND",
+    "EMAIL_HOST",
+    "EMAIL_PORT",
+    "EMAIL_USE_TLS",
+    "EMAIL_HOST_USER",
+    "EMAIL_HOST_PASSWORD",
+    "DEFAULT_FROM_EMAIL",
+    "MESSAGE_TAGS",
 }
 
 # ── Symbol cache (LRU) ─────────────────────────────────────────────────
@@ -51,7 +76,7 @@ def _has_admin_register(decorator_list) -> bool:
     """Check if any decorator is `@admin.register(...)`."""
     for dec in decorator_list:
         if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
-            if dec.func.attr == 'register' and getattr(dec.func.value, 'id', '') == 'admin':
+            if dec.func.attr == "register" and getattr(dec.func.value, "id", "") == "admin":
                 return True
     return False
 
@@ -75,13 +100,13 @@ def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
                     name = node.name
                     if name in seen:
                         continue
-                    if name.startswith('__') and name.endswith('__'):
+                    if name.startswith("__") and name.endswith("__"):
                         seen.add(name)
                         continue
                     if name in MIDDLEWARE_HOOKS:
                         seen.add(name)
                         continue
-                    if name.startswith('clean_') and len(name) > 6:
+                    if name.startswith("clean_") and len(name) > 6:
                         seen.add(name)
                         continue
                     seen.add(name)
@@ -92,7 +117,7 @@ def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
                     name = node.name
                     if name in seen:
                         continue
-                    if name == 'Meta' or _has_admin_register(node.decorator_list):
+                    if name == "Meta" or _has_admin_register(node.decorator_list):
                         seen.add(name)
                         continue
                     seen.add(name)
@@ -120,7 +145,7 @@ def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
                             name = target.id
                             if name in seen:
                                 continue
-                            if name.startswith("_") or name in DJANGO_SETTINGS or name == 'urlpatterns':
+                            if name.startswith("_") or name in DJANGO_SETTINGS or name == "urlpatterns":
                                 seen.add(name)
                                 continue
                             seen.add(name)
@@ -142,13 +167,13 @@ def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
 
     elif lang in ("javascript", "typescript"):
         patterns = [
-            (r'(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)', "function"),
-            (r'(?:^|\n)\s*(?:export\s+)?class\s+(\w+)', "class"),
-            (r'(?:^|\n)\s*(?:export\s+)?const\s+(\w+)\s*[=:]', "variable"),
-            (r'(?:^|\n)\s*(?:export\s+)?let\s+(\w+)\s*[=:]', "variable"),
-            (r'(?:^|\n)\s*(?:export\s+)?var\s+(\w+)\s*[=:]', "variable"),
-            (r'(?:^|\n)\s*import\s+(?:\s*\{\s*)?(\w+)', "import"),
-            (r'(?:^|\n)\s*import\s+\*\s+as\s+(\w+)', "import"),
+            (r"(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)", "function"),
+            (r"(?:^|\n)\s*(?:export\s+)?class\s+(\w+)", "class"),
+            (r"(?:^|\n)\s*(?:export\s+)?const\s+(\w+)\s*[=:]", "variable"),
+            (r"(?:^|\n)\s*(?:export\s+)?let\s+(\w+)\s*[=:]", "variable"),
+            (r"(?:^|\n)\s*(?:export\s+)?var\s+(\w+)\s*[=:]", "variable"),
+            (r"(?:^|\n)\s*import\s+(?:\s*\{\s*)?(\w+)", "import"),
+            (r"(?:^|\n)\s*import\s+\*\s+as\s+(\w+)", "import"),
         ]
         for pattern_str, typ in patterns:
             for match in re.finditer(pattern_str, source):
@@ -161,6 +186,7 @@ def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
 
 
 # ── Batched cross-reference check ──────────────────────────────────────
+
 
 async def check_references(
     db: AsyncSession,
@@ -203,12 +229,12 @@ async def check_references(
         # Check prior data first (if available)
         found = False
         if all_text is not None:
-            if re.search(r'\b' + re.escape(name) + r'\b', all_text):
+            if re.search(r"\b" + re.escape(name) + r"\b", all_text):
                 found = True
 
         # If not found in prior data (or no prior data), check intra-file
         if not found and source:
-            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            intra_count = len(re.findall(r"\b" + re.escape(name) + r"\b", source))
             if intra_count > 1:
                 found = True
 
@@ -244,6 +270,7 @@ async def _fetch_user_chunks(db: AsyncSession, user_id: int) -> str | None:
 
 # ── Batch cross-reference across all files (no DB) ─────────────────────
 
+
 def batch_check_references(
     files: list[tuple[str, str]],  # [(filename, source), ...]
 ) -> dict:
@@ -260,7 +287,7 @@ def batch_check_references(
     Returns: { filename: [unreferenced_symbols], ... }
     """
     # Phase 1: extract symbols from every file
-    file_symbols: dict = {}        # filename → [(name, type), ...]
+    file_symbols: dict = {}  # filename → [(name, type), ...]
 
     for filename, source in files:
         syms = extract_symbols(source, filename)
@@ -270,7 +297,7 @@ def batch_check_references(
     # token_files[token] = set of file indices containing this token
     token_files: dict = {}
     for idx, (filename, source) in enumerate(files):
-        tokens = set(re.findall(r'\w+', source))
+        tokens = set(re.findall(r"\w+", source))
         for token in tokens:
             token_files.setdefault(token, set()).add(idx)
 
@@ -292,7 +319,7 @@ def batch_check_references(
             # Intra-file check: does this name appear more than once in its own
             # source? The first occurrence is typically the definition; subsequent
             # ones are usage (calls, instantiation, references).
-            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            intra_count = len(re.findall(r"\b" + re.escape(name) + r"\b", source))
             if intra_count > 1:
                 continue
 
@@ -308,6 +335,7 @@ def batch_check_references(
 
 # ── Phase 2: LLM analysis for files with 0 cross-ref hits ─────────────
 
+
 async def phase2_llm_analysis(filename: str, source: str, candidates: list[dict]) -> dict:
     prompt = get_batch_llm_prompt(source, filename, candidates)
     result, usage = await call_groq_json(prompt=prompt, system=BATCH_LLM_SYSTEM)
@@ -318,10 +346,11 @@ async def phase2_llm_analysis(filename: str, source: str, candidates: list[dict]
 
 # ── Token index builder ──────────────────────────────────────────────
 
+
 def build_token_index(files: list[tuple[str, str]]) -> dict:
     token_files: dict = {}
     for idx, (filename, source) in enumerate(files):
-        tokens = set(re.findall(r'\w+', source))
+        tokens = set(re.findall(r"\w+", source))
         for token in tokens:
             token_files.setdefault(token, set()).add(idx)
     return token_files
@@ -341,7 +370,7 @@ def build_cross_references(
             sources = token_index.get(name)
             if sources is not None and (sources - {idx}):
                 continue
-            intra_count = len(re.findall(r'\b' + re.escape(name) + r'\b', source))
+            intra_count = len(re.findall(r"\b" + re.escape(name) + r"\b", source))
             if intra_count > 1:
                 continue
             unreferenced.append((name, typ))
@@ -370,6 +399,7 @@ async def cross_reference(
 
 # ── Build result for unreferenced symbols ──────────────────────────────
 
+
 def _category_for_symbol(name: str, definition_type: str) -> str:
     mapping = {
         "function": "unused_function",
@@ -391,7 +421,9 @@ def _severity_for_type(definition_type: str) -> str:
 
 
 def _find_symbol_in_source(
-    source: str, filename: str, symbol: str,
+    source: str,
+    filename: str,
+    symbol: str,
     tree: ast.AST | None = None,
 ) -> dict | None:
     lang = detect_language(filename)
@@ -464,11 +496,11 @@ def _find_symbol_in_source(
 
     else:
         patterns = [
-            (r'(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(' + re.escape(symbol) + r')\s*\b', "function"),
-            (r'(?:^|\n)\s*(?:export\s+)?class\s+(' + re.escape(symbol) + r')\s*\b', "class"),
-            (r'(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+(' + re.escape(symbol) + r')\s*[=:]', "variable"),
-            (r'(?:^|\n)\s*import\s+(?:\s*\{\s*)?(' + re.escape(symbol) + r')\b', "import"),
-            (r'(?:^|\n)\s*import\s+\*\s+as\s+(' + re.escape(symbol) + r')\b', "import"),
+            (r"(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(" + re.escape(symbol) + r")\s*\b", "function"),
+            (r"(?:^|\n)\s*(?:export\s+)?class\s+(" + re.escape(symbol) + r")\s*\b", "class"),
+            (r"(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+(" + re.escape(symbol) + r")\s*[=:]", "variable"),
+            (r"(?:^|\n)\s*import\s+(?:\s*\{\s*)?(" + re.escape(symbol) + r")\b", "import"),
+            (r"(?:^|\n)\s*import\s+\*\s+as\s+(" + re.escape(symbol) + r")\b", "import"),
         ]
         for pattern_str, typ in patterns:
             match = re.search(pattern_str, source)
@@ -523,22 +555,24 @@ def build_result(unreferenced: list[SymbolInfo], source: str, filename: str) -> 
         line_end = info["line_end"] if info else 1
         snippet = info["code_snippet"] if info else ""
 
-        issues.append({
-            "id": "",
-            "category": _category_for_symbol(name, typ),
-            "severity": _severity_for_type(typ),
-            "line_start": line_start,
-            "line_end": line_end,
-            "name": name,
-            "description": description_map.get(typ, f"'{name}' is unreferenced in the codebase.").format(name=name),
-            "code_snippet": snippet,
-            "suggestion": suggestion_map.get(typ, f"Review and remove '{name}'.").format(name=name),
-            "confidence": 1.0,
-        })
+        issues.append(
+            {
+                "id": "",
+                "category": _category_for_symbol(name, typ),
+                "severity": _severity_for_type(typ),
+                "line_start": line_start,
+                "line_end": line_end,
+                "name": name,
+                "description": description_map.get(typ, f"'{name}' is unreferenced in the codebase.").format(name=name),
+                "code_snippet": snippet,
+                "suggestion": suggestion_map.get(typ, f"Review and remove '{name}'.").format(name=name),
+                "confidence": 1.0,
+            }
+        )
 
     issues.sort(key=lambda x: x["line_start"])
     for i, issue in enumerate(issues):
-        issue["id"] = f"DC{i+1:03d}"
+        issue["id"] = f"DC{i + 1:03d}"
 
     total_issues = len(issues)
     severity_counts = {"high": 0, "medium": 0, "low": 0}
@@ -550,9 +584,7 @@ def build_result(unreferenced: list[SymbolInfo], source: str, filename: str) -> 
         cat = issue["category"]
         categories[cat] = categories.get(cat, 0) + 1
 
-    dead_lines = sum(
-        (i["line_end"] - i["line_start"] + 1) for i in issues
-    )
+    dead_lines = sum((i["line_end"] - i["line_start"] + 1) for i in issues)
     dead_lines = min(dead_lines, int(total_lines * 0.8))
     dead_pct = round((dead_lines / total_lines) * 100, 1) if total_lines > 0 else 0
 
@@ -566,9 +598,7 @@ def build_result(unreferenced: list[SymbolInfo], source: str, filename: str) -> 
     else:
         overall = "poor"
 
-    refactor_hints = list(set(
-        i["suggestion"] for i in issues
-    ))
+    refactor_hints = list(set(i["suggestion"] for i in issues))
 
     return {
         "summary": {

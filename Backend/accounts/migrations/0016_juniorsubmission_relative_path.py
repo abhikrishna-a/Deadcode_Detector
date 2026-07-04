@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0015_globalanalysisschedule'),
+        ("accounts", "0015_globalanalysisschedule"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='relative_path',
-            field=models.CharField(blank=True, default='', max_length=1000),
+            model_name="juniorsubmission",
+            name="relative_path",
+            field=models.CharField(blank=True, default="", max_length=1000),
         ),
     ]

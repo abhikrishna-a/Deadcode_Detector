@@ -8,20 +8,18 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 class JWTAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
-        query_string = scope.get('query_string', b'').decode()
-        params = dict(p.split('=', 1) for p in query_string.split('&') if '=' in p)
-        token = params.get('token')
+        query_string = scope.get("query_string", b"").decode()
+        params = dict(p.split("=", 1) for p in query_string.split("&") if "=" in p)
+        token = params.get("token")
 
         if token:
             try:
                 access_token = AccessToken(token)
-                user = await database_sync_to_async(
-                    get_user_model().objects.get
-                )(id=access_token['user_id'])
-                scope['user'] = user
-            except (TokenError, Exception):
-                scope['user'] = AnonymousUser()
+                user = await database_sync_to_async(get_user_model().objects.get)(id=access_token["user_id"])
+                scope["user"] = user
+            except TokenError, Exception:
+                scope["user"] = AnonymousUser()
         else:
-            scope['user'] = AnonymousUser()
+            scope["user"] = AnonymousUser()
 
         return await super().__call__(scope, receive, send)

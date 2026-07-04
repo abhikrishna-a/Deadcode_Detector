@@ -47,11 +47,13 @@ async def chat_endpoint(
 
     if not context_chunks:
         messages = [
-            {"role": "system", "content":
-                "You are GhostCode Assistant. You have access to a code file's static analysis results.\n"
+            {
+                "role": "system",
+                "content": "You are GhostCode Assistant. You have access to a code file's static analysis results.\n"
                 f"The analysis found the following dead code issues: {analysis_json}\n"
                 "Answer questions about WHY specific code is dead, cite exact line numbers, and suggest fixes.\n"
-                "No code context chunks were found, so answer based on the analysis data only."},
+                "No code context chunks were found, so answer based on the analysis data only.",
+            },
             {"role": "user", "content": body.question},
         ]
     else:

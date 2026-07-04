@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0020_alter_customuser_password_reset_token'),
+        ("accounts", "0020_alter_customuser_password_reset_token"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='customuser',
-            name='role',
-            field=models.CharField(choices=[('senior', 'Senior'), ('junior', 'Junior')], db_index=True, default='junior', max_length=10),
+            model_name="customuser",
+            name="role",
+            field=models.CharField(
+                choices=[("senior", "Senior"), ("junior", "Junior")], db_index=True, default="junior", max_length=10
+            ),
         ),
     ]

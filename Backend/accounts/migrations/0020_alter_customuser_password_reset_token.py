@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0019_juniorsubmission_completed_at'),
+        ("accounts", "0019_juniorsubmission_completed_at"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='customuser',
-            name='password_reset_token',
+            model_name="customuser",
+            name="password_reset_token",
             field=models.CharField(blank=True, db_index=True, max_length=64, null=True),
         ),
     ]

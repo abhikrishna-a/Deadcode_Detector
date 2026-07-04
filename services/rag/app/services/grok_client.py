@@ -25,9 +25,7 @@ class GroqKeyManager:
 
     def get_client(self) -> AsyncOpenAI:
         if not self._keys:
-            raise RuntimeError(
-                "No Groq API keys configured. Set GROQ_API_KEYS env var."
-            )
+            raise RuntimeError("No Groq API keys configured. Set GROQ_API_KEYS env var.")
         key = self._keys[self._index % len(self._keys)]
         return AsyncOpenAI(api_key=key, base_url=self._base_url)
 
@@ -65,7 +63,9 @@ def get_gemini_client() -> AsyncOpenAI:
     return gemini_key_manager.get_client()
 
 
-async def call_groq_json(prompt: str, system: str | None = None, user: str = "", model: str = "", temperature: float = 0.1) -> tuple[dict, dict | None]:
+async def call_groq_json(
+    prompt: str, system: str | None = None, user: str = "", model: str = "", temperature: float = 0.1
+) -> tuple[dict, dict | None]:
     if not model:
         model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
@@ -97,7 +97,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
         except APIError as e:
             last_error = e
             # 413 = payload too large — rotating keys won't help
-            if hasattr(e, 'status_code') and e.status_code == 413:
+            if hasattr(e, "status_code") and e.status_code == 413:
                 break
             groq_key_manager.rotate()
             if attempt < max_attempts - 1:
@@ -110,7 +110,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
 
     usage = None
     if not last_error:
-        if hasattr(response, 'usage') and response.usage:
+        if hasattr(response, "usage") and response.usage:
             usage = {
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
@@ -127,7 +127,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
     if gemini_key_manager.has_keys:
         try:
             client = gemini_key_manager.get_client()
-            if last_error and hasattr(last_error, 'status_code') and last_error.status_code == 413:
+            if last_error and hasattr(last_error, "status_code") and last_error.status_code == 413:
                 shorter = _truncate_prompt(prompt, max_chars=12000)
                 gemini_messages = [{"role": "system", "content": system}] if system else []
                 gemini_messages.append({"role": "user", "content": shorter})
@@ -143,7 +143,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
                 timeout=60,
             )
             usage = None
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 usage = {
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
@@ -158,9 +158,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
         except Exception as e:
             raise RuntimeError(f"All LLM providers failed. Groq: {last_error}, Gemini: {e}")
 
-    raise RuntimeError(
-        f"Groq API call failed after {max_attempts} key(s): {last_error}"
-    )
+    raise RuntimeError(f"Groq API call failed after {max_attempts} key(s): {last_error}")
 
 
 def _truncate_prompt(text: str, max_chars: int = 12000) -> str:
@@ -179,6 +177,3 @@ def _truncate_prompt(text: str, max_chars: int = 12000) -> str:
     n_removed = len(lines) - len(truncated)
     truncated.append(f"... [truncated {n_removed} lines, prompt too large]")
     return "\n".join(truncated)
-
-
-

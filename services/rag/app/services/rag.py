@@ -42,10 +42,7 @@ async def retrieve(document_id: str, question: str, db: AsyncSession) -> list[di
         {"query": str(query_vector), "doc_id": document_id, "top_k": TOP_K},
     )
     rows = result.fetchall()
-    return [
-        {"content": row[0], "metadata": row[1], "score": float(row[2])}
-        for row in rows
-    ]
+    return [{"content": row[0], "metadata": row[1], "score": float(row[2])} for row in rows]
 
 
 async def retrieve_by_folder(
@@ -89,7 +86,13 @@ async def retrieve_by_folder(
         )
         rows = result.fetchall()
         return [
-            {"content": row[0], "metadata": row[1], "score": float(row[2]), "analysis_id": str(row[3]), "filename": row[4]}
+            {
+                "content": row[0],
+                "metadata": row[1],
+                "score": float(row[2]),
+                "analysis_id": str(row[3]),
+                "filename": row[4],
+            }
             for row in rows
         ]
 
@@ -124,7 +127,10 @@ def build_prompt(question: str, context_chunks: list[dict], analysis_json: str) 
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": f"Here is the code context:\n\n{context}"},
-        {"role": "assistant", "content": "Understood. I have reviewed the code context and analysis. Ask me anything about it."},
+        {
+            "role": "assistant",
+            "content": "Understood. I have reviewed the code context and analysis. Ask me anything about it.",
+        },
         {"role": "user", "content": question},
     ]
 
@@ -157,7 +163,10 @@ def build_folder_prompt(question: str, context_chunks: list[dict]) -> list[dict]
             ),
         },
         {"role": "user", "content": f"Here is the code context for the folder:\n\n{context}"},
-        {"role": "assistant", "content": "Understood. I have reviewed the code context from all files in this folder. Ask me anything about it."},
+        {
+            "role": "assistant",
+            "content": "Understood. I have reviewed the code context from all files in this folder. Ask me anything about it.",
+        },
         {"role": "user", "content": question},
     ]
 
@@ -184,9 +193,7 @@ def format_history(history: list[dict]) -> str:
 
 
 def build_chat_context_prompt(question: str, sources: list[dict]) -> list[dict]:
-    context = "\n\n---\n\n".join(
-        f"[{s['filename']}]\n{s['chunk_text']}" for s in sources
-    )
+    context = "\n\n---\n\n".join(f"[{s['filename']}]\n{s['chunk_text']}" for s in sources)
     return [
         {
             "role": "system",
@@ -202,9 +209,7 @@ def build_chat_context_prompt(question: str, sources: list[dict]) -> list[dict]:
     ]
 
 
-async def stream_answer(
-    messages: list[dict], context_chunks: list[dict]
-) -> AsyncGenerator[str]:
+async def stream_answer(messages: list[dict], context_chunks: list[dict]) -> AsyncGenerator[str]:
     groq_model = _get_groq_model()
     gemini_model = _get_gemini_model()
     last_error = None

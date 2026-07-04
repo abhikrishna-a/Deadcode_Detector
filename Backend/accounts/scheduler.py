@@ -22,46 +22,50 @@ def process_scheduled_analyses():
                 sched = timezone.make_aware(sched)
             if sched <= now:
                 triggered = 0
-                for sub in JuniorSubmission.objects.filter(status='pending_review'):
-                    sub.status = 'analysing'
+                for sub in JuniorSubmission.objects.filter(status="pending_review"):
+                    sub.status = "analysing"
                     sub.scheduled_at = None
-                    sub.save(update_fields=['status', 'scheduled_at'])
+                    sub.save(update_fields=["status", "scheduled_at"])
                     analyze_junior_submission.delay(sub.id)
-                    _notify_user(sub.user_id, {
-                        'type': 'junior.analysis_started',
-                        'submission_id': sub.id,
-                        'file_name': sub.filename,
-                    })
+                    _notify_user(
+                        sub.user_id,
+                        {
+                            "type": "junior.analysis_started",
+                            "submission_id": sub.id,
+                            "file_name": sub.filename,
+                        },
+                    )
                     triggered += 1
-                    logger.info('Global schedule triggered analysis for submission %d', sub.id)
+                    logger.info("Global schedule triggered analysis for submission %d", sub.id)
                 if triggered > 0:
                     config.triggered = True
-                    config.save(update_fields=['triggered'])
-                logger.info('Global schedule: triggered %d submissions', triggered)
+                    config.save(update_fields=["triggered"])
+                logger.info("Global schedule: triggered %d submissions", triggered)
                 return triggered
 
         # Per-submission scheduled_at check
         count = 0
-        for sub in JuniorSubmission.objects.filter(
-            scheduled_at__lte=now, status='pending_review'
-        ):
-            sub.status = 'analysing'
+        for sub in JuniorSubmission.objects.filter(scheduled_at__lte=now, status="pending_review"):
+            sub.status = "analysing"
             sub.scheduled_at = None
-            sub.save(update_fields=['status', 'scheduled_at'])
+            sub.save(update_fields=["status", "scheduled_at"])
             analyze_junior_submission.delay(sub.id)
-            _notify_user(sub.user_id, {
-                'type': 'junior.analysis_started',
-                'submission_id': sub.id,
-                'file_name': sub.filename,
-            })
+            _notify_user(
+                sub.user_id,
+                {
+                    "type": "junior.analysis_started",
+                    "submission_id": sub.id,
+                    "file_name": sub.filename,
+                },
+            )
             count += 1
-            logger.info('Scheduled analysis triggered for submission %d', sub.id)
+            logger.info("Scheduled analysis triggered for submission %d", sub.id)
 
         if count:
-            logger.info('process_scheduled_analyses: triggered %d submissions', count)
+            logger.info("process_scheduled_analyses: triggered %d submissions", count)
         return count
     except Exception:
-        logger.exception('process_scheduled_analyses failed')
+        logger.exception("process_scheduled_analyses failed")
         return 0
 
 
@@ -71,10 +75,10 @@ def cleanup_stale_scheduled():
 
     stale = JuniorSubmission.objects.filter(
         scheduled_at__lte=timezone.now() - timezone.timedelta(days=7),
-        status='pending_review',
+        status="pending_review",
     )
     count = stale.count()
     if count:
-        stale.update(status='failed')
-        logger.info('cleanup_stale_scheduled: marked %d stale submissions as failed', count)
+        stale.update(status="failed")
+        logger.info("cleanup_stale_scheduled: marked %d stale submissions as failed", count)
     return count

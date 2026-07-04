@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0018_alter_codereviewfeedback_resolved_and_more'),
+        ("accounts", "0018_alter_codereviewfeedback_resolved_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='completed_at',
+            model_name="juniorsubmission",
+            name="completed_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

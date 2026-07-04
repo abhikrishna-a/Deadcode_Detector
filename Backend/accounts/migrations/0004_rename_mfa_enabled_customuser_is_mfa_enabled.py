@@ -4,15 +4,14 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0003_rename_is_mfa_enabled_customuser_mfa_enabled'),
+        ("accounts", "0003_rename_is_mfa_enabled_customuser_mfa_enabled"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='customuser',
-            old_name='mfa_enabled',
-            new_name='is_mfa_enabled',
+            model_name="customuser",
+            old_name="mfa_enabled",
+            new_name="is_mfa_enabled",
         ),
     ]

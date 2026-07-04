@@ -27,7 +27,7 @@ class FastEmbedEmbedder:
         model = self._get_model()
         all_embeddings = []
         for i in range(0, len(texts), BATCH_SIZE):
-            batch = texts[i: i + BATCH_SIZE]
+            batch = texts[i : i + BATCH_SIZE]
             embeddings = list(model.embed(batch))
             all_embeddings.extend([e.tolist() for e in embeddings])
         return all_embeddings
@@ -38,9 +38,7 @@ class FastEmbedEmbedder:
             if not oai_key:
                 raise RuntimeError("OPENAI_API_KEY not set but EMBEDDING_BACKEND=openai.")
             client = AsyncOpenAI(api_key=oai_key)
-            resp = await client.embeddings.create(
-                model="text-embedding-3-small", input=texts
-            )
+            resp = await client.embeddings.create(model="text-embedding-3-small", input=texts)
             return [item.embedding for item in resp.data]
 
         loop = asyncio.get_event_loop()

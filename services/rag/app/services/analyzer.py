@@ -18,10 +18,22 @@ class BatchAnalyzeState(Enum):
 
 
 DEAD_CODE_CATEGORIES = [
-    "unused_import", "unused_function", "unused_class", "unused_variable",
-    "unused_parameter", "unreachable_code", "dead_branch", "redundant_code",
-    "commented_code", "obsolete_todo", "shadowed_variable", "duplicate_logic",
-    "bare_except", "marker", "empty_function", "py2_print",
+    "unused_import",
+    "unused_function",
+    "unused_class",
+    "unused_variable",
+    "unused_parameter",
+    "unreachable_code",
+    "dead_branch",
+    "redundant_code",
+    "commented_code",
+    "obsolete_todo",
+    "shadowed_variable",
+    "duplicate_logic",
+    "bare_except",
+    "marker",
+    "empty_function",
+    "py2_print",
 ]
 
 MAX_TOKENS = 12000
@@ -69,12 +81,14 @@ def _chunk_file(source: str):
             end += 1
         if end == start:
             end = start + 1
-        chunks.append({
-            "content": "\n".join(lines[start:end]),
-            "index": len(chunks),
-            "line_start": start + 1,
-            "line_end": end,
-        })
+        chunks.append(
+            {
+                "content": "\n".join(lines[start:end]),
+                "index": len(chunks),
+                "line_start": start + 1,
+                "line_end": end,
+            }
+        )
         start = max(start + 1, end - OVERLAP_LINES)
     total = len(chunks)
     for c in chunks:
@@ -92,7 +106,7 @@ def _merge_chunk_results(chunk_results: list, source: str) -> dict:
     seen_keys: set = set()
     for analysis, chunk in chunk_results:
         for issue in analysis.get("issues", []):
-            key = f"{issue.get('category','')}:{issue.get('line_start',0)}:{issue.get('name','')}"
+            key = f"{issue.get('category', '')}:{issue.get('line_start', 0)}:{issue.get('name', '')}"
             if key not in seen_keys:
                 seen_keys.add(key)
                 issue_copy = issue.copy()
@@ -102,7 +116,7 @@ def _merge_chunk_results(chunk_results: list, source: str) -> dict:
 
     all_issues.sort(key=lambda x: x.get("line_start", 0))
     for i, issue in enumerate(all_issues):
-        issue["id"] = f"DC{i+1:03d}"
+        issue["id"] = f"DC{i + 1:03d}"
 
     severity_counts = {"high": 0, "medium": 0, "low": 0}
     categories: dict = {}
@@ -118,14 +132,10 @@ def _merge_chunk_results(chunk_results: list, source: str) -> dict:
     metrics = last_analysis.get("metrics", {}).copy()
     metrics["total_lines"] = total_lines
 
-    dead_lines_raw = sum(
-        c[0].get("metrics", {}).get("dead_lines_estimate", 0) for c in chunk_results
-    )
+    dead_lines_raw = sum(c[0].get("metrics", {}).get("dead_lines_estimate", 0) for c in chunk_results)
     dead_lines = min(dead_lines_raw, int(total_lines * 0.8))
     metrics["dead_lines_estimate"] = dead_lines
-    metrics["dead_code_percentage"] = (
-        round((dead_lines / total_lines) * 100, 1) if total_lines > 0 else 0
-    )
+    metrics["dead_code_percentage"] = round((dead_lines / total_lines) * 100, 1) if total_lines > 0 else 0
 
     health_scores = [
         c[0].get("summary", {}).get("health_score", 0)
@@ -164,17 +174,11 @@ def _merge_chunk_results(chunk_results: list, source: str) -> dict:
         "refactor_hints": refactor_hints,
     }
 
-    total_tok = sum(
-        c[0].get("_token_usage", {}).get("total_tokens", 0) for c in chunk_results
-    )
+    total_tok = sum(c[0].get("_token_usage", {}).get("total_tokens", 0) for c in chunk_results)
     if total_tok:
         result["_token_usage"] = {
-            "prompt_tokens": sum(
-                c[0].get("_token_usage", {}).get("prompt_tokens", 0) for c in chunk_results
-            ),
-            "completion_tokens": sum(
-                c[0].get("_token_usage", {}).get("completion_tokens", 0) for c in chunk_results
-            ),
+            "prompt_tokens": sum(c[0].get("_token_usage", {}).get("prompt_tokens", 0) for c in chunk_results),
+            "completion_tokens": sum(c[0].get("_token_usage", {}).get("completion_tokens", 0) for c in chunk_results),
             "total_tokens": total_tok,
         }
     return result
@@ -192,9 +196,13 @@ def _fallback_result(source: str, error: str) -> dict:
         },
         "issues": [],
         "metrics": {
-            "total_lines": lines, "code_lines": 0, "comment_lines": 0,
-            "blank_lines": 0, "dead_lines_estimate": 0,
-            "dead_code_percentage": 0.0, "complexity_hint": "unknown",
+            "total_lines": lines,
+            "code_lines": 0,
+            "comment_lines": 0,
+            "blank_lines": 0,
+            "dead_lines_estimate": 0,
+            "dead_code_percentage": 0.0,
+            "complexity_hint": "unknown",
         },
         "refactor_hints": [],
         "_error": error,
@@ -203,19 +211,29 @@ def _fallback_result(source: str, error: str) -> dict:
 
 def _ensure_defaults(result: dict, source: str):
     lines = source.count("\n") + 1
-    result.setdefault("summary", {
-        "total_issues": 0,
-        "severity_counts": {"high": 0, "medium": 0, "low": 0},
-        "categories": {c: 0 for c in DEAD_CODE_CATEGORIES},
-        "overall_health": "clean",
-        "health_score": 100,
-    })
+    result.setdefault(
+        "summary",
+        {
+            "total_issues": 0,
+            "severity_counts": {"high": 0, "medium": 0, "low": 0},
+            "categories": {c: 0 for c in DEAD_CODE_CATEGORIES},
+            "overall_health": "clean",
+            "health_score": 100,
+        },
+    )
     result.setdefault("issues", [])
-    result.setdefault("metrics", {
-        "total_lines": lines, "code_lines": 0, "comment_lines": 0,
-        "blank_lines": 0, "dead_lines_estimate": 0,
-        "dead_code_percentage": 0.0, "complexity_hint": "low",
-    })
+    result.setdefault(
+        "metrics",
+        {
+            "total_lines": lines,
+            "code_lines": 0,
+            "comment_lines": 0,
+            "blank_lines": 0,
+            "dead_lines_estimate": 0,
+            "dead_code_percentage": 0.0,
+            "complexity_hint": "low",
+        },
+    )
     result.setdefault("refactor_hints", [])
 
 
@@ -260,7 +278,7 @@ def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
     all_issues.sort(key=lambda x: x.get("line_start", 0))
 
     for i, issue in enumerate(all_issues):
-        issue["id"] = f"DC{i+1:03d}"
+        issue["id"] = f"DC{i + 1:03d}"
 
     # Recompute summary
     severity_counts = {"high": 0, "medium": 0, "low": 0}
@@ -273,7 +291,9 @@ def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
         categories[cat] = categories.get(cat, 0) + 1
 
     metrics = llm_result.get("metrics", {}).copy()
-    metrics["dead_lines_estimate"] = metrics.get("dead_lines_estimate", 0) + rag_result.get("metrics", {}).get("dead_lines_estimate", 0)
+    metrics["dead_lines_estimate"] = metrics.get("dead_lines_estimate", 0) + rag_result.get("metrics", {}).get(
+        "dead_lines_estimate", 0
+    )
     if metrics.get("total_lines", 0) > 0:
         metrics["dead_code_percentage"] = round((metrics["dead_lines_estimate"] / metrics["total_lines"]) * 100, 1)
     else:
@@ -315,7 +335,8 @@ def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
 
 
 async def analyze_file(
-    source: str, filename: str,
+    source: str,
+    filename: str,
     db: AsyncSession | None = None,
     user_id: int | None = None,
 ) -> tuple[dict, asyncio.Task | None]:
@@ -327,9 +348,16 @@ async def analyze_file(
         otherwise a background task running the full LLM analysis.
     """
     result = {
-        "summary": {"total_issues": 0, "severity_counts": {}, "categories": {},
-                     "overall_health": "clean", "health_score": 100},
-        "issues": [], "metrics": {}, "refactor_hints": [],
+        "summary": {
+            "total_issues": 0,
+            "severity_counts": {},
+            "categories": {},
+            "overall_health": "clean",
+            "health_score": 100,
+        },
+        "issues": [],
+        "metrics": {},
+        "refactor_hints": [],
     }
 
     if db is not None and user_id is not None:
@@ -354,7 +382,7 @@ async def _run_llm_analysis(source: str, filename: str, rag_result: dict) -> dic
         chunks = _chunk_file(source)
         tasks = [
             _analyze_single_chunk(
-                f"[GhostCode chunk {c['index']+1}/{c['total']} "
+                f"[GhostCode chunk {c['index'] + 1}/{c['total']} "
                 f"lines {c['line_start']}-{c['line_end']}]\n{c['content']}",
                 filename,
             )
@@ -384,8 +412,10 @@ async def _run_llm_analysis(source: str, filename: str, rag_result: dict) -> dic
 
 
 async def analyze_file_content(
-    content: str, filename: str,
-    user_id: int, document_id: str,
+    content: str,
+    filename: str,
+    user_id: int,
+    document_id: str,
     store_db=None,
 ) -> tuple[dict, dict | None]:
     result, llm_task = await analyze_file(content, filename, store_db, user_id)
@@ -399,9 +429,10 @@ def update_batch_scan_file(batch_id: str, filename: str, status: str):
     """Update the status of a file in a batch scan (Redis-backed)."""
     import redis as _r
     from django.conf import settings
+
     try:
         r = _r.from_url(
-            settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0],
+            settings.CHANNEL_LAYERS["default"]["CONFIG"]["hosts"][0],
             socket_timeout=3,
             socket_connect_timeout=3,
         )

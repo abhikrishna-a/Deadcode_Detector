@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0010_add_pending_review_status'),
+        ("accounts", "0010_add_pending_review_status"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='scheduled_at',
+            model_name="juniorsubmission",
+            name="scheduled_at",
             field=models.DateTimeField(blank=True, db_index=True, null=True),
         ),
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='timeout_seconds',
+            model_name="juniorsubmission",
+            name="timeout_seconds",
             field=models.IntegerField(default=300),
         ),
     ]

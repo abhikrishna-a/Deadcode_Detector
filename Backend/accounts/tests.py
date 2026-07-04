@@ -164,9 +164,7 @@ class AccountsAuthFlowTests(APITestCase):
             format="json",
         )
 
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Bearer {login_response.data['pre_auth_token']}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['pre_auth_token']}")
         response = self.client.post("/api/auth/mfa/setup/", {}, format="json")
 
         self.user.refresh_from_db()
@@ -194,9 +192,7 @@ class AccountsAuthFlowTests(APITestCase):
             format="json",
         )
 
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Bearer {verify_response.data['access']}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {verify_response.data['access']}")
         response = self.client.post("/api/auth/mfa/setup/", {}, format="json")
 
         self.user.refresh_from_db()

@@ -4,9 +4,8 @@ import os
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-DATABASE_URL = (
-    os.getenv("RAG_DATABASE_URL")
-    or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:1234@localhost:5432/deadcode_detector")
+DATABASE_URL = os.getenv("RAG_DATABASE_URL") or os.getenv(
+    "DATABASE_URL", "postgresql+asyncpg://postgres:1234@localhost:5432/deadcode_detector"
 )
 IS_SQLITE = "sqlite" in DATABASE_URL
 
@@ -18,7 +17,9 @@ async def init_db():
     async with engine.begin() as conn:
         if IS_SQLITE:
             from sqlalchemy import text as _t
-            await conn.execute(_t("""
+
+            await conn.execute(
+                _t("""
                 CREATE TABLE IF NOT EXISTS analyses (
                     id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -34,7 +35,8 @@ async def init_db():
                     created_at TEXT NOT NULL,
                     source TEXT NOT NULL DEFAULT ''
                 )
-            """))
+            """)
+            )
             try:
                 await conn.execute(_t("ALTER TABLE analyses ADD COLUMN scan_folder TEXT NOT NULL DEFAULT ''"))
             except Exception:
@@ -52,7 +54,8 @@ async def init_db():
             except Exception:
                 pass
             await conn.execute(_t("CREATE INDEX IF NOT EXISTS idx_analyses_user_hash ON analyses(user_id, file_hash)"))
-            await conn.execute(_t("""
+            await conn.execute(
+                _t("""
                 CREATE TABLE IF NOT EXISTS embeddings (
                     id TEXT PRIMARY KEY,
                     analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
@@ -61,11 +64,13 @@ async def init_db():
                     embedding TEXT NOT NULL,
                     token_count INTEGER NOT NULL DEFAULT 0
                 )
-            """))
+            """)
+            )
             await conn.execute(_t("CREATE INDEX IF NOT EXISTS idx_embeddings_analysis ON embeddings(analysis_id)"))
         else:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 CREATE TABLE IF NOT EXISTS rag_documents (
                     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     user_id     INTEGER NOT NULL,
@@ -79,14 +84,28 @@ async def init_db():
                     analysis    JSONB,
                     source      TEXT NOT NULL DEFAULT ''
                 )
-            """))
-            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT ''"))
-            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_folder TEXT NOT NULL DEFAULT ''"))
-            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_type TEXT NOT NULL DEFAULT 'single'"))
-            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''"))
-            await conn.execute(text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_id TEXT NOT NULL DEFAULT ''"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_docs_user_hash ON rag_documents(user_id, file_hash)"))
-            await conn.execute(text("""
+            """)
+            )
+            await conn.execute(
+                text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT ''")
+            )
+            await conn.execute(
+                text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_folder TEXT NOT NULL DEFAULT ''")
+            )
+            await conn.execute(
+                text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_type TEXT NOT NULL DEFAULT 'single'")
+            )
+            await conn.execute(
+                text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''")
+            )
+            await conn.execute(
+                text("ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS scan_id TEXT NOT NULL DEFAULT ''")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_docs_user_hash ON rag_documents(user_id, file_hash)")
+            )
+            await conn.execute(
+                text("""
                 CREATE TABLE IF NOT EXISTS rag_chunks (
                     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     document_id  UUID NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
@@ -95,13 +114,20 @@ async def init_db():
                     metadata     JSONB,
                     embedding    vector(384)
                 )
-            """))
-            row = await conn.execute(text("SELECT 1 FROM pg_indexes WHERE indexname = 'rag_chunks_embedding_idx' AND tablename = 'rag_chunks'"))
+            """)
+            )
+            row = await conn.execute(
+                text(
+                    "SELECT 1 FROM pg_indexes WHERE indexname = 'rag_chunks_embedding_idx' AND tablename = 'rag_chunks'"
+                )
+            )
             if not row.scalar():
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     CREATE INDEX rag_chunks_embedding_idx
                         ON rag_chunks USING hnsw (embedding vector_cosine_ops)
-                """))
+                """)
+                )
 
 
 async def get_db():

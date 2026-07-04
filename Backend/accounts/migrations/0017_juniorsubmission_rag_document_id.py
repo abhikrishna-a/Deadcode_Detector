@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0016_juniorsubmission_relative_path'),
+        ("accounts", "0016_juniorsubmission_relative_path"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='juniorsubmission',
-            name='rag_document_id',
+            model_name="juniorsubmission",
+            name="rag_document_id",
             field=models.UUIDField(blank=True, null=True),
         ),
     ]

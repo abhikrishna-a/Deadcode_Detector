@@ -4,15 +4,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0009_juniorsubmission'),
+        ("accounts", "0009_juniorsubmission"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='status',
-            field=models.CharField(choices=[('pending_review', 'Pending Review'), ('analysing', 'Analysing'), ('done', 'Done'), ('failed', 'Failed')], default='pending_review', max_length=20),
+            model_name="juniorsubmission",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("pending_review", "Pending Review"),
+                    ("analysing", "Analysing"),
+                    ("done", "Done"),
+                    ("failed", "Failed"),
+                ],
+                default="pending_review",
+                max_length=20,
+            ),
         ),
     ]

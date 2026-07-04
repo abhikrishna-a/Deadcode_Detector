@@ -1,8 +1,20 @@
 DEAD_CODE_CATEGORIES = [
-    "unused_import", "unused_function", "unused_class", "unused_variable",
-    "unused_parameter", "unreachable_code", "dead_branch", "redundant_code",
-    "commented_code", "obsolete_todo", "shadowed_variable", "duplicate_logic",
-    "bare_except", "marker", "empty_function", "py2_print",
+    "unused_import",
+    "unused_function",
+    "unused_class",
+    "unused_variable",
+    "unused_parameter",
+    "unreachable_code",
+    "dead_branch",
+    "redundant_code",
+    "commented_code",
+    "obsolete_todo",
+    "shadowed_variable",
+    "duplicate_logic",
+    "bare_except",
+    "marker",
+    "empty_function",
+    "py2_print",
 ]
 
 SYSTEM_PROMPT = """You are GhostCode Analyzer — a senior static-analysis engine \
@@ -38,9 +50,7 @@ def get_analysis_system_prompt() -> str:
 
 def get_analysis_prompt(source: str, filename: str, language: str) -> str:
     total_lines = source.count("\n") + 1
-    numbered = "\n".join(
-        f"{i+1} {line}" for i, line in enumerate(source.splitlines())
-    )
+    numbered = "\n".join(f"{i + 1} {line}" for i, line in enumerate(source.splitlines()))
     return f"""Analyze this file for dead code. Return JSON.
 
 ## File
@@ -74,12 +84,9 @@ Return JSON with:
 
 def get_batch_llm_prompt(source: str, filename: str, candidates: list[dict]) -> str:
     total_lines = source.count("\n") + 1
-    numbered = "\n".join(
-        f"{i+1} {line}" for i, line in enumerate(source.splitlines())
-    )
+    numbered = "\n".join(f"{i + 1} {line}" for i, line in enumerate(source.splitlines()))
     candidates_text = "\n".join(
-        f"  - {c.get('name', '?')} ({c.get('category', '?')}) line {c.get('line_start', '?')}"
-        for c in candidates
+        f"  - {c.get('name', '?')} ({c.get('category', '?')}) line {c.get('line_start', '?')}" for c in candidates
     )
     return f"""Analyze this file for dead code. Cross-reference candidates are listed below.
 

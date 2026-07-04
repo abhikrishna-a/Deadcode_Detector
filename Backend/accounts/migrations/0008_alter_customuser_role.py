@@ -4,22 +4,23 @@ from django.db import migrations, models
 
 
 def migrate_role_values(apps, schema_editor):
-    CustomUser = apps.get_model('accounts', 'CustomUser')
-    CustomUser.objects.filter(role='admin').update(role='senior')
-    CustomUser.objects.filter(role='viewer').update(role='junior')
+    CustomUser = apps.get_model("accounts", "CustomUser")
+    CustomUser.objects.filter(role="admin").update(role="senior")
+    CustomUser.objects.filter(role="viewer").update(role="junior")
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0007_issuethread_threadmessage'),
+        ("accounts", "0007_issuethread_threadmessage"),
     ]
 
     operations = [
         migrations.RunPython(migrate_role_values, migrations.RunPython.noop),
         migrations.AlterField(
-            model_name='customuser',
-            name='role',
-            field=models.CharField(choices=[('senior', 'Senior'), ('junior', 'Junior')], default='junior', max_length=10),
+            model_name="customuser",
+            name="role",
+            field=models.CharField(
+                choices=[("senior", "Senior"), ("junior", "Junior")], default="junior", max_length=10
+            ),
         ),
     ]

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0011_add_scheduled_at_timeout'),
+        ("accounts", "0011_add_scheduled_at_timeout"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='juniorsubmission',
-            name='timeout_seconds',
+            model_name="juniorsubmission",
+            name="timeout_seconds",
             field=models.IntegerField(default=60),
         ),
     ]

@@ -25,7 +25,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(o
     token = credentials.credentials
     try:
         payload = jwt.decode(token, secret_key, algorithms=[ALGORITHM])
-    except (JWTError, JWKError):
+    except JWTError, JWKError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     if payload.get("mfa_verified_for_session") is not True:
@@ -42,7 +42,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(o
 
     try:
         user_id = int(raw_user_id)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user_id in token")
 
     return {"user_id": user_id, "role": role}

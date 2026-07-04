@@ -6,24 +6,28 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0014_chatroom_roommessage'),
+        ("accounts", "0014_chatroom_roommessage"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='GlobalAnalysisSchedule',
+            name="GlobalAnalysisSchedule",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('scheduled_at', models.DateTimeField(blank=True, null=True)),
-                ('triggered', models.BooleanField(default=False)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('updated_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("scheduled_at", models.DateTimeField(blank=True, null=True)),
+                ("triggered", models.BooleanField(default=False)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "updated_by",
+                    models.ForeignKey(
+                        null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'Global analysis schedule',
-                'verbose_name_plural': 'Global analysis schedule',
+                "verbose_name": "Global analysis schedule",
+                "verbose_name_plural": "Global analysis schedule",
             },
         ),
     ]
