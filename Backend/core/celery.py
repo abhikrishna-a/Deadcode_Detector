@@ -1,5 +1,6 @@
 import os
 
+import django
 from celery import Celery
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
@@ -8,9 +9,7 @@ app = Celery("ghostcode")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
-# Force-load ContentType before scheduler import to ensure it's cached
-# in sys.modules, avoiding a Python 3.14 import-caching edge case.
-from django.contrib.contenttypes.models import ContentType  # noqa: E402, F401
+django.setup()
 
 from accounts import scheduler  # noqa: E402, F401 — register beat tasks
 
