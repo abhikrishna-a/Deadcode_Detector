@@ -3,15 +3,15 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
-from .models import GlobalAnalysisSchedule, JuniorSubmission
-from .tasks import _notify_user, analyze_junior_submission
-
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def process_scheduled_analyses():
     try:
+        from .models import GlobalAnalysisSchedule, JuniorSubmission
+        from .tasks import _notify_user, analyze_junior_submission
+
         now = timezone.now()
 
         # Check global schedule first
@@ -71,6 +71,8 @@ def process_scheduled_analyses():
 
 @shared_task
 def cleanup_stale_scheduled():
+    from .models import JuniorSubmission
+
     stale = JuniorSubmission.objects.filter(
         scheduled_at__lte=timezone.now() - timezone.timedelta(days=7),
         status="pending_review",

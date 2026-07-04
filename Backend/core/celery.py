@@ -5,9 +5,13 @@ from celery import Celery
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
 
-app = Celery("ghostcode")
-
 django.setup()
+
+# Force-load ContentType into sys.modules before any model imports to work
+# around a Python 3.14 import-caching edge case with Celery task runners.
+from django.contrib.contenttypes.models import ContentType  # noqa: E402, F401
+
+app = Celery("ghostcode")
 
 from accounts import scheduler  # noqa: E402, F401 — register beat tasks
 
