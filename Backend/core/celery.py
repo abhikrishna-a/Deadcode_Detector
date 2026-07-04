@@ -1,10 +1,7 @@
-import logging
 import os
 
+import django
 from celery import Celery
-from celery.signals import worker_ready
-
-logger = logging.getLogger(__name__)
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
 
@@ -12,17 +9,11 @@ app = Celery("ghostcode")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
+django.setup()
+
 app.autodiscover_tasks()
 
-
-@worker_ready.connect
-def import_scheduler_tasks(sender=None, **kwargs):
-    try:
-        from accounts import scheduler  # noqa: F401
-        logger.info("Scheduler tasks registered")
-    except Exception:
-        logger.exception("Failed to register scheduler tasks")
-
+from accounts import scheduler  # noqa: E402, F401
 
 app.conf.beat_schedule = {
     "cleanup-temp-git-dirs": {
