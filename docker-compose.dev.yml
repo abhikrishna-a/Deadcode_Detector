@@ -98,6 +98,8 @@ services:
   rag:
     build:
       context: ./services/rag
+    ports:
+      - "8004:8004"
     env_file:
       - .env.docker
       - .env
