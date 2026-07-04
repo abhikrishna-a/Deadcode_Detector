@@ -1,4 +1,4 @@
-from .base import *
+from .base import env
 
 DEBUG = env('DJANGO_DEBUG')
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')

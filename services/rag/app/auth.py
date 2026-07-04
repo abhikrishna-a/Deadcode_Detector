@@ -1,12 +1,11 @@
 import os
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
-from jose import jwt, JWTError
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from jose.exceptions import JWKError
-
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 

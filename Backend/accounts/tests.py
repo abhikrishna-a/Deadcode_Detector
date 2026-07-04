@@ -1,12 +1,9 @@
-import json
 import pyotp
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-
 
 User = get_user_model()
 

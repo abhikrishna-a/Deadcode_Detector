@@ -1,4 +1,5 @@
 import os
+
 from celery import Celery
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings.dev')
@@ -9,7 +10,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 
 app.autodiscover_tasks()
 
-from accounts import scheduler  # noqa: F401 — register beat tasks
+from accounts import scheduler  # noqa: E402, F401 — register beat tasks
 
 app.conf.beat_schedule = {
     'cleanup-temp-git-dirs': {

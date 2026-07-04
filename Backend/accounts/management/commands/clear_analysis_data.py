@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
+
+from accounts.chat_models import ChatRoom, IssueThread
 from accounts.models import JuniorSubmission
-from accounts.chat_models import IssueThread, ChatRoom
 
 
 class Command(BaseCommand):

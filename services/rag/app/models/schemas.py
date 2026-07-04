@@ -1,14 +1,15 @@
-from pydantic import BaseModel
-from typing import Any, List, Optional
-from uuid import UUID
 from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class ChunkMeta(BaseModel):
     line_start: int
     line_end: int
     chunk_type: str
-    name: Optional[str] = None
+    name: str | None = None
 
 
 class UploadResponse(BaseModel):
@@ -20,27 +21,27 @@ class UploadResponse(BaseModel):
 class ChatRequest(BaseModel):
     document_id: str
     question: str
-    history: List[dict] = []
+    history: list[dict] = []
 
 
 class FolderChatRequest(BaseModel):
     scan_folder: str
     question: str
-    history: List[dict] = []
+    history: list[dict] = []
 
 
 class SourceCitation(BaseModel):
     line_start: int
     line_end: int
     chunk_type: str
-    name: Optional[str] = None
+    name: str | None = None
     score: float
 
 
 class ChatResponse(BaseModel):
     delta: str
     done: bool = False
-    sources: Optional[List[SourceCitation]] = None
+    sources: list[SourceCitation] | None = None
 
 
 class Message(BaseModel):

@@ -1,5 +1,6 @@
 from django.urls import path
-from .git_views import GitCloneView, GitFileFetchView, GitCloneStatusView
+
+from .git_views import GitCloneStatusView, GitCloneView, GitFileFetchView
 
 urlpatterns = [
     path('clone/', GitCloneView.as_view(), name='git_clone'),

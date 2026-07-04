@@ -360,8 +360,8 @@ def _notify_user(user_id: int, message: dict) -> None:
         async_to_sync(channel_layer.group_send)(f'notifications_user_{user_id}', message)
         # Also notify all senior users so the senior UI stays in sync
         from django.contrib.auth import get_user_model
-        User = get_user_model()
-        for senior in User.objects.filter(role='senior').iterator():
+        user_model = get_user_model()
+        for senior in user_model.objects.filter(role='senior').iterator():
             async_to_sync(channel_layer.group_send)(
                 f'notifications_user_{senior.id}', message,
             )

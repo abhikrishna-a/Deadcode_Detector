@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -51,7 +51,7 @@ async def store_analysis(
 
     if IS_SQLITE:
         analysis_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.execute(
             text("""
                 INSERT INTO analyses (id, user_id, filename, language, file_hash, scan_folder, scan_type, scan_id, analysis_json, health_score, total_issues, created_at, source)

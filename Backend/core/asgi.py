@@ -7,8 +7,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings.dev')
 
 django_asgi = get_asgi_application()
 
-import accounts.routing
-from core.websocket_auth import JWTAuthMiddleware
+import accounts.routing  # noqa: E402
+from core.websocket_auth import JWTAuthMiddleware  # noqa: E402
 
 application = ProtocolTypeRouter({
     'http': django_asgi,

@@ -1,9 +1,8 @@
 import asyncio
 import os
-from typing import List
-from openai import AsyncOpenAI
 
 from fastembed import TextEmbedding
+from openai import AsyncOpenAI
 
 CODE_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _backend = os.getenv("EMBEDDING_BACKEND", "local").lower()
@@ -24,7 +23,7 @@ class FastEmbedEmbedder:
             self._model = TextEmbedding(CODE_EMBEDDING_MODEL)
         return self._model
 
-    def embed_sync(self, texts: List[str]) -> List[List[float]]:
+    def embed_sync(self, texts: list[str]) -> list[list[float]]:
         model = self._get_model()
         all_embeddings = []
         for i in range(0, len(texts), BATCH_SIZE):
@@ -33,7 +32,7 @@ class FastEmbedEmbedder:
             all_embeddings.extend([e.tolist() for e in embeddings])
         return all_embeddings
 
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         if _backend == "openai":
             oai_key = os.getenv("OPENAI_API_KEY", "")
             if not oai_key:
@@ -55,5 +54,5 @@ def prewarm_embedder():
     _embedder._get_model()
 
 
-async def embed_texts(texts: List[str]) -> List[List[float]]:
+async def embed_texts(texts: list[str]) -> list[list[float]]:
     return await _embedder.embed(texts)

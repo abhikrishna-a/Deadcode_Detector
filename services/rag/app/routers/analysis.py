@@ -1,24 +1,34 @@
 import asyncio
-from asyncio import Semaphore
 import hashlib
 import json
 import logging
-from typing import List
-from uuid import UUID
 import uuid as uuid_mod
+from asyncio import Semaphore
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db, IS_SQLITE, AsyncSessionLocal
 from app.auth import get_current_user
-from app.services.chunker import chunk_code, chunk_issues, detect_language
-from app.services.embedder import embed_texts
-from app.services.analyzer import analyze_code_with_grok, analyze_file as _analyze_file_direct
-from app.services.cross_reference import batch_check_references
-from app.services.storage import store_analysis, get_history, get_document, update_document_filename, get_documents_by_scan_folder, delete_document, check_hash, cleanup_stale_documents, count_history, delete_all_user_documents
+from app.db import IS_SQLITE, AsyncSessionLocal, get_db
 from app.models.schemas import BatchAnalyzeRequest, BatchAnalyzeResponse, BatchFileResult
+from app.services.analyzer import analyze_code_with_grok
+from app.services.analyzer import analyze_file as _analyze_file_direct
+from app.services.chunker import chunk_code, chunk_issues, detect_language
+from app.services.cross_reference import batch_check_references
+from app.services.embedder import embed_texts
+from app.services.storage import (
+    check_hash,
+    cleanup_stale_documents,
+    count_history,
+    delete_all_user_documents,
+    delete_document,
+    get_document,
+    get_documents_by_scan_folder,
+    get_history,
+    store_analysis,
+    update_document_filename,
+)
 
 logger = logging.getLogger("ghostcode-rag.analysis")
 
@@ -605,7 +615,7 @@ async def update_document_filename_endpoint(
 
 
 @router.delete("/documents/{document_id}")
-async def delete_document(
+async def delete_document_route(
     document_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -768,7 +778,7 @@ async def analyzer_analyze(
 
 @router.post("/analyzer/analyze-batch")
 async def analyzer_analyze_batch(
-    files: List[UploadFile],
+    files: list[UploadFile],
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

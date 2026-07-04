@@ -1,13 +1,23 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
 from app.auth import get_current_user
-from app.models.schemas import ChatRequest, FolderChatRequest, ChatQuery, ChatReply
-from app.services.rag import retrieve, retrieve_by_folder, retrieve_similar, build_prompt, build_folder_prompt, build_chat_context_prompt, stream_answer, answer_question
+from app.db import get_db
+from app.models.schemas import ChatQuery, ChatReply, ChatRequest, FolderChatRequest
+from app.services.rag import (
+    answer_question,
+    build_chat_context_prompt,
+    build_folder_prompt,
+    build_prompt,
+    retrieve,
+    retrieve_by_folder,
+    retrieve_similar,
+    stream_answer,
+)
 
 router = APIRouter()
 
@@ -32,7 +42,7 @@ async def chat_endpoint(
 
     try:
         context_chunks = await retrieve(body.document_id, body.question, db)
-    except Exception as e:
+    except Exception:
         context_chunks = []
 
     if not context_chunks:

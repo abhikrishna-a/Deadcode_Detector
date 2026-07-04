@@ -1,4 +1,4 @@
-from .base import *
+from .base import env
 
 # Turn off debugging in production environments
 DEBUG = False

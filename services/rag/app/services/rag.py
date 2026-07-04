@@ -1,15 +1,15 @@
 import asyncio
 import json
 import os
-from typing import List, AsyncGenerator
+from collections.abc import AsyncGenerator
 
-from openai import AsyncOpenAI, APIError
+from openai import APIError, AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.embedder import embed_texts
-from app.services.grok_client import groq_key_manager, gemini_key_manager, get_gemini_client
 from app.db import IS_SQLITE, cosine_similarity
+from app.services.embedder import embed_texts
+from app.services.grok_client import gemini_key_manager, get_gemini_client, groq_key_manager
 from app.services.storage import find_similar
 
 
@@ -28,7 +28,7 @@ def _get_groq_client() -> AsyncOpenAI:
     return groq_key_manager.get_client()
 
 
-async def retrieve(document_id: str, question: str, db: AsyncSession) -> List[dict]:
+async def retrieve(document_id: str, question: str, db: AsyncSession) -> list[dict]:
     question_embeddings = await embed_texts([question])
     query_vector = question_embeddings[0]
     result = await db.execute(
@@ -53,7 +53,7 @@ async def retrieve_by_folder(
     user_id: int,
     scan_folder: str,
     question: str,
-) -> List[dict]:
+) -> list[dict]:
     question_embeddings = await embed_texts([question])
     query_vector = question_embeddings[0]
     if IS_SQLITE:
@@ -105,7 +105,7 @@ async def retrieve_similar(
     return await find_similar(db, user_id, query_vec, top_k=top_k, document_id=analysis_id)
 
 
-def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) -> List[dict]:
+def build_prompt(question: str, context_chunks: list[dict], analysis_json: str) -> list[dict]:
     system = (
         "You are GhostCode Assistant. You have access to a code file and its static analysis results.\n"
         f"The analysis found the following dead code issues: {analysis_json}\n"
@@ -129,7 +129,7 @@ def build_prompt(question: str, context_chunks: List[dict], analysis_json: str) 
     ]
 
 
-def build_folder_prompt(question: str, context_chunks: List[dict]) -> List[dict]:
+def build_folder_prompt(question: str, context_chunks: list[dict]) -> list[dict]:
     context_parts = []
     for i, chunk in enumerate(context_chunks):
         filename = chunk.get("filename", "unknown")
@@ -162,7 +162,7 @@ def build_folder_prompt(question: str, context_chunks: List[dict]) -> List[dict]
     ]
 
 
-def format_chunks_as_context(context_chunks: List[dict]) -> str:
+def format_chunks_as_context(context_chunks: list[dict]) -> str:
     parts = []
     for i, chunk in enumerate(context_chunks):
         meta = chunk.get("metadata", {})
@@ -174,7 +174,7 @@ def format_chunks_as_context(context_chunks: List[dict]) -> str:
     return "\n\n".join(parts)
 
 
-def format_history(history: List[dict]) -> str:
+def format_history(history: list[dict]) -> str:
     lines = []
     for msg in history:
         role = msg.get("role", "user")
@@ -183,7 +183,7 @@ def format_history(history: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_chat_context_prompt(question: str, sources: list[dict]) -> List[dict]:
+def build_chat_context_prompt(question: str, sources: list[dict]) -> list[dict]:
     context = "\n\n---\n\n".join(
         f"[{s['filename']}]\n{s['chunk_text']}" for s in sources
     )
@@ -203,8 +203,8 @@ def build_chat_context_prompt(question: str, sources: list[dict]) -> List[dict]:
 
 
 async def stream_answer(
-    messages: List[dict], context_chunks: List[dict]
-) -> AsyncGenerator[str, None]:
+    messages: list[dict], context_chunks: list[dict]
+) -> AsyncGenerator[str]:
     groq_model = _get_groq_model()
     gemini_model = _get_gemini_model()
     last_error = None
@@ -267,7 +267,7 @@ async def stream_answer(
     yield json.dumps({"delta": "", "done": True, "sources": sources})
 
 
-async def answer_question(messages: List[dict]) -> str:
+async def answer_question(messages: list[dict]) -> str:
     groq_model = _get_groq_model()
     gemini_model = _get_gemini_model()
     last_error = None

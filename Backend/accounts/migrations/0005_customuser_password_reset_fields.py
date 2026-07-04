@@ -1,5 +1,6 @@
 from django.db import migrations, models
 
+
 class Migration(migrations.Migration):
     dependencies = [("accounts", "0004_rename_mfa_enabled_customuser_is_mfa_enabled")]
     operations = [

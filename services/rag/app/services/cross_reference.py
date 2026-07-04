@@ -1,17 +1,16 @@
 import ast
 import re
-from typing import List, Optional, Tuple
 from collections import OrderedDict
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.chunker import detect_language
 from app.db import IS_SQLITE
+from app.services.chunker import detect_language
 from app.services.grok_client import call_groq_json
 from app.services.prompts import BATCH_LLM_SYSTEM, get_batch_llm_prompt
 
-SymbolInfo = Tuple[str, str]  # (name, type)  type is one of: function, class, import, variable
+SymbolInfo = tuple[str, str]  # (name, type)  type is one of: function, class, import, variable
 
 # ── Django internals we never flag ──────────────────────────────────────
 MIDDLEWARE_HOOKS = {'process_view', 'process_request', 'process_response',
@@ -32,7 +31,7 @@ _symbol_cache: OrderedDict = OrderedDict()
 _SYMBOL_CACHE_MAX = 5000
 
 
-def _cache_get(user_id: int, name: str, typ: str) -> Optional[bool]:
+def _cache_get(user_id: int, name: str, typ: str) -> bool | None:
     key = (user_id, name, typ)
     if key in _symbol_cache:
         _symbol_cache.move_to_end(key)
@@ -57,13 +56,13 @@ def _has_admin_register(decorator_list) -> bool:
     return False
 
 
-def extract_symbols(source: str, filename: str) -> List[SymbolInfo]:
+def extract_symbols(source: str, filename: str) -> list[SymbolInfo]:
     """
     Extract only module-level symbols that could realistically be dead code.
     Filters out Django internals, dunders, middleware hooks, form clean_* methods,
     and @admin.register classes upfront — reducing DB lookups by 40-60%.
     """
-    symbols: List[SymbolInfo] = []
+    symbols: list[SymbolInfo] = []
     seen: set = set()
     lang = detect_language(filename)
 
@@ -166,9 +165,9 @@ def extract_symbols(source: str, filename: str) -> List[SymbolInfo]:
 async def check_references(
     db: AsyncSession,
     user_id: int,
-    symbols: List[SymbolInfo],
+    symbols: list[SymbolInfo],
     source: str = "",
-) -> List[SymbolInfo]:
+) -> list[SymbolInfo]:
     """
     Batched + cached cross-reference check.
     1. Filters symbols already checked via LRU cache.
@@ -220,7 +219,7 @@ async def check_references(
     return unreferenced
 
 
-async def _fetch_user_chunks(db: AsyncSession, user_id: int) -> Optional[str]:
+async def _fetch_user_chunks(db: AsyncSession, user_id: int) -> str | None:
     """Fetch ALL chunk content for a user in one query, concatenated.
     Returns None when no prior data exists.
     """
@@ -246,7 +245,7 @@ async def _fetch_user_chunks(db: AsyncSession, user_id: int) -> Optional[str]:
 # ── Batch cross-reference across all files (no DB) ─────────────────────
 
 def batch_check_references(
-    files: List[Tuple[str, str]],  # [(filename, source), ...]
+    files: list[tuple[str, str]],  # [(filename, source), ...]
 ) -> dict:
     """
     Fast in-memory cross-reference across ALL files at once.
@@ -393,8 +392,8 @@ def _severity_for_type(definition_type: str) -> str:
 
 def _find_symbol_in_source(
     source: str, filename: str, symbol: str,
-    tree: Optional[ast.AST] = None,
-) -> Optional[dict]:
+    tree: ast.AST | None = None,
+) -> dict | None:
     lang = detect_language(filename)
     lines = source.splitlines()
 
@@ -486,7 +485,7 @@ def _find_symbol_in_source(
     return None
 
 
-def _tree_for_source(source: str, filename: str) -> Optional[ast.AST]:
+def _tree_for_source(source: str, filename: str) -> ast.AST | None:
     """Parse source once, return AST tree. Returns None for non-Python or syntax errors."""
     if detect_language(filename) != "python":
         return None
@@ -496,7 +495,7 @@ def _tree_for_source(source: str, filename: str) -> Optional[ast.AST]:
         return None
 
 
-def build_result(unreferenced: List[SymbolInfo], source: str, filename: str) -> dict:
+def build_result(unreferenced: list[SymbolInfo], source: str, filename: str) -> dict:
     """Build result from unreferenced symbols. Parses AST once and reuses it."""
     lines = source.splitlines()
     total_lines = len(lines)

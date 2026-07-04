@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 def _batch_redis():
     """Return a Redis client using the same URL as the Channels layer."""
-    from django.conf import settings
     import redis as _r
+    from django.conf import settings
     return _r.from_url(
         settings.CHANNEL_LAYERS['default']['CONFIG']['hosts'][0],
         socket_timeout=5,
@@ -253,7 +253,7 @@ class GitFileFetchView(APIView):
             if not os.path.isfile(full_path):
                 continue
             try:
-                with open(full_path, 'r', encoding='utf-8', errors='replace') as fh:
+                with open(full_path, encoding='utf-8', errors='replace') as fh:
                     content = fh.read()
                 size = os.path.getsize(full_path)
                 files_result.append({

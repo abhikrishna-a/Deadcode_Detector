@@ -1,12 +1,14 @@
 import asyncio
-from enum import Enum
 from asyncio import timeout as async_timeout
-from typing import Optional
+from enum import Enum
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.chunker import detect_language
+from app.services.cross_reference import build_result, check_references, extract_symbols
 from app.services.grok_client import call_groq_json
 from app.services.prompts import get_analysis_prompt, get_analysis_system_prompt
-from app.services.chunker import detect_language
-from app.services.cross_reference import extract_symbols, check_references, build_result
+
 
 class BatchAnalyzeState(Enum):
     PENDING = "pending"
@@ -229,7 +231,7 @@ async def _analyze_single_chunk(content: str, filename: str) -> dict:
     try:
         async with async_timeout(90):
             result, usage = await call_groq_json(prompt=prompt, system=system)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return _fallback_result(content, "LLM request timed out after 90s")
     except Exception as exc:
         return _fallback_result(content, str(exc))
@@ -246,7 +248,7 @@ def _merge_rag_with_llm(rag_result: dict, llm_result: dict) -> dict:
 
     # Keep LLM issues, but remove any that RAG already confirmed as dead (use RAG's version)
     deduped = []
-    seen_names = set(rag_issues.keys())
+    set(rag_issues.keys())
     for issue in llm_issues:
         name = issue.get("name")
         if name and name in rag_issues:
@@ -316,7 +318,7 @@ async def analyze_file(
     source: str, filename: str,
     db: AsyncSession | None = None,
     user_id: int | None = None,
-) -> tuple[dict, Optional[asyncio.Task]]:
+) -> tuple[dict, asyncio.Task | None]:
     """
     Analyze a source file.
     Returns (result, llm_task) where:

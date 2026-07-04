@@ -2,11 +2,9 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import List
 
-from openai import AsyncOpenAI, APIError
 from dotenv import load_dotenv
-
+from openai import APIError, AsyncOpenAI
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -17,7 +15,7 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 class GroqKeyManager:
     def __init__(self):
         raw = os.getenv("GROQ_API_KEYS", "") or os.getenv("GROQ_API_KEY", "")
-        self._keys: List[str] = [k.strip().strip("\"'") for k in raw.split(",") if k.strip()]
+        self._keys: list[str] = [k.strip().strip("\"'") for k in raw.split(",") if k.strip()]
         self._base_url = GROQ_BASE_URL
         self._index = 0
 
@@ -40,7 +38,7 @@ class GroqKeyManager:
 class GeminiKeyManager:
     def __init__(self):
         raw = os.getenv("GEMINI_API_KEY", "")
-        self._keys: List[str] = [k.strip().strip("\"'") for k in raw.split(",") if k.strip()]
+        self._keys: list[str] = [k.strip().strip("\"'") for k in raw.split(",") if k.strip()]
         self._base_url = GEMINI_BASE_URL
         self._index = 0
 
@@ -86,7 +84,7 @@ async def call_groq_json(prompt: str, system: str | None = None, user: str = "",
             client = groq_key_manager.get_client()
             response = await asyncio.wait_for(
                 client.chat.completions.create(
-                    model=groq_model,
+                    model=model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=8192,

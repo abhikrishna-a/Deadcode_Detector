@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 @shared_task
 def process_scheduled_analyses():
     try:
-        from .models import JuniorSubmission, GlobalAnalysisSchedule
-        from .tasks import analyze_junior_submission, _notify_user
+        from .models import GlobalAnalysisSchedule, JuniorSubmission
+        from .tasks import _notify_user, analyze_junior_submission
 
         now = timezone.now()
 

@@ -1,6 +1,5 @@
 import ast
 import re
-from typing import List, Optional
 
 MAX_CHUNK_CHARS = 2400
 SLIDING_WINDOW_LINES = 60
@@ -33,7 +32,7 @@ def detect_language(filename: str) -> str:
     return mapping.get(ext, "text")
 
 
-def chunk_python(source: str, filename: str) -> List[Chunk]:
+def chunk_python(source: str, filename: str) -> list[Chunk]:
     chunks = []
     lines = source.splitlines()
     try:
@@ -60,7 +59,7 @@ def chunk_python(source: str, filename: str) -> List[Chunk]:
     return chunks
 
 
-def chunk_javascript(source: str, filename: str) -> List[Chunk]:
+def chunk_javascript(source: str, filename: str) -> list[Chunk]:
     chunks = []
     lines = source.splitlines()
     pattern = re.compile(
@@ -70,12 +69,11 @@ def chunk_javascript(source: str, filename: str) -> List[Chunk]:
         r'(?:^|\n)\s*(?:export\s+)?(?:let|var)\s+\w+\s*=',
         re.MULTILINE
     )
-    prev_end = 0
     for match in pattern.finditer(source):
         line_start = source[: match.start()].count("\n") + 1
         approx_end = _find_block_end(lines, line_start - 1)
         content = "\n".join(lines[line_start - 1 : approx_end])
-        prev_end = sum(len(l) + 1 for l in lines[:approx_end])
+        sum(len(line) + 1 for line in lines[:approx_end])
         name = match.group().strip().split()[-1].replace("=", "").strip()
         chunk_type = "class" if "class" in match.group() else "function"
         if _count_tokens_approx(content) > MAX_CHUNK_CHARS:
@@ -96,7 +94,7 @@ def chunk_javascript(source: str, filename: str) -> List[Chunk]:
     return chunks
 
 
-def _find_block_end(lines: List[str], start_idx: int) -> int:
+def _find_block_end(lines: list[str], start_idx: int) -> int:
     depth = 0
     for i in range(start_idx, len(lines)):
         stripped = lines[i].strip()
@@ -109,7 +107,7 @@ def _find_block_end(lines: List[str], start_idx: int) -> int:
     return len(lines)
 
 
-def _fallback_chunk(source: str, filename: str, language: str) -> List[Chunk]:
+def _fallback_chunk(source: str, filename: str, language: str) -> list[Chunk]:
     chunks = []
     lines = source.splitlines()
     total = len(lines)
@@ -128,7 +126,7 @@ def _fallback_chunk(source: str, filename: str, language: str) -> List[Chunk]:
 def _split_large_chunk(
     content: str, filename: str, line_start: int,
     chunk_type: str, name: str, language: str = "python",
-) -> List[Chunk]:
+) -> list[Chunk]:
     chunks = []
     lines = content.splitlines()
     total = len(lines)
@@ -149,7 +147,7 @@ def _count_tokens_approx(text: str) -> int:
     return len(text)
 
 
-def chunk_code(source: str, filename: str) -> List[Chunk]:
+def chunk_code(source: str, filename: str) -> list[Chunk]:
     lang = detect_language(filename)
     if lang == "python":
         return chunk_python(source, filename)

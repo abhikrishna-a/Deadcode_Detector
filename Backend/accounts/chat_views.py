@@ -1,4 +1,3 @@
-import json
 import logging
 
 import requests
@@ -22,8 +21,8 @@ RAG_BASE = settings.RAG_ANALYZE_URL.rsplit('/rag/', 1)[0]
 def _notify_admins_new_thread(thread_id, from_username):
     try:
         channel_layer = get_channel_layer()
-        User = get_user_model()
-        admins = User.objects.filter(role='senior', is_active=True)
+        user_model = get_user_model()
+        admins = user_model.objects.filter(role='senior', is_active=True)
         for admin in admins:
             async_to_sync(channel_layer.group_send)(
                 f'notifications_user_{admin.id}',
@@ -72,7 +71,7 @@ class ChatThreadListCreateView(APIView):
                     'messages': msgs,
                 })
             return Response({'threads': data, 'total': len(data)}, status=status.HTTP_200_OK)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to list threads for user %s', request.user)
             return Response({'error': 'Failed to list threads.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -121,7 +120,7 @@ class ChatThreadListCreateView(APIView):
             _notify_admins_new_thread(thread.id, request.user.username)
 
             return Response({'thread_id': thread.id, 'created': True}, status=status.HTTP_201_CREATED)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to create thread')
             return Response({'error': 'Failed to create thread.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -154,7 +153,7 @@ class ThreadMessageCreateView(APIView):
                 'is_ai_hint': msg.is_ai_hint,
                 'created_at': msg.created_at.isoformat(),
             }, status=status.HTTP_201_CREATED)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to post message to thread %s', pk)
             return Response({'error': 'Failed to post message.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -174,7 +173,7 @@ class ThreadResolveView(APIView):
             thread.resolved = True
             thread.save(update_fields=['resolved'])
             return Response({'resolved': True}, status=status.HTTP_200_OK)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to resolve thread %s', pk)
             return Response({'error': 'Failed to resolve thread.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -207,7 +206,7 @@ class ChatRoomListCreateView(APIView):
                 } if r.last_message_content else None,
             } for r in rooms]
             return Response({'rooms': data}, status=status.HTTP_200_OK)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to list rooms')
             return Response({'error': 'Failed to list rooms.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -227,7 +226,7 @@ class ChatRoomListCreateView(APIView):
                 'scan_folder': room.scan_folder,
                 'created': created,
             }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to create room')
             return Response({'error': 'Failed to create room.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -261,7 +260,7 @@ class ChatRoomMessagesView(APIView):
                     'created_at': m.created_at.isoformat(),
                 })
             return Response({'messages': data}, status=status.HTTP_200_OK)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to fetch messages for room %s', room_name)
             return Response({'error': 'Failed to fetch messages.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -282,6 +281,6 @@ class ChatRoomMessagesView(APIView):
                 'content': msg.content,
                 'created_at': msg.created_at.isoformat(),
             }, status=status.HTTP_201_CREATED)
-        except Exception as e:
+        except Exception:
             logger.exception('Failed to send message to room %s', room_name)
             return Response({'error': 'Failed to send message.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

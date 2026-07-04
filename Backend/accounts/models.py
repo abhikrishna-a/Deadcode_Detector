@@ -1,9 +1,9 @@
 import secrets
 
+import pyotp
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
-import pyotp
 
 
 class CustomUser(AbstractUser):
@@ -61,10 +61,10 @@ class CustomUser(AbstractUser):
             return None
 
         issuer = "GhostCode"
-    
+
         totp = pyotp.TOTP(self.mfa_secret)
         return totp.provisioning_uri(
-            name=self.email, 
+            name=self.email,
             issuer_name=issuer
         )
 

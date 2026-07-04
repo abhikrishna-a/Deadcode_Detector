@@ -1,8 +1,8 @@
 import httpx
-from django.http import HttpResponse, StreamingHttpResponse
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
+from django.http import HttpResponse, StreamingHttpResponse
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 RAG_BASE = settings.RAG_ANALYZE_URL.rsplit('/rag/', 1)[0]
 
@@ -46,8 +46,7 @@ class RagProxyView(APIView):
             def stream():
                 with httpx.Client() as client:
                     with client.stream('POST', target, headers=headers, content=request.body) as resp:
-                        for chunk in resp.iter_bytes():
-                            yield chunk
+                        yield from resp.iter_bytes()
 
             return StreamingHttpResponse(stream(), content_type='text/event-stream')
         return self._proxy(request, 'POST', proxy_path)

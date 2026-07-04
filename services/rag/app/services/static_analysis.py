@@ -1,6 +1,5 @@
 import ast
 import re
-from typing import Optional
 
 from app.services.chunker import detect_language
 
@@ -201,7 +200,7 @@ def _check_dead_branches(source: str, filename: str, lang: str) -> list[dict]:
                             snippet=s[:200],
                             severity="medium",
                             description=f"Condition '{cond_str}' is always falsy — the 'if' body never executes.",
-                            suggestion=f"Remove the dead branch or fix the condition.",
+                            suggestion="Remove the dead branch or fix the condition.",
                         ))
                     elif _is_truthy_constant(cond) and node.orelse:
                         cond_str = _condition_text(cond)
@@ -215,7 +214,7 @@ def _check_dead_branches(source: str, filename: str, lang: str) -> list[dict]:
                             snippet=_node_text(lines, node.orelse[0]).strip()[:200] if node.orelse else "",
                             severity="medium",
                             description=f"Condition '{cond_str}' is always truthy — the 'else' branch never executes.",
-                            suggestion=f"Remove the dead 'else' branch.",
+                            suggestion="Remove the dead 'else' branch.",
                         ))
                 elif isinstance(node, ast.While):
                     cond = node.test
@@ -229,7 +228,7 @@ def _check_dead_branches(source: str, filename: str, lang: str) -> list[dict]:
                             snippet=_node_text(lines, node).strip()[:200],
                             severity="high",
                             description=f"While loop condition '{cond_str}' is always falsy — the loop body never executes.",
-                            suggestion=f"Remove the dead while loop.",
+                            suggestion="Remove the dead while loop.",
                         ))
         except SyntaxError:
             pass
@@ -352,7 +351,6 @@ def _check_shadowed_variables(source: str, filename: str, lang: str) -> list[dic
     if lang == "python":
         try:
             tree = ast.parse(source)
-            scope_stack = [set()]
 
             def _collect_names(body: list) -> set:
                 names = set()
@@ -478,7 +476,7 @@ def _check_commented_code(source: str, filename: str, lang: str) -> list[dict]:
     if not blocks:
         return issues
 
-    start = blocks[0][0]
+    blocks[0][0]
     prev = blocks[0][0]
     group = [blocks[0]]
     for line_no, text in blocks[1:]:

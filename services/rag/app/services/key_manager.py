@@ -1,12 +1,12 @@
 import os
-from typing import List
+
 from openai import AsyncOpenAI
 
 
 class KeyManager:
     def __init__(self, env_var: str = "XAI_API_KEYS", base_url: str = "https://api.x.ai/v1"):
         raw = os.getenv(env_var, "")
-        self._keys: List[str] = [k.strip() for k in raw.split(",") if k.strip()]
+        self._keys: list[str] = [k.strip() for k in raw.split(",") if k.strip()]
         self._base_url = base_url
         self._index = 0
         self._failed: set = set()
