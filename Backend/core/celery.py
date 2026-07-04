@@ -16,11 +16,11 @@ app.conf.beat_schedule = {
         "schedule": 21600,
     },
     "process-scheduled-analyses": {
-        "task": "accounts.scheduler.process_scheduled_analyses",
+        "task": "accounts.tasks.process_scheduled_analyses",
         "schedule": 60.0,
     },
     "cleanup-stale-scheduled": {
-        "task": "accounts.scheduler.cleanup_stale_scheduled",
+        "task": "accounts.tasks.cleanup_stale_scheduled",
         "schedule": 3600.0,
     },
 }
