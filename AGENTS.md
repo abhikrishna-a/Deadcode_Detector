@@ -61,6 +61,42 @@ To also remove database data (starts fresh next time):
 docker compose -f docker-compose.dev.yml down -v
 ```
 
+## Email Service (Gmail SMTP)
+
+The app sends emails for login notifications and welcome messages via Gmail SMTP.
+
+### Local development
+
+```powershell
+# .env.docker already has these (use app password, not your real Gmail password)
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=your-gmail@gmail.com
+EMAIL_HOST_PASSWORD=your-16-char-app-password
+DEFAULT_FROM_EMAIL=ghostcode@gmail.com
+```
+
+### GitHub Actions CI
+
+Set these **repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `CI_EMAIL_HOST_USER` | Your test Gmail address |
+| `CI_EMAIL_HOST_PASSWORD` | Gmail app password (16 chars) |
+
+Secrets are referenced in `.github/workflows/ci.yml` as `${{ secrets.CI_EMAIL_HOST_USER }}`.
+
+### Gmail App Password Setup
+
+1. Enable [2-Step Verification](https://myaccount.google.com/security) on your Google Account
+2. Go to [App Passwords](https://myaccount.google.com/apppasswords)
+3. Select "Mail" and your device, generate the 16-character password
+
+> ⚠️ Use a **dedicated test Gmail account** for CI — never reuse your production email credentials.
+
 ## Verification
 
 - `http://localhost:5173` → login/signup works

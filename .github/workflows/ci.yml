@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  SECRET_KEY: ci-insecure-secret-key-for-testing-only
+  EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+  EMAIL_HOST: smtp.gmail.com
+  EMAIL_PORT: 587
+  EMAIL_USE_TLS: true
+  EMAIL_HOST_USER: ${{ secrets.CI_EMAIL_HOST_USER }}
+  EMAIL_HOST_PASSWORD: ${{ secrets.CI_EMAIL_HOST_PASSWORD }}
+  DEFAULT_FROM_EMAIL: ci@test.ghostcode.dev
+
+jobs:
+  lint-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install ruff
+      - run: ruff check Backend/ services/
+      - run: ruff format --check Backend/ services/
+
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: deadcode_detector
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r Backend/requirements/base.txt -r Backend/requirements/dev.txt
+      - run: python Backend/manage.py test
+        env:
+          DB_HOST: localhost
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_PORT: 5432
+          EMAIL_BACKEND: ${{ env.EMAIL_BACKEND }}
+          EMAIL_HOST: ${{ env.EMAIL_HOST }}
+          EMAIL_PORT: ${{ env.EMAIL_PORT }}
+          EMAIL_USE_TLS: ${{ env.EMAIL_USE_TLS }}
+          EMAIL_HOST_USER: ${{ env.EMAIL_HOST_USER }}
+          EMAIL_HOST_PASSWORD: ${{ env.EMAIL_HOST_PASSWORD }}
+          DEFAULT_FROM_EMAIL: ${{ env.DEFAULT_FROM_EMAIL }}
+
+  lint-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+        working-directory: Frontend/
+      - run: npm run lint
+        working-directory: Frontend/
+
+  typecheck-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+        working-directory: Frontend/
+      - run: npm run build
+        working-directory: Frontend/
+
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.prod.yml build

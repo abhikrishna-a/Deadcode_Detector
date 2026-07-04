@@ -3,28 +3,19 @@ import threading
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
-from .models import JuniorSubmission, CodeReviewFeedback
 from rest_framework import serializers
+from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import InvalidToken
+
+from .email_utils import send_email_async
+from .models import CodeReviewFeedback, JuniorSubmission
 
 logger = logging.getLogger(__name__)
 
-def _send_email_async(subject, message, recipient):
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient],
-            fail_silently=True,
-        )
-    except Exception as e:
-        logger.error(f"Email to {recipient} failed: {e}")
 
 User = get_user_model()
+
 
 class UserSerializer(serializers.ModelSerializer):
     is_mfa_enabled = serializers.BooleanField(read_only=True)
@@ -45,6 +36,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data["role"] = "junior"
         return User.objects.create_user(**validated_data)
 
+
 class AdminUserSerializer(serializers.ModelSerializer):
     is_mfa_enabled = serializers.BooleanField(read_only=True)
 
@@ -63,18 +55,18 @@ class AdminUserRoleSerializer(serializers.Serializer):
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         # Allow login with email by finding username first
-        login_field = attrs.get('username', '')
-        if '@' in login_field:
+        login_field = attrs.get("username", "")
+        if "@" in login_field:
             try:
                 user_obj = User.objects.get(email__iexact=login_field)
-                attrs['username'] = user_obj.username
+                attrs["username"] = user_obj.username
             except User.DoesNotExist:
                 pass  # Let super().validate() raise the auth error
 
-        data = super().validate(attrs)
+        super().validate(attrs)
 
         threading.Thread(
-            target=lambda: _send_email_async(
+            target=lambda: send_email_async(
                 subject="GhostCode — New login detected",
                 message=f"Hi {self.user.username},\n\nA new login was detected on your GhostCode account.\n\nIf this was you, you can ignore this email.\nIf this wasn't you, please change your password immediately.\n\nStay safe,\nThe GhostCode Team",
                 recipient=self.user.email,
@@ -109,54 +101,82 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token["role"] = user.role
         return token
 
+
 class CustomTokenRefreshSerializer(TokenRefreshSerializer):
     """
-    Hardens the refresh pipeline. Ensures unverified MFA sessions 
+    Hardens the refresh pipeline. Ensures unverified MFA sessions
     cannot generate standard privileged access tokens.
     """
+
     def validate(self, attrs):
         data = super().validate(attrs)
-        
+
         # Decode the refresh token payload to read custom claims
-        refresh_token = RefreshToken(attrs['refresh'])
+        refresh_token = RefreshToken(attrs["refresh"])
         mfa_verified = refresh_token.payload.get("mfa_verified_for_session", False)
-        
+
         if not mfa_verified:
             raise InvalidToken("MFA verification incomplete. Cannot refresh session.")
-            
+
         return data
 
 
 class JuniorSubmissionSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username', read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
     total_issues = serializers.SerializerMethodField()
 
     class Meta:
         model = JuniorSubmission
-        fields = ['id', 'filename', 'language', 'relative_path', 'status', 'created_at', 'analysis_id', 'scan_folder', 'username', 'scheduled_at', 'timeout_seconds', 'total_issues', 'result']
+        fields = [
+            "id",
+            "filename",
+            "language",
+            "relative_path",
+            "status",
+            "created_at",
+            "analysis_id",
+            "scan_folder",
+            "username",
+            "scheduled_at",
+            "timeout_seconds",
+            "total_issues",
+            "result",
+        ]
 
     def get_total_issues(self, obj):
         if not obj.result:
             return 0
-        return obj.result.get('summary', {}).get('total_issues', len(obj.result.get('issues', [])))
+        return obj.result.get("summary", {}).get("total_issues", len(obj.result.get("issues", [])))
 
 
 class JuniorSubmissionDetailSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username', read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
 
     class Meta:
         model = JuniorSubmission
-        fields = '__all__'
+        fields = "__all__"
 
 
 class CodeReviewFeedbackSerializer(serializers.ModelSerializer):
-    reviewer_username = serializers.CharField(source='reviewer.username', read_only=True)
-    filename = serializers.CharField(source='submission.filename', read_only=True)
-    file_content = serializers.CharField(source='submission.file_content', read_only=True)
+    reviewer_username = serializers.CharField(source="reviewer.username", read_only=True)
+    filename = serializers.CharField(source="submission.filename", read_only=True)
+    file_content = serializers.CharField(source="submission.file_content", read_only=True)
 
     class Meta:
         model = CodeReviewFeedback
-        fields = ['id', 'submission_id', 'filename', 'file_content', 'reviewer', 'reviewer_username', 'line_start', 'line_end', 'comment', 'created_at', 'resolved']
+        fields = [
+            "id",
+            "submission_id",
+            "filename",
+            "file_content",
+            "reviewer",
+            "reviewer_username",
+            "line_start",
+            "line_end",
+            "comment",
+            "created_at",
+            "resolved",
+        ]
 
 
 class CodeReviewFeedbackCreateSerializer(serializers.Serializer):
