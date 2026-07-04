@@ -8,8 +8,6 @@ from io import BytesIO
 import qrcode
 from django.conf import settings
 from django.contrib.auth import get_user_model
-
-from .email_utils import send_email_async
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -20,6 +18,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .email_utils import send_email_async
 from .models import UserSession
 from .permissions import IsSeniorWithVerifiedMFA
 from .serializers import (
