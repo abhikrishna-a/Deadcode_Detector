@@ -7,6 +7,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from jose.exceptions import JWKError
 
+_JWT_EXCEPTIONS = (JWTError, JWKError)
+_TYPE_EXCEPTIONS = (ValueError, TypeError)
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 ALGORITHM = "HS256"
@@ -25,7 +28,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(o
     token = credentials.credentials
     try:
         payload = jwt.decode(token, secret_key, algorithms=[ALGORITHM])
-    except JWTError, JWKError:
+    except _JWT_EXCEPTIONS:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     if payload.get("mfa_verified_for_session") is not True:
@@ -42,7 +45,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(o
 
     try:
         user_id = int(raw_user_id)
-    except ValueError, TypeError:
+    except _TYPE_EXCEPTIONS:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user_id in token")
 
     return {"user_id": user_id, "role": role}
