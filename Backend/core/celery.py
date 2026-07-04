@@ -1,6 +1,5 @@
 import os
 
-import django
 from celery import Celery
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
@@ -8,10 +7,6 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
 app = Celery("ghostcode")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
-
-django.setup()
-
-from accounts import scheduler  # noqa: E402, F401 — register beat tasks
 
 app.autodiscover_tasks()
 
