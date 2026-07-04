@@ -1,10 +1,15 @@
 import os
 
+import django
 from celery import Celery
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
 
 app = Celery("ghostcode")
+
+django.setup()
+
+from accounts import scheduler  # noqa: E402, F401 — register beat tasks
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
@@ -16,11 +21,11 @@ app.conf.beat_schedule = {
         "schedule": 21600,
     },
     "process-scheduled-analyses": {
-        "task": "accounts.tasks.process_scheduled_analyses",
+        "task": "accounts.scheduler.process_scheduled_analyses",
         "schedule": 60.0,
     },
     "cleanup-stale-scheduled": {
-        "task": "accounts.tasks.cleanup_stale_scheduled",
+        "task": "accounts.scheduler.cleanup_stale_scheduled",
         "schedule": 3600.0,
     },
 }
