@@ -10,8 +10,6 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.autodiscover_tasks()
 
-from accounts import scheduler  # noqa: E402, F401 — register beat tasks
-
 app.conf.beat_schedule = {
     "cleanup-temp-git-dirs": {
         "task": "accounts.tasks.cleanup_temp_git_dirs",
