@@ -369,7 +369,7 @@ The `extension/` directory contains a Manifest V3 browser extension that integra
 
 We welcome contributions! Here's how you can help:
 
-- 🐛 **Report bugs** — Open a [GitHub Issue](https://github.com/anomalyco/opencode/issues)
+- 🐛 **Report bugs** — Open a [GitHub Issue](https://github.com/abhikrishna-a/Deadcode_Detector/issues)
 - 💡 **Suggest features** — Feature requests are always welcome
 - 🔧 **Submit pull requests** — Fork the repo, make your changes, and open a PR
 - ⭐ **Star the repo** — Show your support
@@ -383,6 +383,8 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 <div align="center">
 
 ### ⭐ If you find this project useful, give it a star! ⭐
+
+[![GitHub stars](https://github.com/abhikrishna-a/Deadcode_Detector/tree/main)
 
 Built with ❤️ for developers who hate dead code
 
