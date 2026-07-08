@@ -104,30 +104,6 @@ services:
     networks:
       - backend
 
-  frontend:
-    build: ./Frontend
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
-      interval: 30s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
-    restart: unless-stopped
-    networks:
-      - backend
-
-  nginx:
-    build: ./nginx
-    ports:
-      - "80:80"
-    depends_on:
-      - frontend
-      - backend
-      - rag
-    restart: unless-stopped
-    networks:
-      - backend
-
 volumes:
   redis_data:
   pgdata:

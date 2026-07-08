@@ -17,7 +17,7 @@ class JWTAuthMiddleware(BaseMiddleware):
                 access_token = AccessToken(token)
                 user = await database_sync_to_async(get_user_model().objects.get)(id=access_token["user_id"])
                 scope["user"] = user
-            except (TokenError, Exception):
+            except TokenError, Exception:
                 scope["user"] = AnonymousUser()
         else:
             scope["user"] = AnonymousUser()
