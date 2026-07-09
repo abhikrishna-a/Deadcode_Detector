@@ -1,10 +1,7 @@
 import axios from 'axios';
 
 export function getAccessToken(): string {
-  return document.cookie
-    .split('; ')
-    .find(r => r.startsWith('ghostcode_access='))
-    ?.split('=')[1] || '';
+  return localStorage.getItem('ghostcode_access') || '';
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL || '';
