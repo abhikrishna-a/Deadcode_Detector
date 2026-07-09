@@ -5,7 +5,9 @@ import type {
   GitFileContents,
 } from './types';
 
-const RAG_BASE = '/api/rag';
+const RAG_BASE = import.meta.env.VITE_RAG_API_URL || '/api/rag';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function readErrorDetail(response: Response, fallback: string): Promise<string> {
   try {
@@ -150,7 +152,7 @@ export const analysisAPI = {
     const token = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (search) params.set('search', search);
-    const response = await fetch(`/api/auth/analysis-history/?${params}`, {
+    const response = await fetch(`${API_BASE}/api/auth/analysis-history/?${params}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -175,7 +177,7 @@ export const analysisAPI = {
   }> => {
     const token = await getAccessToken();
     const response = await fetch(
-      `/api/auth/analysis-by-folder/${encodeURIComponent(scanFolder)}/`,
+      `${API_BASE}/api/auth/analysis-by-folder/${encodeURIComponent(scanFolder)}/`,
       { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
     );
     if (!response.ok) throw new Error('Failed to fetch folder analyses');
@@ -240,7 +242,7 @@ export const analysisAPI = {
     }
     if (scanFolder) formData.append('scan_folder', scanFolder);
     formData.append('scan_type', scanType);
-    const response = await fetch(`/api/analysis/batch/`, {
+    const response = await fetch(`${API_BASE}/api/analysis/batch/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -267,7 +269,7 @@ export const analysisAPI = {
     is_complete: boolean;
   }> => {
     const token = await getAccessToken();
-    const response = await fetch(`/api/analysis/batch/${batchId}/results/`, {
+    const response = await fetch(`${API_BASE}/api/analysis/batch/${batchId}/results/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
@@ -386,7 +388,7 @@ export const analysisAPI = {
   // Git: clone a repo and return file manifest (synchronous)
   gitClone: async (repoUrl: string, branch: string, token?: string): Promise<GitManifest> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/git/clone/`, {
+    const response = await fetch(`${API_BASE}/api/git/clone/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -405,7 +407,7 @@ export const analysisAPI = {
   // Frontend can poll /api/git/clone/{task_id}/status/ or receive WebSocket update.
   submitGitClone: async (repoUrl: string, branch: string): Promise<{ task_id: string }> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/git/clone/`, {
+    const response = await fetch(`${API_BASE}/api/git/clone/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -427,7 +429,7 @@ export const analysisAPI = {
     error?: string;
   }> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/git/clone/${taskId}/status/`, {
+    const response = await fetch(`${API_BASE}/api/git/clone/${taskId}/status/`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -441,7 +443,7 @@ export const analysisAPI = {
   // Git: fetch file contents for a subset of paths
   gitFetchFiles: async (sessionId: string, paths: string[]): Promise<GitFileContents> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/git/files/`, {
+    const response = await fetch(`${API_BASE}/api/git/files/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -459,7 +461,7 @@ export const analysisAPI = {
   // Chat Threads
   createThread: async (analysisId: string, filename: string, issueId: string): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/chat/threads/`, {
+    const response = await fetch(`${API_BASE}/api/chat/threads/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify({ analysis_id: analysisId, filename, issue_id: issueId }),
@@ -470,7 +472,7 @@ export const analysisAPI = {
   listThreads: async (documentId?: string): Promise<any[]> => {
     const token_ = await getAccessToken();
     const params = documentId ? `?document_id=${documentId}` : '';
-    const response = await fetch(`/api/chat/threads/${params}`, {
+    const response = await fetch(`${API_BASE}/api/chat/threads/${params}`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     return response.json();
@@ -478,7 +480,7 @@ export const analysisAPI = {
 
   postMessage: async (threadId: string, content: string): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/chat/threads/${threadId}/messages/`, {
+    const response = await fetch(`${API_BASE}/api/chat/threads/${threadId}/messages/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify({ content }),
@@ -488,7 +490,7 @@ export const analysisAPI = {
 
   resolveThread: async (threadId: string): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/chat/threads/${threadId}/resolve/`, {
+    const response = await fetch(`${API_BASE}/api/chat/threads/${threadId}/resolve/`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -498,13 +500,13 @@ export const analysisAPI = {
   // Chat rooms
   listChatRooms: async (): Promise<{ rooms: any[] }> => {
     const t = await getAccessToken();
-    const r = await fetch('/api/chat/rooms/', { headers: { Authorization: `Bearer ${t}` } });
+    const r = await fetch(API_BASE + '/api/chat/rooms/', { headers: { Authorization: `Bearer ${t}` } });
     return r.json();
   },
 
   createChatRoom: async (name: string, scanFolder?: string): Promise<any> => {
     const t = await getAccessToken();
-    const r = await fetch('/api/chat/rooms/', {
+    const r = await fetch(API_BASE + '/api/chat/rooms/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: JSON.stringify({ name, scan_folder: scanFolder }),
@@ -516,7 +518,7 @@ export const analysisAPI = {
     const t = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit) });
     if (before) params.set('before', before);
-    const r = await fetch(`/api/chat/rooms/${encodeURIComponent(roomName)}/messages/?${params}`, {
+    const r = await fetch(`${API_BASE}/api/chat/rooms/${encodeURIComponent(roomName)}/messages/?${params}`, {
       headers: { Authorization: `Bearer ${t}` },
     });
     return r.json();
@@ -524,7 +526,7 @@ export const analysisAPI = {
 
   sendRoomMessage: async (roomName: string, content: string): Promise<any> => {
     const t = await getAccessToken();
-    const r = await fetch(`/api/chat/rooms/${encodeURIComponent(roomName)}/messages/`, {
+    const r = await fetch(`${API_BASE}/api/chat/rooms/${encodeURIComponent(roomName)}/messages/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: JSON.stringify({ content }),
@@ -542,7 +544,7 @@ export const analysisAPI = {
       formData.append('files', f);
     }
     if (scanFolder) formData.append('scan_folder', scanFolder);
-    const response = await fetch(`/api/auth/junior/batch-upload/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/batch-upload/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token_}` },
       body: formData,
@@ -553,7 +555,7 @@ export const analysisAPI = {
 
   listSubmissions: async (): Promise<any[]> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/list/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/list/`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     return response.json();
@@ -561,7 +563,7 @@ export const analysisAPI = {
 
   getSubmissionDetail: async (submissionId: number): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/detail/${submissionId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/detail/${submissionId}/`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     return response.json();
@@ -569,7 +571,7 @@ export const analysisAPI = {
 
   triggerSubmissionAnalysis: async (submissionId: number): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/analyze/${submissionId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/analyze/${submissionId}/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -578,7 +580,7 @@ export const analysisAPI = {
 
   juniorGitImport: async (repoUrl: string, branch: string, paths: string[]): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/git-import/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/git-import/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify({ repo_url: repoUrl, branch, paths }),
@@ -588,7 +590,7 @@ export const analysisAPI = {
 
   clearAllHistory: async (): Promise<void> => {
     const token_ = await getAccessToken();
-    await fetch(`/api/rag/history`, {
+    await fetch(`${API_BASE}/api/rag/history`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -596,7 +598,7 @@ export const analysisAPI = {
 
   clearJuniorSubmissions: async (): Promise<void> => {
     const token_ = await getAccessToken();
-    await fetch(`/api/auth/junior/clear/`, {
+    await fetch(`${API_BASE}/api/auth/junior/clear/`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -606,7 +608,7 @@ export const analysisAPI = {
   seniorListSubmissions: async (status?: string): Promise<any[]> => {
     const token_ = await getAccessToken();
     const params = status ? `?status=${status}` : '';
-    const response = await fetch(`/api/auth/senior/submissions/${params}`, {
+    const response = await fetch(`${API_BASE}/api/auth/senior/submissions/${params}`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch submissions');
@@ -618,7 +620,7 @@ export const analysisAPI = {
     const token_ = await getAccessToken();
     const body: any = { scan_folder: scanFolder, scheduled_at: scheduledAt };
     if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
-    const response = await fetch(`/api/auth/junior/schedule-folder/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/schedule-folder/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify(body),
@@ -633,7 +635,7 @@ export const analysisAPI = {
     const body: any = {};
     if (scheduledAt) body.scheduled_at = scheduledAt;
     if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
-    const response = await fetch(`/api/auth/junior/analyze/${submissionId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/analyze/${submissionId}/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify(body),
@@ -647,7 +649,7 @@ export const analysisAPI = {
     const token_ = await getAccessToken();
     const body: any = { line_start: lineStart, comment };
     if (lineEnd !== undefined) body.line_end = lineEnd;
-    const response = await fetch(`/api/auth/senior/feedback/${submissionId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/senior/feedback/${submissionId}/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify(body),
@@ -659,7 +661,7 @@ export const analysisAPI = {
   // Junior: list feedback on own submissions
   juniorListFeedback: async (): Promise<any[]> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/feedback/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/feedback/`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch feedback');
@@ -669,7 +671,7 @@ export const analysisAPI = {
   // List feedback for a specific submission
   listSubmissionFeedback: async (submissionId: number): Promise<any[]> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/junior/feedback/${submissionId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/junior/feedback/${submissionId}/`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch submission feedback');
@@ -679,7 +681,7 @@ export const analysisAPI = {
   // Lookup junior submission by RAG analysis_id
   lookupSubmissionByAnalysis: async (analysisId: string): Promise<{ submission_id: number; filename: string }> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/submission-by-analysis/${analysisId}/`, {
+    const response = await fetch(`${API_BASE}/api/auth/submission-by-analysis/${analysisId}/`, {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Submission not found for this analysis');
@@ -689,7 +691,7 @@ export const analysisAPI = {
   // Junior/senior: mark feedback as resolved
   resolveFeedback: async (feedbackId: number): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch(`/api/auth/feedback/${feedbackId}/resolve/`, {
+    const response = await fetch(`${API_BASE}/api/auth/feedback/${feedbackId}/resolve/`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -705,7 +707,7 @@ export const analysisAPI = {
     pending_count: number;
   }> => {
     const token_ = await getAccessToken();
-    const response = await fetch('/api/auth/scheduler/config/', {
+    const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
       headers: { Authorization: `Bearer ${token_}` },
     });
     if (!response.ok) throw new Error('Failed to fetch schedule config');
@@ -714,7 +716,7 @@ export const analysisAPI = {
 
   setGlobalSchedule: async (scheduledAt: string): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch('/api/auth/scheduler/config/', {
+    const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
       body: JSON.stringify({ scheduled_at: scheduledAt }),
@@ -725,7 +727,7 @@ export const analysisAPI = {
 
   cancelGlobalSchedule: async (): Promise<any> => {
     const token_ = await getAccessToken();
-    const response = await fetch('/api/auth/scheduler/config/', {
+    const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token_}` },
     });
@@ -735,7 +737,7 @@ export const analysisAPI = {
 
   triggerGlobalSchedule: async (): Promise<{ message: string; processed: number }> => {
     const token_ = await getAccessToken();
-    const response = await fetch('/api/auth/scheduler/trigger/', {
+    const response = await fetch(API_BASE + '/api/auth/scheduler/trigger/', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token_}` },
     });

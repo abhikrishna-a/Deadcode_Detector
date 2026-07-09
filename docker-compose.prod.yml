@@ -39,6 +39,8 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
       DJANGO_DEBUG: "False"
+    ports:
+      - "8000:8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -96,6 +98,8 @@ services:
       context: ./services/rag
     env_file:
       - .env.docker
+    ports:
+      - "8004:8004"
     depends_on:
       postgres:
         condition: service_healthy

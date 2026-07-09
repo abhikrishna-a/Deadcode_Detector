@@ -59,6 +59,7 @@ def _set_refresh_cookie(response, session_key):
         httponly=True,
         samesite="Lax",
         secure=not settings.DEBUG,
+        domain=".ghostcode.dev",
         path="/",
     )
 
@@ -70,6 +71,7 @@ def _set_access_cookie(response, access_token):
         httponly=False,
         samesite="Lax",
         secure=not settings.DEBUG,
+        domain=".ghostcode.dev",
         path="/",
     )
 
