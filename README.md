@@ -4,6 +4,8 @@
 
 ### AI-Powered Dead Code Detector for Modern Codebases
 
+<!-- CD-TEST: trigger CI → CD dispatch -->
+
 [![GitHub stars](https://img.shields.io/badge/Python-3.14+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Django](https://img.shields.io/badge/Django-6.0-092E20?logo=django)](https://www.djangoproject.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
