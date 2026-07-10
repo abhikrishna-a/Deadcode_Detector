@@ -1,5 +1,6 @@
 import pyotp
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -311,8 +312,8 @@ class JuniorSubmissionWorkflowTests(APITestCase):
             "/api/auth/junior/batch-upload/",
             {
                 "files": [
-                    ("alpha.py", b"print('alpha')", "text/plain"),
-                    ("beta.py", b"print('beta')", "text/plain"),
+                    SimpleUploadedFile("alpha.py", b"print('alpha')", content_type="text/plain"),
+                    SimpleUploadedFile("beta.py", b"print('beta')", content_type="text/plain"),
                 ],
                 "scan_folder": "nightly-demo",
                 "scheduled_at": now.isoformat(),
