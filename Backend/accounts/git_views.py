@@ -271,7 +271,7 @@ class GitFileFetchView(APIView):
 
         try:
             session_data = json.loads(cached)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             return Response(
                 {"error": "Invalid session data."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
