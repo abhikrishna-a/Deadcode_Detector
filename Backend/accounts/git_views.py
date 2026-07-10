@@ -121,16 +121,10 @@ class GitCloneView(APIView):
 
         if repo_url.startswith("git@"):
             # SSH: git@github.com:user/repo → https://github.com/user/repo
-            repo_url = (
-                repo_url.replace(":", "/")
-                .replace("git@", "https://")
-                .removesuffix(".git")
-            )
+            repo_url = repo_url.replace(":", "/").replace("git@", "https://").removesuffix(".git")
         else:
             if not repo_url.startswith("https://"):
-                repo_url = "https://" + repo_url.removeprefix("http://").removeprefix(
-                    "https://"
-                )
+                repo_url = "https://" + repo_url.removeprefix("http://").removeprefix("https://")
             repo_url = repo_url.replace("://www.", "://")
 
         # Strip GitHub web path: /tree/branch/... or /blob/branch/...
@@ -174,9 +168,7 @@ class GitCloneView(APIView):
 
             if result.returncode != 0:
                 logger.error("Git clone failed (stderr): %s", result.stderr[-500:])
-                error_msg = (
-                    result.stderr.strip() or "Git clone failed with unknown error."
-                )
+                error_msg = result.stderr.strip() or "Git clone failed with unknown error."
                 # Sanitize any token from error message
                 if token:
                     error_msg = error_msg.replace(token, "***")
@@ -221,9 +213,7 @@ class GitCloneView(APIView):
             session_id = str(uuid.uuid4())
             cache.set(
                 f"git_session_{session_id}",
-                json.dumps(
-                    {"temp_dir": temp_dir, "repo_name": repo_name, "branch": branch}
-                ),
+                json.dumps({"temp_dir": temp_dir, "repo_name": repo_name, "branch": branch}),
                 CACHE_TTL,
             )
 
@@ -276,11 +266,7 @@ class GitFileFetchView(APIView):
         # Path traversal check
         for p in paths:
             normalized = os.path.normpath(p).replace("\\", "/")
-            if (
-                normalized.startswith("..")
-                or "/../" in f"/{normalized}"
-                or normalized == ".."
-            ):
+            if normalized.startswith("..") or "/../" in f"/{normalized}" or normalized == "..":
                 return Response(
                     {"error": f"Invalid path: {p}"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -289,15 +275,13 @@ class GitFileFetchView(APIView):
         cached = cache.get(f"git_session_{session_id}")
         if not cached:
             return Response(
-                {
-                    "error": "Git session expired or not found. Please re-import the repository."
-                },
+                {"error": "Git session expired or not found. Please re-import the repository."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         try:
             session_data = json.loads(cached)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError):  # fmt: skip
             return Response(
                 {"error": "Invalid session data."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -339,9 +323,7 @@ class BatchAnalysisView(APIView):
     def post(self, request):
         uploaded = request.FILES.getlist("files")
         if not uploaded:
-            return Response(
-                {"error": "No files provided."}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "No files provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         scan_folder = request.data.get("scan_folder", "")
         scan_type = request.data.get("scan_type", "folder")
@@ -358,10 +340,7 @@ class BatchAnalysisView(APIView):
             )
             paths = [f.name for f in uploaded]
 
-        files_data = [
-            (paths[i], f.read().decode("utf-8", errors="replace"))
-            for i, f in enumerate(uploaded)
-        ]
+        files_data = [(paths[i], f.read().decode("utf-8", errors="replace")) for i, f in enumerate(uploaded)]
         total = len(files_data)
 
         # Store batch total in Redis for completion tracking
@@ -370,16 +349,10 @@ class BatchAnalysisView(APIView):
 
         # Pass user's JWT token to Celery task for RAG auth
         auth_header = request.headers.get("Authorization", "")
-        token = (
-            auth_header.replace("Bearer ", "")
-            if auth_header.startswith("Bearer ")
-            else ""
-        )
+        token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
 
         # Fire a single batch task (much faster than per-file tasks — in-memory cross-ref, no LLM)
-        batch_analyze_folder.delay(
-            files_data, batch_id, scan_folder, token, scan_type, user_id=request.user.id
-        )
+        batch_analyze_folder.delay(files_data, batch_id, scan_folder, token, scan_type, user_id=request.user.id)
 
         return Response({"batch_id": batch_id}, status=status.HTTP_201_CREATED)
 
@@ -406,7 +379,7 @@ class BatchResultsView(APIView):
                 entry = json.loads(data_bytes)
                 entry["filename"] = filename_bytes.decode("utf-8")
                 files.append(entry)
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except (json.JSONDecodeError, UnicodeDecodeError):  # fmt: skip
                 pass
 
         return Response(
