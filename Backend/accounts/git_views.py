@@ -10,8 +10,8 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .authentication import CookieJWTAuthentication
 
+from .authentication import CookieJWTAuthentication
 from .permissions import IsMFAVerified
 from .tasks import batch_analyze_folder
 
