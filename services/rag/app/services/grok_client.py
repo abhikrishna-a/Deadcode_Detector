@@ -67,7 +67,7 @@ async def call_groq_json(
     prompt: str, system: str | None = None, user: str = "", model: str = "", temperature: float = 0.1
 ) -> tuple[dict, dict | None]:
     if not model:
-        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        model = os.getenv("GROQ_MODEL", "gpt-oss-120b")
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     messages = []

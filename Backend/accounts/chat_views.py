@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from .authentication import CookieJWTAuthentication
 
 from .chat_models import ChatRoom, IssueThread, RoomMessage, ThreadMessage
 from .permissions import IsMFAVerified
@@ -38,7 +38,7 @@ def _notify_admins_new_thread(thread_id, from_username):
 
 
 class ChatThreadListCreateView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def get(self, request):
@@ -134,7 +134,7 @@ class ChatThreadListCreateView(APIView):
 
 
 class ThreadMessageCreateView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def post(self, request, pk):
@@ -168,7 +168,7 @@ class ThreadMessageCreateView(APIView):
 
 
 class ThreadResolveView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def patch(self, request, pk):
@@ -188,7 +188,7 @@ class ThreadResolveView(APIView):
 
 
 class ChatRoomListCreateView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def get(self, request):
@@ -253,7 +253,7 @@ class ChatRoomListCreateView(APIView):
 
 
 class ChatRoomMessagesView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def get(self, request, room_name):

@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { apiClient, getAccessToken } from './client';
+import { apiClient } from './client';
 import type {
   GitManifest,
   GitFileContents,
@@ -19,7 +19,6 @@ async function readErrorDetail(response: Response, fallback: string): Promise<st
 }
 
 export const analysisAPI = {
-  // Unified analysis: sends file to RAG service which runs Groq analysis + stores in vector DB
   analyzeFile: async (file: File, scanFolder: string = '', scanType: string = 'single'): Promise<{
     filename: string;
     document_id: string;
@@ -50,14 +49,13 @@ export const analysisAPI = {
     scan_folder?: string;
     scan_type?: string;
   }> => {
-    const token = await getAccessToken();
     const formData = new FormData();
     formData.append('file', file);
     formData.append('scan_type', scanType);
     if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`${RAG_BASE}/analyze`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
       body: formData,
     });
     if (response.status === 401) {
@@ -84,7 +82,6 @@ export const analysisAPI = {
     };
   },
 
-  // RAG: Get single analysis by ID
   ragGetAnalysis: async (analysisId: string): Promise<{
     analysis_id: string;
     filename: string;
@@ -94,10 +91,9 @@ export const analysisAPI = {
     cached: boolean;
     _source_content?: string;
   }> => {
-    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Failed to fetch analysis (HTTP ${response.status})`);
@@ -107,7 +103,6 @@ export const analysisAPI = {
     return { ...json, _source_content: json._source_content || json.source_content || '' };
   },
 
-  // RAG: Get all analyses for a scan folder
   ragGetAnalysesByFolder: async (scanFolder: string): Promise<{
     scan_folder: string;
     items: Array<{
@@ -121,10 +116,9 @@ export const analysisAPI = {
     }>;
     count: number;
   }> => {
-    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/analyses/by-folder/${encodeURIComponent(scanFolder)}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Failed to fetch folder analyses (HTTP ${response.status})`);
@@ -133,7 +127,6 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Django: Analysis history (fallback when RAG is incomplete)
   analysisHistory: async (limit: number = 50, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
       analysis_id: string;
@@ -149,18 +142,16 @@ export const analysisAPI = {
     }>;
     total: number;
   }> => {
-    const token = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (search) params.set('search', search);
     const response = await fetch(`${API_BASE}/api/auth/analysis-history/?${params}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to fetch analysis history');
     return response.json();
   },
 
-  // Django: Analyses by folder (fallback when RAG is incomplete)
   analysisByFolder: async (scanFolder: string): Promise<{
     scan_folder: string;
     items: Array<{
@@ -175,16 +166,14 @@ export const analysisAPI = {
     }>;
     count: number;
   }> => {
-    const token = await getAccessToken();
     const response = await fetch(
       `${API_BASE}/api/auth/analysis-by-folder/${encodeURIComponent(scanFolder)}/`,
-      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+      { method: 'GET', credentials: 'include' }
     );
     if (!response.ok) throw new Error('Failed to fetch folder analyses');
     return response.json();
   },
 
-  // RAG: Paginated history
   ragHistory: async (limit: number = 20, offset: number = 0, search: string = ''): Promise<{
     items: Array<{
       analysis_id: string;
@@ -198,12 +187,11 @@ export const analysisAPI = {
     }>;
     total: number;
   }> => {
-    const token = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (search) params.set('search', search);
     const response = await fetch(`${RAG_BASE}/history?${params}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Failed to fetch history (HTTP ${response.status})`);
@@ -212,12 +200,10 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // RAG: Delete analysis
   ragDeleteAnalysis: async (analysisId: string): Promise<boolean> => {
-    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/analysis/${analysisId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (response.status === 404) return false;
     if (!response.ok) {
@@ -227,11 +213,7 @@ export const analysisAPI = {
     return true;
   },
 
-  // Async batch analysis: submits files to Django, returns batch_id immediately.
-  // Backend processes files in background via Celery and sends results over WebSocket.
-  // Falls back to synchronous /rag/analyze if endpoint is unavailable.
   submitBatchAnalysis: async (files: File[], scanFolder?: string, scanType: string = 'folder'): Promise<{ batch_id: string }> => {
-    const token = await getAccessToken();
     const formData = new FormData();
     const paths: string[] = [];
     for (const file of files) {
@@ -244,7 +226,7 @@ export const analysisAPI = {
     formData.append('scan_type', scanType);
     const response = await fetch(`${API_BASE}/api/analysis/batch/`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
       body: formData,
     });
     if (!response.ok) {
@@ -254,7 +236,6 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Fallback: poll batch results via REST (used when WebSocket disconnects)
   pollBatchResults: async (batchId: string): Promise<{
     total: number;
     done: number;
@@ -268,9 +249,8 @@ export const analysisAPI = {
     }>;
     is_complete: boolean;
   }> => {
-    const token = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/analysis/batch/${batchId}/results/`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Poll failed (HTTP ${response.status})`);
@@ -279,19 +259,15 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // RAG: Chat with streaming response (original)
   ragChat: async function* (
     document_id: string,
     question: string,
     history: { role: string; content: string }[] = []
   ): AsyncGenerator<string> {
-    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/chat`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ document_id, question, history }),
     });
     if (response.status === 401) {
@@ -332,19 +308,15 @@ export const analysisAPI = {
     }
   },
 
-  // RAG: Folder-level chat with streaming response
   ragFolderChat: async function* (
     scanFolder: string,
     question: string,
     history: { role: string; content: string }[] = []
   ): AsyncGenerator<string> {
-    const token = await getAccessToken();
     const response = await fetch(`${RAG_BASE}/chat-folder`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ scan_folder: scanFolder, question, history, force_sync_llm: true }),
     });
     if (response.status === 401) {
@@ -385,15 +357,11 @@ export const analysisAPI = {
     }
   },
 
-  // Git: clone a repo and return file manifest (synchronous)
   gitClone: async (repoUrl: string, branch: string, token?: string): Promise<GitManifest> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/git/clone/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token_}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ repo_url: repoUrl, branch, token }),
     });
     if (!response.ok) {
@@ -403,16 +371,11 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Git: submit clone as async Celery task, returns task_id immediately.
-  // Frontend can poll /api/git/clone/{task_id}/status/ or receive WebSocket update.
   submitGitClone: async (repoUrl: string, branch: string): Promise<{ task_id: string }> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/git/clone/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token_}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ repo_url: repoUrl, branch }),
     });
     if (!response.ok) {
@@ -422,16 +385,14 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Git: poll Celery task status for async clone
   getGitCloneStatus: async (taskId: string): Promise<{
     status: 'pending' | 'processing' | 'completed' | 'failed';
     result?: GitManifest;
     error?: string;
   }> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/git/clone/${taskId}/status/`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response, `Git clone status failed (HTTP ${response.status})`);
@@ -440,15 +401,11 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Git: fetch file contents for a subset of paths
   gitFetchFiles: async (sessionId: string, paths: string[]): Promise<GitFileContents> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/git/files/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token_}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ session_id: sessionId, paths }),
     });
     if (!response.ok) {
@@ -458,85 +415,77 @@ export const analysisAPI = {
     return response.json();
   },
 
-  // Chat Threads
   createThread: async (analysisId: string, filename: string, issueId: string): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/chat/threads/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ analysis_id: analysisId, filename, issue_id: issueId }),
     });
     return response.json();
   },
 
   listThreads: async (documentId?: string): Promise<any[]> => {
-    const token_ = await getAccessToken();
     const params = documentId ? `?document_id=${documentId}` : '';
     const response = await fetch(`${API_BASE}/api/chat/threads/${params}`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     return response.json();
   },
 
   postMessage: async (threadId: string, content: string): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/chat/threads/${threadId}/messages/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ content }),
     });
     return response.json();
   },
 
   resolveThread: async (threadId: string): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/chat/threads/${threadId}/resolve/`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     return response.json();
   },
 
-  // Chat rooms
   listChatRooms: async (): Promise<{ rooms: any[] }> => {
-    const t = await getAccessToken();
-    const r = await fetch(API_BASE + '/api/chat/rooms/', { headers: { Authorization: `Bearer ${t}` } });
+    const r = await fetch(API_BASE + '/api/chat/rooms/', { credentials: 'include' });
     return r.json();
   },
 
   createChatRoom: async (name: string, scanFolder?: string): Promise<any> => {
-    const t = await getAccessToken();
     const r = await fetch(API_BASE + '/api/chat/rooms/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ name, scan_folder: scanFolder }),
     });
     return r.json();
   },
 
   getRoomMessages: async (roomName: string, before?: string, limit: number = 50): Promise<{ messages: any[] }> => {
-    const t = await getAccessToken();
     const params = new URLSearchParams({ limit: String(limit) });
     if (before) params.set('before', before);
     const r = await fetch(`${API_BASE}/api/chat/rooms/${encodeURIComponent(roomName)}/messages/?${params}`, {
-      headers: { Authorization: `Bearer ${t}` },
+      credentials: 'include',
     });
     return r.json();
   },
 
   sendRoomMessage: async (roomName: string, content: string): Promise<any> => {
-    const t = await getAccessToken();
     const r = await fetch(`${API_BASE}/api/chat/rooms/${encodeURIComponent(roomName)}/messages/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ content }),
     });
     return r.json();
   },
 
-  // Junior (batch upload)
   juniorUpload: async (files: File[], scanFolder?: string): Promise<any> => {
-    const token_ = await getAccessToken();
     const formData = new FormData();
     for (const f of files) {
       const relPath = f.webkitRelativePath || f.name;
@@ -546,7 +495,7 @@ export const analysisAPI = {
     if (scanFolder) formData.append('scan_folder', scanFolder);
     const response = await fetch(`${API_BASE}/api/auth/junior/batch-upload/`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
       body: formData,
     });
     if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status})`);
@@ -554,171 +503,151 @@ export const analysisAPI = {
   },
 
   listSubmissions: async (): Promise<any[]> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/list/`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     return response.json();
   },
 
   getSubmissionDetail: async (submissionId: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/detail/${submissionId}/`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     return response.json();
   },
 
   triggerSubmissionAnalysis: async (submissionId: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/analyze/${submissionId}/`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     return response.json();
   },
 
   juniorGitImport: async (repoUrl: string, branch: string, paths: string[]): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/git-import/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ repo_url: repoUrl, branch, paths }),
     });
     return response.json();
   },
 
   clearAllHistory: async (): Promise<void> => {
-    const token_ = await getAccessToken();
     await fetch(`${API_BASE}/api/rag/history`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
   },
 
   clearJuniorSubmissions: async (): Promise<void> => {
-    const token_ = await getAccessToken();
     await fetch(`${API_BASE}/api/auth/junior/clear/`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
   },
 
-  // Senior: list all submissions
   seniorListSubmissions: async (status?: string): Promise<any[]> => {
-    const token_ = await getAccessToken();
     const params = status ? `?status=${status}` : '';
     const response = await fetch(`${API_BASE}/api/auth/senior/submissions/${params}`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to fetch submissions');
     return response.json();
   },
 
-  // Senior: schedule all pending submissions in a folder
   juniorScheduleFolder: async (scanFolder: string, scheduledAt: string, timeoutSeconds?: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const body: any = { scan_folder: scanFolder, scheduled_at: scheduledAt };
     if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
     const response = await fetch(`${API_BASE}/api/auth/junior/schedule-folder/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error('Failed to schedule folder');
     return response.json();
   },
 
-  // Senior: trigger analysis (optionally scheduled)
   seniorTriggerAnalysis: async (submissionId: number, scheduledAt?: string, timeoutSeconds?: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const body: any = {};
     if (scheduledAt) body.scheduled_at = scheduledAt;
     if (timeoutSeconds) body.timeout_seconds = timeoutSeconds;
     const response = await fetch(`${API_BASE}/api/auth/junior/analyze/${submissionId}/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error('Failed to trigger analysis');
     return response.json();
   },
 
-  // Senior: add feedback (inline comment)
   seniorAddFeedback: async (submissionId: number, lineStart: number, comment: string, lineEnd?: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const body: any = { line_start: lineStart, comment };
     if (lineEnd !== undefined) body.line_end = lineEnd;
     const response = await fetch(`${API_BASE}/api/auth/senior/feedback/${submissionId}/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error('Failed to add feedback');
     return response.json();
   },
 
-  // Junior: list feedback on own submissions
   juniorListFeedback: async (): Promise<any[]> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/feedback/`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to fetch feedback');
     return response.json();
   },
 
-  // List feedback for a specific submission
   listSubmissionFeedback: async (submissionId: number): Promise<any[]> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/junior/feedback/${submissionId}/`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to fetch submission feedback');
     return response.json();
   },
 
-  // Lookup junior submission by RAG analysis_id
   lookupSubmissionByAnalysis: async (analysisId: string): Promise<{ submission_id: number; filename: string }> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/submission-by-analysis/${analysisId}/`, {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Submission not found for this analysis');
     return response.json();
   },
 
-  // Junior/senior: mark feedback as resolved
   resolveFeedback: async (feedbackId: number): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(`${API_BASE}/api/auth/feedback/${feedbackId}/resolve/`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to resolve feedback');
     return response.json();
   },
 
-  // Global schedule config
   getGlobalSchedule: async (): Promise<{
     scheduled_at: string | null;
     triggered: boolean;
     updated_at: string | null;
     pending_count: number;
   }> => {
-    const token_ = await getAccessToken();
     const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to fetch schedule config');
     return response.json();
   },
 
   setGlobalSchedule: async (scheduledAt: string): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token_}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ scheduled_at: scheduledAt }),
     });
     if (!response.ok) throw new Error('Failed to set global schedule');
@@ -726,20 +655,18 @@ export const analysisAPI = {
   },
 
   cancelGlobalSchedule: async (): Promise<any> => {
-    const token_ = await getAccessToken();
     const response = await fetch(API_BASE + '/api/auth/scheduler/config/', {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to cancel global schedule');
     return response.json();
   },
 
   triggerGlobalSchedule: async (): Promise<{ message: string; processed: number }> => {
-    const token_ = await getAccessToken();
     const response = await fetch(API_BASE + '/api/auth/scheduler/trigger/', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token_}` },
+      credentials: 'include',
     });
     if (!response.ok) throw new Error('Failed to trigger scheduler');
     return response.json();

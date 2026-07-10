@@ -15,6 +15,8 @@ class RagProxyView(APIView):
         auth = request.headers.get("Authorization")
         if auth:
             headers["Authorization"] = auth
+        elif request.auth:
+            headers["Authorization"] = f"Bearer {request.auth}"
         ct = request.headers.get("Content-Type")
         if ct:
             headers["Content-Type"] = ct

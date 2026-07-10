@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from .authentication import CookieJWTAuthentication
 
 from .permissions import IsMFAVerified
 from .tasks import batch_analyze_folder
@@ -84,7 +84,7 @@ def _map_language(ext: str) -> str:
 
 
 class GitCloneView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def post(self, request):
@@ -234,7 +234,7 @@ class GitCloneView(APIView):
 
 
 class GitFileFetchView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def post(self, request):
@@ -307,7 +307,7 @@ class GitFileFetchView(APIView):
 
 
 class BatchAnalysisView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def post(self, request):
@@ -350,7 +350,7 @@ class BatchAnalysisView(APIView):
 class BatchResultsView(APIView):
     """Frontend polls this endpoint as fallback when WebSocket disconnects."""
 
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def get(self, request, batch_id):
@@ -383,7 +383,7 @@ class BatchResultsView(APIView):
 
 
 class GitCloneStatusView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsMFAVerified]
 
     def get(self, request, task_id):

@@ -30,9 +30,6 @@ export const useAuthStore = create<AuthState>()(
     setLoading: (isLoading) => set({ isLoading }),
 
     login: (response: any) => {
-      if (response.access) {
-        localStorage.setItem('ghostcode_access', response.access);
-      }
       if (response.pre_auth_token) {
         set({
           user: response.user,
@@ -49,7 +46,6 @@ export const useAuthStore = create<AuthState>()(
     },
 
     logout: async () => {
-      localStorage.removeItem('ghostcode_access');
       try {
         await apiClient.post('/api/auth/logout/');
       } catch {
@@ -62,9 +58,6 @@ export const useAuthStore = create<AuthState>()(
       set({ isLoading: true });
       try {
         const { data } = await apiClient.get('/api/auth/session/');
-        if (data.access) {
-          localStorage.setItem('ghostcode_access', data.access);
-        }
         if (data.isAuthenticated && data.user) {
           set({
             user: data.user,

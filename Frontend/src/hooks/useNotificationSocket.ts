@@ -1,5 +1,4 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { getAccessToken } from '../api/client';
 
 const MAX_RETRIES = 10;
 const BASE_DELAY_MS = 1000;
@@ -28,15 +27,9 @@ export function useNotificationSocket() {
       if (isConnectingRef.current) return;
       isConnectingRef.current = true;
 
-      const token = getAccessToken();
-      if (!token) {
-        isConnectingRef.current = false;
-        return;
-      }
-
       const WS_BASE = import.meta.env.VITE_WS_URL
         || `${location.protocol.replace('http', 'ws')}//${location.host}/ws`;
-      const ws = new WebSocket(`${WS_BASE}/notifications/?token=${encodeURIComponent(token)}`);
+      const ws = new WebSocket(`${WS_BASE}/notifications/`);
 
       ws.onopen = () => {
         wsRef.current = ws;

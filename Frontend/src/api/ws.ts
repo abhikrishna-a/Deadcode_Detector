@@ -1,5 +1,3 @@
-import { getAccessToken } from './client';
-
 const WS_BASE = import.meta.env.VITE_WS_URL || `${location.protocol.replace('http', 'ws')}//${location.host}/ws`;
 
 export interface WsProgressMessage {
@@ -56,8 +54,7 @@ export function createAnalysisSocket(
   retryConfig?: { maxRetries?: number; baseDelay?: number },
 ): ReconnectingWebSocket {
   const { maxRetries = 3, baseDelay = 1000 } = retryConfig || {};
-  const token = getAccessToken();
-  const url = `${WS_BASE}/analysis/${batchId}/?token=${encodeURIComponent(token)}`;
+  const url = `${WS_BASE}/analysis/${batchId}/`;
 
   let retryCount = 0;
   let disconnected = false;

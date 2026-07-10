@@ -87,8 +87,16 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         setMode('login');
         setErrorMsg('');
       }
-    } catch {
-      showError('Invalid credentials. Please try again.');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.username?.[0] ||
+        err?.response?.data?.email?.[0] ||
+        err?.response?.data?.password?.[0] ||
+        err?.response?.data?.token?.[0] ||
+        err?.response?.data?.non_field_errors?.[0] ||
+        'Invalid credentials. Please try again.';
+      showError(msg);
     }
     setLoading(false);
   };
@@ -113,8 +121,12 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
         storeLogin(response);
         onSuccess();
       }
-    } catch {
-      showError('Incorrect code. Please try again.');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.token?.[0] ||
+        'Incorrect code. Please try again.';
+      showError(msg);
     }
     setLoading(false);
   };
@@ -249,7 +261,8 @@ export default function AuthScreen({ onSuccess, onBack }: AuthScreenProps) {
               <input
                 required
                 type="password"
-                placeholder="Password"
+                minLength={8}
+                placeholder="Password (min 8 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 text-xs text-zinc-200 bg-zinc-950/40 border border-white/[0.06] focus:border-cyan-400/60 rounded-xl outline-none transition-all placeholder:text-zinc-600"

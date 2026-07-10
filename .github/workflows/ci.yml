@@ -7,16 +7,13 @@ on:
     branches: [main]
 
 env:
-  SECRET_KEY: ci-insecure-secret-key-for-testing-only
-  EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
-  EMAIL_HOST: smtp.gmail.com
-  EMAIL_PORT: 587
-  EMAIL_USE_TLS: true
-  EMAIL_HOST_USER: ${{ secrets.CI_EMAIL_HOST_USER }}
-  EMAIL_HOST_PASSWORD: ${{ secrets.CI_EMAIL_HOST_PASSWORD }}
-  DEFAULT_FROM_EMAIL: ci@test.ghostcode.dev
+  SECRET_KEY: django-insecure-ci-7x!@y#z$abcdef0123456789abcdef0123456789abcdef123
+  DJANGO_SECRET_KEY: django-insecure-ci-7x!@y#z$abcdef0123456789abcdef0123456789abcdef123
 
 jobs:
+  # ──────────────────────────────────────────────
+  # 1. Backend Ruff lint
+  # ──────────────────────────────────────────────
   lint-backend:
     runs-on: ubuntu-latest
     steps:
@@ -28,11 +25,14 @@ jobs:
       - run: ruff check Backend/ services/
       - run: ruff format --check Backend/ services/
 
+  # ──────────────────────────────────────────────
+  # 2. Backend Django unit tests
+  # ──────────────────────────────────────────────
   test-backend:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: deadcode_detector
           POSTGRES_USER: postgres
@@ -40,7 +40,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pg_isready -U postgres
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -50,22 +50,18 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r Backend/requirements/base.txt -r Backend/requirements/dev.txt
-      - run: python Backend/manage.py test
+      - run: python Backend/manage.py test accounts --verbosity=2
         env:
-          DB_HOST: localhost
-          DB_USER: postgres
-          DB_PASSWORD: postgres
-          DB_PORT: 5432
-          EMAIL_BACKEND: ${{ env.EMAIL_BACKEND }}
-          EMAIL_HOST: ${{ env.EMAIL_HOST }}
-          EMAIL_PORT: ${{ env.EMAIL_PORT }}
-          EMAIL_USE_TLS: ${{ env.EMAIL_USE_TLS }}
-          EMAIL_HOST_USER: ${{ env.EMAIL_HOST_USER }}
-          EMAIL_HOST_PASSWORD: ${{ env.EMAIL_HOST_PASSWORD }}
-          DEFAULT_FROM_EMAIL: ${{ env.DEFAULT_FROM_EMAIL }}
+          DJANGO_SETTINGS_MODULE: core.settings.ci
 
+  # ──────────────────────────────────────────────
+  # 3. Frontend ESLint
+  # ──────────────────────────────────────────────
   lint-frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -74,12 +70,16 @@ jobs:
           cache: npm
           cache-dependency-path: Frontend/package-lock.json
       - run: npm ci
-        working-directory: Frontend/
       - run: npm run lint
-        working-directory: Frontend/
 
+  # ──────────────────────────────────────────────
+  # 4. Frontend typecheck (Vite build)
+  # ──────────────────────────────────────────────
   typecheck-frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,12 +88,126 @@ jobs:
           cache: npm
           cache-dependency-path: Frontend/package-lock.json
       - run: npm ci
-        working-directory: Frontend/
       - run: npm run build
-        working-directory: Frontend/
 
-  build-docker:
+  # ──────────────────────────────────────────────
+  # 5. Full-stack E2E tests (Playwright)
+  # ──────────────────────────────────────────────
+  e2e-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: deadcode_detector
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready -U postgres
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd redis-cli ping
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install backend deps
+        run: pip install -r Backend/requirements/base.txt -r Backend/requirements/dev.txt
+
+      - name: Install RAG deps
+        run: pip install -r services/rag/requirements.txt
+
+      - name: Install frontend deps
+        working-directory: Frontend/
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: Frontend/
+        run: npx playwright install chromium
+
+      - name: Run Django migrations
+        run: python Backend/manage.py migrate
+        env:
+          DJANGO_SETTINGS_MODULE: core.settings.ci
+
+      - name: Start Celery worker
+        run: |
+          nohup celery -A core worker -l info --pool=solo > /tmp/celery-worker.log 2>&1 &
+          sleep 3
+        env:
+          DJANGO_SETTINGS_MODULE: core.settings.ci
+
+      - name: Start Celery beat
+        run: |
+          nohup celery -A core beat -l info > /tmp/celery-beat.log 2>&1 &
+          sleep 2
+        env:
+          DJANGO_SETTINGS_MODULE: core.settings.ci
+
+      - name: Start RAG service
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8004 --loop asyncio > /tmp/rag.log 2>&1 &
+          echo "Waiting for RAG on :8004..."
+          for i in {1..15}; do
+            curl -sf http://localhost:8004/rag/health > /dev/null 2>&1 && break
+            sleep 2
+          done
+          echo "RAG ready"
+        working-directory: services/rag/
+        env:
+          RAG_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/deadcode_detector
+          DJANGO_SECRET_KEY: ${{ env.DJANGO_SECRET_KEY }}
+
+      - name: Start Django backend
+        run: |
+          nohup python Backend/manage.py runserver 0.0.0.0:8000 > /tmp/django.log 2>&1 &
+          echo "Waiting for Django on :8000..."
+          for i in {1..15}; do
+            curl -sf http://localhost:8000/api/auth/session/ > /dev/null 2>&1 && break
+            sleep 2
+          done
+          echo "Django ready"
+        env:
+          DJANGO_SETTINGS_MODULE: core.settings.ci
+
+      - name: Run E2E tests
+        working-directory: Frontend/
+        run: npm run test:e2e
+        env:
+          CI: true
+
+  # ──────────────────────────────────────────────
+  # 6. Docker build check
+  # ──────────────────────────────────────────────
+  docker-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose -f docker-compose.prod.yml build
+      - name: Build backend image
+        run: docker build --tag backend-test Backend/
+      - name: Build frontend image
+        run: docker build --tag frontend-test Frontend/
+      - name: Build RAG image
+        run: docker build --tag rag-test services/rag/

@@ -16,7 +16,8 @@ venv/
 # Environment files
 .env
 .env.example
-.env*
+.env.*
+!.env.docker
 
 cookie.txt
 ghostcode.db
@@ -45,3 +46,5 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Vite cache.vite/

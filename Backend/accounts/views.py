@@ -14,10 +14,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .authentication import CookieJWTAuthentication
 from .email_utils import send_email_async
 from .models import UserSession
 from .permissions import IsSeniorWithVerifiedMFA
@@ -52,24 +52,24 @@ def build_qr_code_data_url(data, box_size=10):
     return f"data:image/png;base64,{encoded}"
 
 
-def _set_refresh_cookie(response, session_key):
+def _set_refresh_cookie(response, session_key, request=None):
     response.set_cookie(
         key=settings.REFRESH_TOKEN_COOKIE_NAME,
         value=session_key,
         httponly=True,
         samesite="Lax",
-        secure=not settings.DEBUG,
+        secure=request.is_secure() if request else not settings.DEBUG,
         path="/",
     )
 
 
-def _set_access_cookie(response, access_token):
+def _set_access_cookie(response, access_token, request=None):
     response.set_cookie(
         key="ghostcode_access",
         value=access_token,
-        httponly=False,
+        httponly=True,
         samesite="Lax",
-        secure=not settings.DEBUG,
+        secure=request.is_secure() if request else not settings.DEBUG,
         path="/",
     )
 
@@ -102,8 +102,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         if resp.status_code == 200:
             data = resp.data
             if not data.get("mfa_required") and "access" in data:
-                _set_access_cookie(resp, data["access"])
-                _set_refresh_cookie(resp, data.get("refresh", ""))
+                _set_access_cookie(resp, data["access"], request)
+                _set_refresh_cookie(resp, data.get("refresh", ""), request)
         return resp
 
 
@@ -119,7 +119,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         resp = super().post(request, *args, **kwargs)
         if resp.status_code == 200 and "access" in resp.data:
-            _set_access_cookie(resp, resp.data["access"])
+            _set_access_cookie(resp, resp.data["access"], request)
         return resp
 
 
@@ -163,7 +163,7 @@ class CompleteMFALoginView(APIView):
     Issues production-grade fully privileged JWT session pairs upon validation.
     """
 
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
     throttle_classes = [MFALoginThrottle]
 
@@ -206,8 +206,8 @@ class CompleteMFALoginView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-            _set_refresh_cookie(resp, session_key)
-            _set_access_cookie(resp, str(refresh.access_token))
+            _set_refresh_cookie(resp, session_key, request)
+            _set_access_cookie(resp, str(refresh.access_token), request)
             return resp
 
         return Response(
@@ -217,7 +217,7 @@ class CompleteMFALoginView(APIView):
 
 
 class MFASetupView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -257,7 +257,7 @@ class MFAInitialVerifyView(APIView):
     by checking their initial code submission. Activates the configuration flag.
     """
 
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
     throttle_classes = [MFALoginThrottle]
 
@@ -304,8 +304,8 @@ class MFAInitialVerifyView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-            _set_refresh_cookie(resp, session_key)
-            _set_access_cookie(resp, str(refresh.access_token))
+            _set_refresh_cookie(resp, session_key, request)
+            _set_access_cookie(resp, str(refresh.access_token), request)
             return resp
 
         return Response(
@@ -315,7 +315,7 @@ class MFAInitialVerifyView(APIView):
 
 
 class AdminUserListView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsSeniorWithVerifiedMFA]
 
     def get(self, request):
@@ -405,7 +405,7 @@ class PasswordResetConfirmView(APIView):
 
 
 class AdminUserRoleUpdateView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsSeniorWithVerifiedMFA]
 
     def patch(self, request, user_id):
@@ -484,8 +484,8 @@ class SessionCheckView(APIView):
                 "access": str(new_refresh.access_token),
             }
         )
-        _set_refresh_cookie(resp, session.session_key)
-        _set_access_cookie(resp, str(new_refresh.access_token))
+        _set_refresh_cookie(resp, session.session_key, request)
+        _set_access_cookie(resp, str(new_refresh.access_token), request)
         return resp
 
 
@@ -571,7 +571,7 @@ def _is_text_file(name: str) -> bool:
 
 
 class JuniorSubmissionUploadView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -603,7 +603,7 @@ class JuniorSubmissionUploadView(APIView):
 
 
 class JuniorSubmissionBatchUploadView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -646,7 +646,7 @@ class JuniorSubmissionBatchUploadView(APIView):
 
 
 class JuniorSubmissionListView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -658,7 +658,7 @@ class JuniorSubmissionListView(APIView):
 
 
 class JuniorSubmissionDetailView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, submission_id):
@@ -676,7 +676,7 @@ class JuniorSubmissionDetailView(APIView):
 
 
 class SubmissionByAnalysisIdView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, analysis_id):
@@ -696,7 +696,7 @@ class SubmissionByAnalysisIdView(APIView):
 
 
 class JuniorSubmissionAnalyzeView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request, submission_id):
@@ -732,7 +732,7 @@ class JuniorSubmissionAnalyzeView(APIView):
 
 
 class JuniorFolderScheduleView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request):
@@ -752,7 +752,7 @@ class JuniorFolderScheduleView(APIView):
 
 
 class JuniorGitImportView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -816,7 +816,7 @@ class JuniorGitImportView(APIView):
 
 
 class JuniorClearView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
@@ -827,7 +827,7 @@ class JuniorClearView(APIView):
 
 
 class GlobalScheduleView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def get(self, request):
@@ -877,7 +877,7 @@ class GlobalScheduleView(APIView):
 
 
 class SchedulerTriggerView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request):
@@ -908,7 +908,7 @@ class SchedulerTriggerView(APIView):
 
 
 class SeniorSubmissionListView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def get(self, request):
@@ -925,7 +925,7 @@ class SeniorSubmissionListView(APIView):
 
 
 class SeniorAnalysisHistoryView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -972,7 +972,7 @@ class SeniorAnalysisHistoryView(APIView):
 
 
 class SeniorAnalysisByFolderView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, scan_folder):
@@ -1002,7 +1002,7 @@ class SeniorAnalysisByFolderView(APIView):
 
 
 class SeniorFeedbackCreateView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated, IsSeniorWithVerifiedMFA]
 
     def post(self, request, submission_id):
@@ -1049,7 +1049,7 @@ class SeniorFeedbackCreateView(APIView):
 
 
 class FeedbackResolveView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, feedback_id):
@@ -1065,7 +1065,7 @@ class FeedbackResolveView(APIView):
 
 
 class JuniorFeedbackListView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -1081,7 +1081,7 @@ class JuniorFeedbackListView(APIView):
 
 
 class SubmissionFeedbackListView(APIView):
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, submission_id):

@@ -64,15 +64,6 @@ async function authenticateUser(page: Page) {
   return { username, password };
 }
 
-async function getAccessToken(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    return document.cookie
-      .split('; ')
-      .find(r => r.startsWith('ghostcode_access='))
-      ?.split('=')[1] || '';
-  });
-}
-
 test.describe('HistoryTab and TeamChatTab E2E', () => {
 
   test('HistoryTab - loads, search works, retains search', async ({ page }) => {
@@ -100,19 +91,16 @@ test.describe('HistoryTab and TeamChatTab E2E', () => {
 
     // Create room via API since we can't scan a folder in test
     const roomName = `e2e-room-${Date.now()}`;
-    const accessToken = await getAccessToken(page);
 
-    const roomResult: any = await page.evaluate(async (opts) => {
+    const roomResult: any = await page.evaluate(async (name) => {
       const res = await fetch('/api/chat/rooms/', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${opts.token}`,
-        },
-        body: JSON.stringify({ name: opts.name, scan_folder: opts.name }),
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name, scan_folder: name }),
       });
       return res.json();
-    }, { token: accessToken, name: roomName });
+    }, roomName);
     expect(roomResult.id).toBeTruthy();
 
     // Refresh sidebar by switching tabs

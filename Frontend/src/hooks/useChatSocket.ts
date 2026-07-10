@@ -1,5 +1,4 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { getAccessToken } from '../api/client';
 
 const MAX_RETRIES = 10;
 const BASE_DELAY_MS = 1000;
@@ -55,17 +54,10 @@ export function useChatSocket() {
       isConnectingRef.current = true;
       setConnectionStatus('connecting');
 
-      const token = getAccessToken();
-      if (!token) {
-        isConnectingRef.current = false;
-        setConnectionStatus('disconnected');
-        return;
-      }
-
       const WS_BASE = import.meta.env.VITE_WS_URL
         || `${location.protocol.replace('http', 'ws')}//${location.host}/ws`;
       const safeRoom = roomName.replace(/^\/+|\/+$/g, '');
-      const ws = new WebSocket(`${WS_BASE}/chat/${encodeURIComponent(safeRoom)}/?token=${encodeURIComponent(token)}`);
+      const ws = new WebSocket(`${WS_BASE}/chat/${encodeURIComponent(safeRoom)}/`);
 
       ws.onopen = () => {
         wsRef.current = ws;

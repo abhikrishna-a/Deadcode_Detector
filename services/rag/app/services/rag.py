@@ -14,7 +14,7 @@ from app.services.storage import find_similar
 
 
 def _get_groq_model() -> str:
-    return os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    return os.getenv("GROQ_MODEL", "gpt-oss-120b")
 
 
 def _get_gemini_model() -> str:

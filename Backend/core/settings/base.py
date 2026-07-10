@@ -95,7 +95,7 @@ REST_FRAMEWORK = {
         "mfa_login": "5/min",
         "password_reset": "3/hour",
     },
-    "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
+    "DEFAULT_AUTHENTICATION_CLASSES": ("accounts.authentication.CookieJWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",  # Require auth by default across your API endpoints
     ],
