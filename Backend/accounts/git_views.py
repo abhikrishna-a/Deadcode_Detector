@@ -406,7 +406,7 @@ class BatchResultsView(APIView):
                 entry = json.loads(data_bytes)
                 entry["filename"] = filename_bytes.decode("utf-8")
                 files.append(entry)
-            except json.JSONDecodeError, UnicodeDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
         return Response(
