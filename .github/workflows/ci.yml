@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 env:
-  SECRET_KEY: django-insecure-ci-7x!@y#z$abcdef0123456789abcdef0123456789abcdef123
-  DJANGO_SECRET_KEY: django-insecure-ci-7x!@y#z$abcdef0123456789abcdef0123456789abcdef123
+  SECRET_KEY: django-insecure-ci-abcdef0123456789abcdef0123456789abcdef0123456789abcdef1234
+  DJANGO_SECRET_KEY: django-insecure-ci-abcdef0123456789abcdef0123456789abcdef0123456789abcdef1234
 
 jobs:
   # ──────────────────────────────────────────────
@@ -50,6 +50,10 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r Backend/requirements/base.txt -r Backend/requirements/dev.txt
+      - run: python -c "import django; import psycopg2; c=psycopg2.connect(host='localhost', dbname='deadcode_detector', user='postgres', password='postgres'); c.close(); print('DB connection OK')"
+      - run: python Backend/manage.py check --deploy
+        env:
+          DJANGO_SETTINGS_MODULE: core.settings.ci
       - run: python Backend/manage.py test accounts --verbosity=2
         env:
           DJANGO_SETTINGS_MODULE: core.settings.ci
@@ -124,7 +128,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.13"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
