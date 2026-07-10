@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./Backend
+    ports:
+      - "8000:8000"
+    env_file: .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+    depends_on:
+      rag:
+        condition: service_started
+    command: >
+      sh -c "python manage.py migrate &&
+             daphne -b 0.0.0.0 -p 8000 core.asgi:application"
+    restart: unless-stopped
+
+  celery-worker:
+    build: ./Backend
+    env_file: .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+    command: celery -A core worker -l info --pool=solo
+    restart: unless-stopped
+
+  celery-beat:
+    build: ./Backend
+    env_file: .env.docker
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.prod
+    command: celery -A core beat -l info
+    restart: unless-stopped
+
+  rag:
+    build: ./services/rag
+    env_file: .env.docker
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --loop asyncio
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend
+      - rag
+    restart: unless-stopped
