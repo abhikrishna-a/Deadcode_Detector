@@ -19,6 +19,10 @@ venv/
 .env.*
 !.env.docker
 
+# Local-only docs (instructions, not code)
+DEPLOYMENT.md
+AGENTS.md
+
 cookie.txt
 ghostcode.db
 
