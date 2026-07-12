@@ -33,6 +33,8 @@ services:
   rag:
     build: ./services/rag
     env_file: .env.docker
+    ports:
+      - "8004:8004"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --loop asyncio
     restart: unless-stopped
 
