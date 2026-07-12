@@ -14,22 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Decode SSH key
+      - name: Setup SSH key
         run: |
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > /tmp/ssh_key
-          chmod 600 /tmp/ssh_key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key_path: /tmp/ssh_key
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          script: |
-            bash /home/ec2-user/app/scripts/deploy.sh
-
-      - name: Notify deploy failure
-        if: failure()
+      - name: Test SSH connection
         run: |
-          echo "::warning::Deploy failed — check EC2 logs at /home/ec2-user/app/deploy.log"
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "echo SSH OK"
+
+      - name: Deploy via SSH
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
+
+      - name: Verify health
+        run: |
+          curl -sf https://api-ghostcode.duckdns.org/api/auth/session/ && echo "✅ Backend healthy"
