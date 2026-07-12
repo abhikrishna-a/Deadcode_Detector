@@ -24,9 +24,11 @@ DATABASES = {
 }
 
 # Standard production security headers
-SECURE_SSL_REDIRECT = True
+# SSL should be enabled once you have a real certificate (Cloudflare, Let's Encrypt, etc.)
+# Until then, keep these False to avoid infinite redirect loops on HTTP
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=False)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=False)
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
