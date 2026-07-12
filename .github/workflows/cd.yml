@@ -17,7 +17,11 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/id_rsa
+          cat > ~/.ssh/id_rsa.b64 << 'EOF'
+${{ secrets.DEPLOY_SSH_KEY }}
+EOF
+          base64 -d ~/.ssh/id_rsa.b64 > ~/.ssh/id_rsa
+          rm -f ~/.ssh/id_rsa.b64
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
