@@ -1,0 +1,38 @@
+api-ghostcode.duckdns.org {
+    log
+    encode zstd gzip
+
+    @analyzer path /api/analyzer/*
+    handle @analyzer {
+        rewrite * /analyzer{path}
+        reverse_proxy rag:8004
+    }
+
+    @rag path /rag/*
+    handle @rag {
+        reverse_proxy rag:8004
+    }
+
+    @ws path /ws*
+    handle @ws {
+        reverse_proxy backend:8000 {
+            header_up Upgrade {header.Upgrade}
+            header_up Connection "upgrade"
+        }
+    }
+
+    @api path /api/*
+    handle @api {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        reverse_proxy backend:8000
+    }
+
+    header {
+        X-Real-IP {remote_host}
+        X-Forwarded-For {remote_host}
+        X-Forwarded-Proto {scheme}
+    }
+}

@@ -19,9 +19,6 @@ cd "$APP_DIR"
 echo "Pulling latest code..."
 git pull origin main
 
-# Use prod nginx config
-cp nginx/nginx.prod.conf nginx/nginx.conf
-
 # Build images
 echo "Building Docker images..."
 docker compose -f "$COMPOSE_FILE" --env-file .env.docker build
@@ -38,7 +35,7 @@ docker compose -f "$COMPOSE_FILE" --env-file .env.docker exec -T backend python 
 echo "Verifying deployment..."
 sleep 3
 
-if curl -sf http://localhost/api/auth/session/ > /dev/null 2>&1; then
+if curl -sf http://localhost:8000/api/auth/session/ > /dev/null 2>&1; then
     echo "✅ Backend is healthy"
 else
     echo "❌ Backend health check failed"

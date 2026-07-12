@@ -57,7 +57,7 @@ def _set_refresh_cookie(response, session_key, request=None):
         key=settings.REFRESH_TOKEN_COOKIE_NAME,
         value=session_key,
         httponly=True,
-        samesite="Lax",
+        samesite="None",
         secure=request.is_secure() if request else not settings.DEBUG,
         path="/",
     )
@@ -68,7 +68,7 @@ def _set_access_cookie(response, access_token, request=None):
         key="ghostcode_access",
         value=access_token,
         httponly=True,
-        samesite="Lax",
+        samesite="None",
         secure=request.is_secure() if request else not settings.DEBUG,
         path="/",
     )
