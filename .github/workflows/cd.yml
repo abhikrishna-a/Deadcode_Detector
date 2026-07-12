@@ -15,11 +15,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup SSH key
+        env:
+          SSH_KEY_B64: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo '${{ secrets.DEPLOY_SSH_KEY }}' > ~/.ssh/id_rsa.b64
-          base64 -d ~/.ssh/id_rsa.b64 > ~/.ssh/id_rsa
-          rm -f ~/.ssh/id_rsa.b64
+          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
