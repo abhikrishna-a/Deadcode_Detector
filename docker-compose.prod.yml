@@ -11,6 +11,8 @@ services:
     depends_on:
       rag:
         condition: service_started
+      pgbouncer:
+        condition: service_started
     command: >
       sh -c "python manage.py migrate &&
              daphne -b 0.0.0.0 -p 8000 core.asgi:application"
@@ -21,6 +23,8 @@ services:
     env_file: .env.docker
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
+    depends_on:
+      - pgbouncer
     command: celery -A core worker -l info --pool=solo
     restart: unless-stopped
 
@@ -29,7 +33,26 @@ services:
     env_file: .env.docker
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
+    depends_on:
+      - pgbouncer
     command: celery -A core beat -l info
+    restart: unless-stopped
+
+  pgbouncer:
+    image: bitnami/pgbouncer:1.23
+    env_file: .env.docker
+    environment:
+      POSTGRESQL_HOST: ${DB_HOST_RDS}
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_USERNAME: ${DB_USER}
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRESQL_DATABASE: ${DB_NAME}
+      PGBOUNCER_PORT: 6432
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_DEFAULT_POOL_SIZE: 10
+      PGBOUNCER_AUTH_TYPE: trust
+    ports:
+      - "6432:6432"
     restart: unless-stopped
 
   rag:

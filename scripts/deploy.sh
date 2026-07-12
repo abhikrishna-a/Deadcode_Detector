@@ -24,15 +24,15 @@ cp nginx/nginx.prod.conf nginx/nginx.conf
 
 # Build images
 echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" build
+docker compose -f "$COMPOSE_FILE" --env-file .env.docker build
 
 # Restart services
 echo "Restarting services..."
-docker compose -f "$COMPOSE_FILE" up -d
+docker compose -f "$COMPOSE_FILE" --env-file .env.docker up -d
 
 # Run migrations
 echo "Running database migrations..."
-docker compose -f "$COMPOSE_FILE" exec -T backend python manage.py migrate
+docker compose -f "$COMPOSE_FILE" --env-file .env.docker exec -T backend python manage.py migrate
 
 # Verify
 echo "Verifying deployment..."
