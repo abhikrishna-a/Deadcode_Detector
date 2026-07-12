@@ -35,7 +35,7 @@ docker compose -f "$COMPOSE_FILE" --env-file .env.docker exec -T backend python 
 echo "Verifying deployment..."
 sleep 3
 
-if curl -sf http://localhost:8000/api/auth/session/ > /dev/null 2>&1; then
+if curl -sf http://127.0.0.1:8000/api/auth/session/ > /dev/null 2>&1; then
     echo "✅ Backend is healthy"
 else
     echo "❌ Backend health check failed"

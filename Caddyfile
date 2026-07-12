@@ -5,12 +5,20 @@ api-ghostcode.duckdns.org {
     @analyzer path /api/analyzer/*
     handle @analyzer {
         rewrite * /analyzer{path}
-        reverse_proxy rag:8004
+        reverse_proxy rag:8004 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 
     @rag path /rag/*
     handle @rag {
-        reverse_proxy rag:8004
+        reverse_proxy rag:8004 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 
     @ws path /ws*
@@ -18,21 +26,26 @@ api-ghostcode.duckdns.org {
         reverse_proxy backend:8000 {
             header_up Upgrade {header.Upgrade}
             header_up Connection "upgrade"
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
         }
     }
 
     @api path /api/*
     handle @api {
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 
     handle {
-        reverse_proxy backend:8000
-    }
-
-    header {
-        X-Real-IP {remote_host}
-        X-Forwarded-For {remote_host}
-        X-Forwarded-Proto {scheme}
+        reverse_proxy backend:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 }
