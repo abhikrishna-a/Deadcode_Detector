@@ -26,7 +26,9 @@ class WebhookAnalyzeView(APIView):
 
         repo_url = repo_url.lower()
         if "github.com" not in repo_url and "gitlab.com" not in repo_url:
-            return Response({"error": "Only GitHub and GitLab repositories are supported."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Only GitHub and GitLab repositories are supported."}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         if repo_url.startswith("git@"):
             repo_url = repo_url.replace(":", "/").replace("git@", "https://").removesuffix(".git")
@@ -61,7 +63,7 @@ class WebhookAnalyzeView(APIView):
                         with open(full_path, encoding="utf-8", errors="replace") as fh:
                             content = fh.read()
                         files_data.append((rel_path, content))
-                    except (OSError, UnicodeDecodeError):
+                    except OSError, UnicodeDecodeError:
                         continue
 
             if not files_data:
@@ -80,6 +82,7 @@ class WebhookAnalyzeView(APIView):
         finally:
             try:
                 import shutil
+
                 shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception:
                 pass
