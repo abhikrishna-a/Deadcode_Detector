@@ -7,6 +7,7 @@ LOG_FILE="$APP_DIR/deploy.log"
 
 exec > "$LOG_FILE" 2>&1
 echo "===== CD Deploy: $(date) ====="
+echo "===== CD Deploy: $(date) =====" >&2
 
 # Clone or pull
 if [ ! -d "$APP_DIR/.git" ]; then
@@ -35,14 +36,14 @@ docker compose -f "$COMPOSE_FILE" --env-file .env.docker exec -T backend python 
 echo "Verifying deployment..."
 sleep 3
 
-if curl -sf http://127.0.0.1:8000/api/auth/session/ > /dev/null 2>&1; then
+if curl -sfL http://api-ghostcode.duckdns.org/api/auth/session/ | grep -q 'isAuthenticated'; then
     echo "✅ Backend is healthy"
 else
     echo "❌ Backend health check failed"
     exit 1
 fi
 
-if curl -sf http://localhost:8004/rag/health > /dev/null 2>&1; then
+if curl -sfL http://localhost:8004/rag/health | grep -q 'ok'; then
     echo "✅ RAG service is healthy"
 else
     echo "❌ RAG health check failed"
