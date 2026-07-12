@@ -21,7 +21,10 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
-          ssh-add - <<< "$SSH_KEY"
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa_tmp
+          chmod 600 ~/.ssh/id_rsa_tmp
+          ssh-add ~/.ssh/id_rsa_tmp
+          rm -f ~/.ssh/id_rsa_tmp
           ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
 
       - name: Verify health
