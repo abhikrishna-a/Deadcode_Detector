@@ -14,25 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: Deploy via SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
-          eval $(ssh-agent -s) > ~/.ssh/agent_env
-          source ~/.ssh/agent_env
+          eval $(ssh-agent -s)
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa_tmp
           chmod 600 ~/.ssh/id_rsa_tmp
           ssh-add ~/.ssh/id_rsa_tmp
           rm -f ~/.ssh/id_rsa_tmp
+          echo "=== Keys loaded ==="
           ssh-add -l
-          echo "=== Testing SSH connection ==="
-          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "echo 'SSH connection OK'; whoami"
-
-      - name: Deploy via SSH
-        run: |
-          source ~/.ssh/agent_env
+          echo "=== Connecting ==="
           ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -tt ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
 
       - name: Verify health
