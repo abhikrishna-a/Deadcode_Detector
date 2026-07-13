@@ -1,4 +1,4 @@
-﻿import math
+import math
 import os
 
 from sqlalchemy import text
@@ -9,7 +9,14 @@ DATABASE_URL = os.getenv("RAG_DATABASE_URL") or os.getenv(
 )
 IS_SQLITE = "sqlite" in DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, pool_size=15, max_overflow=20, pool_timeout=30, pool_pre_ping=True, connect_args={'prepared_statement_cache_size': 0})
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_size=15,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_pre_ping=True,
+    connect_args={"prepared_statement_cache_size": 0},
+)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
