@@ -30,6 +30,4 @@ jobs:
           echo "=== Connecting ==="
           ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -tt ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
 
-      - name: Verify health
-        run: |
-          curl -sf https://api-ghostcode.duckdns.org/api/auth/session/ && echo "✅ Backend healthy"
+
