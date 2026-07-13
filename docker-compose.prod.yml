@@ -1,4 +1,11 @@
-services:
+﻿services:
+  pgbouncer:
+    image: edoburu/pgbouncer:1.23.1
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    restart: unless-stopped
+
   backend:
     build: ./Backend
     ports:
@@ -7,6 +14,8 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
     depends_on:
+      pgbouncer:
+        condition: service_started
       rag:
         condition: service_started
     command: >
@@ -19,6 +28,9 @@ services:
     env_file: .env.docker
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
+    depends_on:
+      pgbouncer:
+        condition: service_started
     command: celery -A core worker -l info --pool=solo
     restart: unless-stopped
 
@@ -27,6 +39,9 @@ services:
     env_file: .env.docker
     environment:
       DJANGO_SETTINGS_MODULE: core.settings.prod
+    depends_on:
+      pgbouncer:
+        condition: service_started
     command: celery -A core beat -l info
     restart: unless-stopped
 
@@ -35,6 +50,9 @@ services:
     env_file: .env.docker
     ports:
       - "8004:8004"
+    depends_on:
+      pgbouncer:
+        condition: service_started
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --loop asyncio
     restart: unless-stopped
 

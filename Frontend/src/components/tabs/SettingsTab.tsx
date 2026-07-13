@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { User as UserIcon, KeyRound, Mail, Loader2 } from 'lucide-react';
+import { User as UserIcon, KeyRound, Mail, Loader2, ArrowLeft } from 'lucide-react';
 import { User } from '../../api/types';
 import { authAPI } from '../../api/auth';
 
@@ -8,9 +8,11 @@ interface SettingsTabProps {
   key?: string;
   currentUser: User;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+  onBack?: () => void;
+  userRole?: string;
 }
 
-export default function SettingsTab({ currentUser, onShowToast }: SettingsTabProps) {
+export default function SettingsTab({ currentUser, onShowToast, onBack, userRole }: SettingsTabProps) {
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
 
@@ -37,6 +39,15 @@ export default function SettingsTab({ currentUser, onShowToast }: SettingsTabPro
       transition={{ duration: 0.3 }}
       className="space-y-6 text-left max-w-3xl"
     >
+      {userRole === 'junior' && onBack && (
+        <button
+          onClick={onBack}
+          className="text-xs text-zinc-500 hover:text-zinc-300 font-mono flex items-center gap-1.5 cursor-pointer mb-4"
+        >
+          <ArrowLeft size={12} /> Back to dashboard
+        </button>
+      )}
+
       <div className="space-y-1">
         <h2 className="font-display font-bold text-xl text-neutral-200 tracking-tight flex items-center gap-2">
           <UserIcon className="text-cyan-400" size={20} /> Account Settings

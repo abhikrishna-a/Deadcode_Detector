@@ -1,0 +1,15 @@
+﻿[databases]
+deadcode_detector = host=changeme-rds-endpoint port=5432 dbname=deadcode_detector
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 5432
+auth_type = md5
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+max_client_conn = 200
+default_pool_size = 20
+reserve_pool_size = 10
+log_connections = 0
+log_disconnections = 0
+server_reset_query = DISCARD ALL

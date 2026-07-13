@@ -238,6 +238,8 @@ export default function App() {
                         key="settings"
                         currentUser={currentUser}
                         onShowToast={showToast}
+                        onBack={() => onNavigate('junior')}
+                        userRole={currentUser.role}
                       />
                     )}
 

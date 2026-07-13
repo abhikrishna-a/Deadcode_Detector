@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -ex
 
 APP_DIR="/home/ec2-user/app"
@@ -15,11 +15,27 @@ fi
 cd "$APP_DIR"
 
 echo ">>> Pulling latest code..."
-cp .env.docker .env.docker.bak 2>/dev/null || true
 git checkout -- .
 git pull origin main
-cp .env.docker.bak .env.docker 2>/dev/null || true
-rm -f .env.docker.bak
+
+# Generate .env.docker from example if missing
+if [ ! -f "$APP_DIR/.env.docker" ]; then
+    echo ">>> .env.docker not found — copying from .env.docker.example"
+    cp "$APP_DIR/.env.docker.example" "$APP_DIR/.env.docker"
+    echo ">>> IMPORTANT: Edit .env.docker with real secrets before restarting services"
+fi
+
+# Generate pgbouncer config from .env.docker if missing
+if [ ! -f "$APP_DIR/pgbouncer/pgbouncer.ini" ]; then
+    echo ">>> Generating pgbouncer.ini from .env.docker..."
+    DB_HOST=$(grep '^DB_HOST=' "$APP_DIR/.env.docker" | cut -d'=' -f2-)
+    DB_PASSWORD=$(grep '^DB_PASSWORD=' "$APP_DIR/.env.docker" | cut -d'=' -f2-)
+    cp "$APP_DIR/pgbouncer/pgbouncer.ini.example" "$APP_DIR/pgbouncer/pgbouncer.ini"
+    sed -i "s/changeme-rds-endpoint/$DB_HOST/g" "$APP_DIR/pgbouncer/pgbouncer.ini"
+    cp "$APP_DIR/pgbouncer/userlist.txt.example" "$APP_DIR/pgbouncer/userlist.txt"
+    sed -i "s/changeme-db-password/$DB_PASSWORD/g" "$APP_DIR/pgbouncer/userlist.txt"
+    echo ">>> pgbouncer config generated"
+fi
 
 # Build images
 echo ">>> Building Docker images..."
