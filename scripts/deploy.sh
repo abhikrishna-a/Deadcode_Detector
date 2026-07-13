@@ -15,7 +15,11 @@ fi
 cd "$APP_DIR"
 
 echo ">>> Pulling latest code..."
+cp .env.docker .env.docker.bak 2>/dev/null || true
+git checkout -- .
 git pull origin main
+cp .env.docker.bak .env.docker 2>/dev/null || true
+rm -f .env.docker.bak
 
 # Build images
 echo ">>> Building Docker images..."
