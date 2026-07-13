@@ -32,7 +32,7 @@ sleep 15
 # Verify backend
 echo ">>> Verifying backend..."
 for i in 1 2 3; do
-    if curl -sfL http://api-ghostcode.duckdns.org/api/auth/session/ | grep -q 'isAuthenticated'; then
+    if curl --connect-timeout 5 --max-time 10 -sf http://localhost:8000/api/auth/session/ | grep -q 'isAuthenticated'; then
         echo "✅ Backend is healthy"
         break
     fi
@@ -47,7 +47,7 @@ done
 # Verify RAG
 echo ">>> Verifying RAG service..."
 for i in 1 2 3; do
-    if curl -sfL http://localhost:8004/rag/health | grep -q 'ok'; then
+    if curl --connect-timeout 5 --max-time 10 -sf http://localhost:8004/rag/health | grep -q 'ok'; then
         echo "✅ RAG service is healthy"
         break
     fi
