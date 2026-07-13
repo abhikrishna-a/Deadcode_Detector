@@ -318,6 +318,22 @@ def batch_analyze_folder(
                     },
                 )
 
+        # Send Slack alert if dead code was found
+        total_issues = 0
+        files_with_issues = 0
+        for r in results_list:
+            ic = r.get("analysis", {}).get("summary", {}).get("total_issues", 0)
+            if ic:
+                total_issues += ic
+                files_with_issues += 1
+        if total_issues > 0:
+            send_slack_alert.delay(
+                f"*Dead Code Found in `{scan_folder or 'scan'}`*\n"
+                f"• Files with issues: {files_with_issues}\n"
+                f"• Total issues: {total_issues}\n"
+                f"• Batch ID: `{batch_id}`"
+            )
+
         logger.info(
             "Batch %s: %d/%d files analyzed (RAG), %d skipped",
             batch_id,
