@@ -25,7 +25,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa_tmp
           ssh-add ~/.ssh/id_rsa_tmp
           rm -f ~/.ssh/id_rsa_tmp
-          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
+          ssh -o StrictHostKeyChecking=accept-new -v ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh 2>&1"
 
       - name: Verify health
         run: |
