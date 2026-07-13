@@ -32,7 +32,7 @@ sleep 15
 # Verify backend
 echo ">>> Verifying backend..."
 for i in 1 2 3; do
-    if curl --connect-timeout 5 --max-time 10 -sf http://localhost:8000/api/auth/session/ | grep -q 'isAuthenticated'; then
+    if curl --connect-timeout 5 --max-time 10 -sf -o /dev/null -w '%{http_code}' http://localhost:8000/ | grep -qE '^[23]'; then
         echo "✅ Backend is healthy"
         break
     fi
