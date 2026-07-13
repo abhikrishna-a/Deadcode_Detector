@@ -155,6 +155,8 @@ CELERY_TASK_TIME_LIMIT = 600
 
 RAG_ANALYZE_URL = env("RAG_ANALYZE_URL", default="http://localhost:8004/rag/analyze")
 
+AWS_SES_REGION = env("AWS_SES_REGION", default="us-east-1")
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

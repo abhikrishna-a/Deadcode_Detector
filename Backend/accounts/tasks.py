@@ -583,3 +583,35 @@ def send_slack_alert(self, message: str):
     success = _send(message)
     if not success and self.request.retries < self.max_retries:
         raise self.retry()
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=60)
+def send_weekly_digest(self):
+    from django.contrib.auth import get_user_model
+
+    from .digest import build_weekly_digest_html
+    from .ses_email import send_ses_email
+
+    user_model = get_user_model()
+    users = user_model.objects.filter(is_active=True).exclude(email="")
+    sent = 0
+    failed = 0
+
+    for user in users:
+        try:
+            html = build_weekly_digest_html(user)
+            ok = send_ses_email(
+                subject="GhostCode — Weekly Dead Code Digest",
+                html_body=html,
+                recipient=user.email,
+            )
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            logger.exception("Failed to send digest to user %d", user.id)
+            failed += 1
+
+    logger.info("Weekly digest complete: %d sent, %d failed", sent, failed)
+    return {"sent": sent, "failed": failed}

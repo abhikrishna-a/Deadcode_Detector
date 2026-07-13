@@ -2,6 +2,7 @@ import os
 
 import django
 from celery import Celery
+from celery.schedules import crontab
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.dev")
 
@@ -27,5 +28,9 @@ app.conf.beat_schedule = {
     "cleanup-stale-scheduled": {
         "task": "accounts.scheduler.cleanup_stale_scheduled",
         "schedule": 3600.0,
+    },
+    "send-weekly-digest": {
+        "task": "accounts.tasks.send_weekly_digest",
+        "schedule": crontab(day_of_week="sunday", hour=18, minute=0),
     },
 }
