@@ -13,6 +13,7 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, []),
     CORS_ALLOWED_ORIGINS=(list, []),
     CORS_ALLOW_CREDENTIALS=(bool, True),
+    SLACK_WEBHOOK_URL=(str, ""),
 )
 
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))

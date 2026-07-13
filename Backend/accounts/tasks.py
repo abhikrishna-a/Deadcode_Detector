@@ -558,3 +558,12 @@ def analyze_junior_submission(self, submission_id: int):
 def batch_analyze_junior_submissions(submission_ids: list):
     for sid in submission_ids:
         analyze_junior_submission.delay(sid)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def send_slack_alert(self, message: str):
+    from .slack import send_slack_alert as _send
+
+    success = _send(message)
+    if not success and self.request.retries < self.max_retries:
+        raise self.retry()
