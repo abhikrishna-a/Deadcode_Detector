@@ -382,7 +382,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 <div align="center">
 
-### ⭐ If you find this project useful, give it a star! ⭐
+### If you find this project useful, give it a star!
 
 [![GitHub stars](https://github.com/abhikrishna-a/Deadcode_Detector/tree/main)
 Built with ❤️ for developers who hate dead code.
