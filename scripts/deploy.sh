@@ -5,9 +5,7 @@ APP_DIR="/home/ec2-user/app"
 COMPOSE_FILE="docker-compose.prod.yml"
 LOG_FILE="$APP_DIR/deploy.log"
 
-exec > "$LOG_FILE" 2>&1
 echo "===== CD Deploy: $(date) ====="
-echo "===== CD Deploy: $(date) =====" >&2
 
 # Clone or pull
 if [ ! -d "$APP_DIR/.git" ]; then
