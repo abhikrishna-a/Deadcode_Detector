@@ -14,31 +14,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pre-flight check
+      - name: Setup SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
-          eval $(ssh-agent -s)
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
+          eval $(ssh-agent -s) > ~/.ssh/agent_env
+          source ~/.ssh/agent_env
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa_tmp
           chmod 600 ~/.ssh/id_rsa_tmp
           ssh-add ~/.ssh/id_rsa_tmp
           rm -f ~/.ssh/id_rsa_tmp
-          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "ls -la /home/ec2-user/app/.git 2>&1; echo '==='; ls -la /home/ec2-user/app/scripts/deploy.sh 2>&1; echo '==='; git -C /home/ec2-user/app status 2>&1; echo '==='; docker compose -f /home/ec2-user/app/docker-compose.prod.yml ps 2>&1; echo '==='; whoami"
+          ssh-add -l
+          echo "=== Testing SSH connection ==="
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "echo 'SSH connection OK'; whoami"
 
       - name: Deploy via SSH
-        env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
-          eval $(ssh-agent -s)
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa_tmp
-          chmod 600 ~/.ssh/id_rsa_tmp
-          ssh-add ~/.ssh/id_rsa_tmp
-          rm -f ~/.ssh/id_rsa_tmp
-          ssh -o StrictHostKeyChecking=accept-new -tt ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
+          source ~/.ssh/agent_env
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -tt ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "bash /home/ec2-user/app/scripts/deploy.sh"
 
       - name: Verify health
         run: |
